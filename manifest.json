@@ -1,0 +1,12 @@
+{
+    "display_name": "RPG-Custodian",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Dyna",
+    "version": "0.0.1"
+	"homePage": "https://github.com/Dynafyre/rpg-custodian",
+    "auto_update": false
+}
