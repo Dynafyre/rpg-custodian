@@ -1,1 +1,97 @@
-/* style.css (empty for now) */
+.rpg-panel {
+	border-radius: 10px;
+    padding: 15px;
+    margin: 10px;
+    position: fixed;
+    right: -10px;
+    top: 60px; 
+    border: 1px solid var(--SmartThemeBorderColor);
+    position: fixed;
+    padding: 10px;
+    padding-top: 0px;
+    flex-direction: column;
+    box-shadow: 0 0 10px var(--black70a);
+    width: calc(((100dvw - var(--sheldWidth)) / 2) - 1px);
+	background-color: var(--SmartThemeBlurTintColor);
+	z-index: 4000;
+	min-width: 250px;
+	
+}
+
+.rpg-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    cursor: move; /* Indicates draggable */
+}
+
+.rpg-header h3 {
+    margin: 0;
+    color: var(--SmartThemeBodyColor);
+    user-select: none; /* Prevents text selection while dragging */
+}
+
+.rpg-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.stat-row label {
+    color: var(--SmartThemeBodyColor);
+    font-weight: bold;
+}
+
+.inventory-list {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 5px;
+    max-height: 100px;
+    overflow-y: auto;
+}
+
+.inventory-item {
+    background-color: var(--SmartThemeBlendBgColor);
+    border: 1px solid var(--SmartThemeBorderColor);
+    border-radius: 5px;
+    padding: 5px;
+    font-size: 0.9em;
+}
+
+#rpg-settings-btn {
+    padding: 5px 10px;
+    cursor: pointer;
+}
+
+/* Minimize/Maximize functionality */
+.rpg-panel.minimized {
+    height: auto;
+    max-height: 40px;
+}
+
+.rpg-panel.minimized .rpg-stats {
+    display: none;
+}
+
+/* Toggle visibility button */
+#rpg-toggle-btn {
+    position: absolute;
+    right: 57px;
+    top: 8px;
+    cursor: pointer;
+    padding: 5px;
+    color: var(--SmartThemeBodyColor);
+}
+
+/* Make panel semi-transparent when dragging */
+.rpg-panel.dragging {
+    opacity: 0.7;
+}

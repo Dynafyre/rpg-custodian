@@ -1,63 +1,262 @@
-// The main script for the extension
-// The following are examples of some basic extension functionality
+// Import required dependencies
+import { extension_settings, getContext, saveMetadataDebounced } from '../../../extensions.js';
+import { saveSettingsDebounced, eventSource, event_types } from '../../../../script.js';
+import { registerSlashCommand } from '../../../slash-commands.js';
+import { dragElement, isMobile } from '../../../../scripts/RossAscends-mods.js';
 
-//You'll likely need to import extension_settings, getContext, and loadExtensionSettings from extensions.js
-import { extension_settings, getContext, loadExtensionSettings } from "../../../extensions.js";
+// Extension name and settings
+const extensionName = 'rpg-custodian';
+console.log(`[${extensionName}] Loading extension...`);
 
-//You'll likely need to import some other functions from the main script
-import { saveSettingsDebounced } from "../../../../script.js";
+const defaultSettings = {
+    enabled: true,
+    checkFrequency: 3, // How many messages before checking for updates
+    characterStats: {
+        level: 1,
+        experience: 0,
+        health: 100,
+        maxHealth: 100,
+        location: 'Starting Town',
+        inventory: [],
+    },
+    // System prompt template for the AI to check for updates
+    updatePrompt: `Please analyze the recent conversation and update the character stats if needed. Current stats:
+Level: {{level}}
+XP: {{experience}}
+Health: {{health}}/{{maxHealth}}
+Location: {{location}}
+Inventory: {{inventory}}
 
-// Keep track of where your extension is located, name should match repo name
-const extensionName = "rpg-custodian";
-const extensionFolderPath = `SillyTavern/data/default-user/extensions/${extensionName}`;
-const extensionSettings = extension_settings[extensionName];
-const defaultSettings = {};
+Look for:
+1. Changes in health from combat or healing
+2. New items acquired or used
+3. Location changes
+4. Experience gained from completing tasks
 
+Respond ONLY with a JSON object containing updated stats, or "NO_CHANGE" if nothing has changed.`
+};
 
- 
-// Loads the extension settings if they exist, otherwise initializes them to the defaults.
-async function loadSettings() {
-  //Create the settings if they don't exist
-  extension_settings[extensionName] = extension_settings[extensionName] || {};
-  if (Object.keys(extension_settings[extensionName]).length === 0) {
-    Object.assign(extension_settings[extensionName], defaultSettings);
-  }
+let currentStats = {};
+let checkCounter = 0;
 
-  // Updating settings in the UI
-  $("#example_setting").prop("checked", extension_settings[extensionName].example_setting).trigger("input");
+// Initialize extension settings
+function loadSettings() {
+    console.log(`[${extensionName}] Loading settings...`);
+    
+    if (Object.keys(extension_settings[extensionName]).length === 0) {
+        console.log(`[${extensionName}] No existing settings found. Initializing with defaults...`);
+        extension_settings[extensionName] = defaultSettings;
+        saveSettingsDebounced();
+    } else {
+        console.log(`[${extensionName}] Existing settings found:`, extension_settings[extensionName]);
+    }
+    
+    currentStats = extension_settings[extensionName].characterStats;
+    checkCounter = extension_settings[extensionName].checkFrequency;
+    
+    console.log(`[${extensionName}] Current stats loaded:`, currentStats);
+    console.log(`[${extensionName}] Check counter set to:`, checkCounter);
 }
 
-// This function is called when the extension settings are changed in the UI
-function onExampleInput(event) {
-  const value = Boolean($(event.target).prop("checked"));
-  extension_settings[extensionName].example_setting = value;
-  saveSettingsDebounced();
+// Save current state
+function saveState() {
+    console.log(`[${extensionName}] Saving state...`);
+    const context = getContext();
+    
+    if (!context.chatId) {
+        console.warn(`[${extensionName}] No chat ID found, skipping save`);
+        return;
+    }
+    
+    console.log(`[${extensionName}] Saving for chat ID:`, context.chatId);
+    console.log(`[${extensionName}] Saving stats:`, currentStats);
+    
+    extension_settings[extensionName].characterStats = currentStats;
+    saveSettingsDebounced();
+    saveMetadataDebounced();
 }
 
-// This function is called when the button is clicked
-function onButtonClick() {
-  // You can do whatever you want here
-  // Let's make a popup appear with the checked setting
-  toastr.info(
-    `The checkbox is ${extension_settings[extensionName].example_setting ? "checked" : "not checked"}`,
-    "A popup appeared because you clicked the button!"
-  );
+// Check for stat updates
+async function checkForUpdates() {
+    console.log(`[${extensionName}] Checking for character stat updates...`);
+    console.log(`[${extensionName}] Current stats before check:`, currentStats);
+    // TODO: Implement the quiet prompt generation to check for updates
 }
 
-// This function is called when the extension is loaded
+// UI Creation Functions
+function createCharacterSheet() {
+    console.log(`[${extensionName}] Creating character sheet UI...`);
+    const html = `
+    <div id="rpg-custodian-panel" class="rpg-panel">
+            <div id="rpg-custodian-panelheader" class="rpg-header">
+                <h3>Character Sheet</h3>
+                <div class="header-buttons">
+                    <span id="rpg-toggle-btn" class="fas fa-minus" title="Minimize/Maximize"></span>
+                    <button id="rpg-settings-btn" class="menu_button">⚙️</button>
+                </div>
+            </div>
+            <div class="rpg-stats">
+                <div class="stat-row">
+                    <label>Level:</label>
+                    <span id="rpg-level">${currentStats.level}</span>
+                </div>
+                <div class="stat-row">
+                    <label>Experience:</label>
+                    <span id="rpg-xp">${currentStats.experience}</span>
+                </div>
+                <div class="stat-row">
+                    <label>Health:</label>
+                    <span id="rpg-health">${currentStats.health}/${currentStats.maxHealth}</span>
+                </div>
+                <div class="stat-row">
+                    <label>Location:</label>
+                    <span id="rpg-location">${currentStats.location}</span>
+                </div>
+                <div class="stat-row">
+                    <label>Inventory:</label>
+                    <div id="rpg-inventory" class="inventory-list">
+                        ${currentStats.inventory.map(item => `<div class="inventory-item">${item}</div>`).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>`;
+
+    console.log(`[${extensionName}] Character sheet UI created with current stats`);
+    return html;
+}
+
+// Add these new functions for panel management
+function initializePanel() {
+    console.log(`[${extensionName}] Initializing character panel...`);
+    
+    // Add panel to body
+    $('body').append(createCharacterSheet());
+    
+    // Make panel draggable - note the jQuery selector
+    dragElement($('#rpg-custodian-panel'));
+    
+    // Initialize minimize/maximize functionality
+    $('#rpg-toggle-btn').on('click', function() {
+        const panel = $('#rpg-custodian-panel');
+        const icon = $(this);
+        
+        console.log(`[${extensionName}] Toggling panel visibility`);
+        
+        if (panel.hasClass('minimized')) {
+            panel.removeClass('minimized');
+            icon.removeClass('fa-plus').addClass('fa-minus');
+        } else {
+            panel.addClass('minimized');
+            icon.removeClass('fa-minus').addClass('fa-plus');
+        }
+    });
+}
+
+function savePanelPosition() {
+    const panel = document.getElementById('rpg-custodian-panel');
+    extension_settings[extensionName].panelPosition = {
+        x: panel.offsetLeft,
+        y: panel.offsetTop
+    };
+    saveSettingsDebounced();
+}
+
+// Modify your initialization code
 jQuery(async () => {
-  // This is an example of loading HTML from a file
- // const settingsHtml = await $.get(`${extensionFolderPath}/example.html`);
+    console.log(`[${extensionName}] Initializing extension...`);
+    
+    // Load settings
+    loadSettings();
+    
+    // Initialize the panel
+    initializePanel();
+    
+    // Register event handlers
+    console.log(`[${extensionName}] Registering event handlers...`);
+    $('#rpg-settings-btn').on('click', onSettingsClick);
+    
+    // Register event listeners
+    console.log(`[${extensionName}] Setting up message received listener...`);
+    eventSource.on(event_types.MESSAGE_RECEIVED, () => {
+        console.log(`[${extensionName}] Message received, check counter:`, checkCounter);
+        
+        if (checkCounter <= 0) {
+            console.log(`[${extensionName}] Check counter reached 0, initiating stat update check`);
+            checkForUpdates();
+            checkCounter = extension_settings[extensionName].checkFrequency;
+            console.log(`[${extensionName}] Reset check counter to:`, checkCounter);
+        }
+        checkCounter--;
+    });
+    
+    // Register slash commands
+    console.log(`[${extensionName}] Registering slash commands...`);
+    registerSlashCommand('stats', () => {
+        console.log(`[${extensionName}] /stats command executed`);
+        updateUI();
+        console.log(`[${extensionName}] Current character stats:`, currentStats);
+    }, [], '– display character stats', true, true);
+    
+    // Add panel position save on window unload
+    $(window).on('beforeunload', savePanelPosition);
+    
+    console.log(`[${extensionName}] Extension initialization complete`);
+});
 
-  // Append settingsHtml to extensions_settings
-  // extension_settings and extensions_settings2 are the left and right columns of the settings menu
-  // Left should be extensions that deal with system functions and right should be visual/UI related 
-  //$("#extensions_settings").append(settingsHtml);
+// Event Handlers
+function onSettingsClick() {
+    console.log(`[${extensionName}] Settings button clicked`);
+    // TODO: Implement settings popup
+}
 
-  // These are examples of listening for events
-  //$("#my_button").on("click", onButtonClick);
- // $("#example_setting").on("input", onExampleInput);
+function updateUI() {
+    console.log(`[${extensionName}] Updating UI with current stats:`, currentStats);
+    
+    $('#rpg-level').text(currentStats.level);
+    $('#rpg-xp').text(currentStats.experience);
+    $('#rpg-health').text(`${currentStats.health}/${currentStats.maxHealth}`);
+    $('#rpg-location').text(currentStats.location);
+    
+    const inventoryHtml = currentStats.inventory
+        .map(item => `<div class="inventory-item">${item}</div>`)
+        .join('');
+    $('#rpg-inventory').html(inventoryHtml);
+    
+    console.log(`[${extensionName}] UI update complete`);
+}
 
-  // Load settings when starting things up (if you have any)
-  loadSettings();
+// Initialize Extension
+jQuery(async () => {
+    console.log(`[${extensionName}] Initializing extension...`);
+    
+    // Load settings
+    loadSettings();
+    
+    // Register event handlers
+    console.log(`[${extensionName}] Registering event handlers...`);
+    $('#rpg-settings-btn').on('click', onSettingsClick);
+    
+    // Register event listeners
+    console.log(`[${extensionName}] Setting up message received listener...`);
+    eventSource.on(event_types.MESSAGE_RECEIVED, () => {
+        console.log(`[${extensionName}] Message received, check counter:`, checkCounter);
+        
+        if (checkCounter <= 0) {
+            console.log(`[${extensionName}] Check counter reached 0, initiating stat update check`);
+            checkForUpdates();
+            checkCounter = extension_settings[extensionName].checkFrequency;
+            console.log(`[${extensionName}] Reset check counter to:`, checkCounter);
+        }
+        checkCounter--;
+    });
+    
+    // Register slash commands
+    console.log(`[${extensionName}] Registering slash commands...`);
+    registerSlashCommand('stats', () => {
+        console.log(`[${extensionName}] /stats command executed`);
+        updateUI();
+        console.log(`[${extensionName}] Current character stats:`, currentStats);
+    }, [], '– display character stats', true, true);
+    
+    console.log(`[${extensionName}] Extension initialization complete`);
 });
