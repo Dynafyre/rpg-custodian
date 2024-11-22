@@ -5,7 +5,6 @@
     position: fixed;
     right: -10px;
     top: 60px; 
-    border: 1px solid var(--SmartThemeBorderColor);
     position: fixed;
     padding: 10px;
     padding-top: 0px;
@@ -13,6 +12,7 @@
     box-shadow: 0 0 10px var(--black70a);
     width: calc(((100dvw - var(--sheldWidth)) / 2) - 1px);
 	background-color: var(--SmartThemeBlurTintColor);
+	border: 1px solid var(--SmartThemeBorderColor);
 	z-index: 4000;
 	min-width: 250px;
 	
@@ -22,66 +22,91 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 15px;
+    margin-bottom: -10px;
     cursor: move; /* Indicates draggable */
 }
+        .rpg-settings-menu {
+			border-radius: 10px;
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+			box-shadow: 0 0 10px var(--black70a);
+			width: calc(((100dvw - var(--sheldWidth)) / 2) - 1px);
+			background-color: var(--SmartThemeBlurTintColor);
+			border: 1px solid var(--SmartThemeBorderColor);
+			z-index: 4000;
+            min-width: 400px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+        }
+        
+        .rpg-settings-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--SmartThemeBorderColor);
+            padding-bottom: 10px;
+        }
+        
+        .rpg-settings-header h3 {
+            margin: 0;
+        }
+        
+        .stat-input-row {
+            display: flex;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        
+        .stat-input-row label {
+            width: 100px;
+            margin-right: 10px;
+        }
+        
+        .stat-input-row input,
+        .stat-input-row textarea {
+            flex: 1;
+            background-color: var(--SmartThemeInputColor);
+            color: var(--SmartThemeTextColor);
+            border: 1px solid var(--SmartThemeBorderColor);
+            padding: 5px;
+            border-radius: 4px;
+        }
+        
+        #rpg-prompt-input {
+            width: 100%;
+            background-color: var(--SmartThemeInputColor);
+            color: var(--SmartThemeTextColor);
+            border: 1px solid var(--SmartThemeBorderColor);
+            padding: 10px;
+            border-radius: 4px;
+        }
+        
+        .menu_button.active {
+            background-color: var(--SmartThemeSelectionColor);
+        }
 
-.rpg-header h3 {
-    margin: 0;
-    color: var(--SmartThemeBodyColor);
-    user-select: none; /* Prevents text selection while dragging */
-}
+        .rpg-stats .stat-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
 
-.rpg-stats {
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-}
+        .inventory-list {
+            margin-top: 5px;
+            padding-left: 20px;
+        }
 
-.stat-row {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-}
+        .inventory-item {
+            margin-bottom: 3px;
+        }
 
-.stat-row label {
-    color: var(--SmartThemeBodyColor);
-    font-weight: bold;
-}
-
-.inventory-list {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-    margin-top: 5px;
-    max-height: 100px;
-    overflow-y: auto;
-}
-
-.inventory-item {
-    background-color: var(--SmartThemeBlendBgColor);
-    border: 1px solid var(--SmartThemeBorderColor);
-    border-radius: 5px;
-    padding: 5px;
-    font-size: 0.9em;
-}
-
-#rpg-settings-btn {
-    padding: 5px 10px;
-    cursor: pointer;
-}
-
-/* Minimize/Maximize functionality */
-.rpg-panel.minimized {
-    height: auto;
-    max-height: 40px;
-}
-
-.rpg-panel.minimized .rpg-stats {
-    display: none;
-}
-
+        .rpg-panel.minimized .rpg-stats {
+            display: none;
+        }
 /* Toggle visibility button */
+
 #rpg-toggle-btn {
     position: absolute;
     right: 57px;
