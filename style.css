@@ -4,7 +4,7 @@
     margin: 10px;
     position: fixed;
     right: -10px;
-    top: 60px; 
+    top: 30px; 
     position: fixed;
     padding: 10px;
     padding-top: 0px;
@@ -28,15 +28,15 @@
         .rpg-settings-menu {
 			border-radius: 10px;
             position: fixed;
-            top: 50%;
+            top: 7%;
             left: 50%;
-            transform: translate(-50%, -50%);
+            transform: translate(-50%);
 			box-shadow: 0 0 10px var(--black70a);
 			width: calc(((100dvw - var(--sheldWidth)) / 2) - 1px);
 			background-color: var(--SmartThemeBlurTintColor);
 			border: 1px solid var(--SmartThemeBorderColor);
 			z-index: 4000;
-            min-width: 400px;
+            min-width: 350px;
             box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
         }
         
@@ -52,6 +52,11 @@
         .rpg-settings-header h3 {
             margin: 0;
         }
+		.header-buttons {
+			display: flex;
+			gap: 5px;  /* This adds spacing between the buttons */
+			align-items: center;
+		}
         
         .stat-input-row {
             display: flex;
@@ -90,7 +95,8 @@
         .rpg-stats .stat-row {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
+			margin-top: 4px;
         }
 
         .inventory-list {

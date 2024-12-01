@@ -1,29 +1,11 @@
 {
     "display_name": "RPG Custodian",
     "loading_order": 100,
-    "requires": [],
+    "requires": ["context,extensions,slash-commands"],
     "js": "index.js",
     "css": "style.css",
     "author": "Dyna",
     "version": "0.0.1",
     "homePage": "https://github.com/Dynafyre/rpg-custodian",
-    "extension": {
-        "menu_items": [
-            {
-                "id": "rpg_custodian",
-                "title": "RPG Custodian",
-                "icon": "fa-solid fa-dice-d20",
-                "order": 100
-            }
-        ]
-    },
-    "dependencies": {
-        "extensions": {
-            "slash-commands": ">=1.0.0",
-            "extensions": ">=1.0.0"
-        },
-        "libraries": {
-            "jquery": ">=3.0.0"
-        }
-    }
+    
 }

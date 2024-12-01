@@ -10,20 +10,26 @@ console.log(`[${extensionName}] Loading extension...`);
 
 const defaultSettings = {
     enabled: true,
-    checkFrequency: 3, // How many messages before checking for updates
+    checkFrequency: 3,
     characterStats: {
-        level: 1,
-        experience: 0,
-        health: 100,
-        maxHealth: 100,
+        stat1: 1,
+        stat2: 1,
+        stat3: 1,
+        stat4: 1,
         location: 'Starting Town',
         inventory: [],
     },
-    // System prompt template for the AI to check for updates
+    statLabels: {
+        stat1: 'Level',
+        stat2: 'XP',
+        stat3: 'Health',
+        stat4: 'Max Health',
+    },
     updatePrompt: `Please analyze the recent conversation and update the character stats if needed. Current stats:
-Level: {{level}}
-XP: {{experience}}
-Health: {{health}}/{{maxHealth}}
+{{stat1Label}}: {{stat-1}}
+{{stat2Label}}: {{stat-2}}
+{{stat3Label}}: {{stat-3}}
+{{stat4Label}}: {{stat-4}}
 Location: {{location}}
 Inventory: {{inventory}}
 
@@ -41,6 +47,7 @@ let checkCounter = 0;
 
 // Character Sheet Creation
 function createCharacterSheet() {
+    const labels = extension_settings[extensionName].statLabels || defaultSettings.statLabels;
     const html = `
     <div id="rpg-custodian-panel" class="rpg-panel">
             <div id="rpg-custodian-panelheader" class="rpg-header">
@@ -52,16 +59,20 @@ function createCharacterSheet() {
             </div>
             <div class="rpg-stats">
                 <div class="stat-row">
-                    <label>Level:</label>
-                    <span id="rpg-level">${currentStats.level}</span>
+                    <label id="rpg-stat-1-label">${labels.stat1}:</label>
+                    <span id="rpg-stat-1">${currentStats.stat1}</span>
                 </div>
                 <div class="stat-row">
-                    <label>Experience:</label>
-                    <span id="rpg-xp">${currentStats.experience}</span>
+                    <label id="rpg-stat-2-label">${labels.stat2}:</label>
+                    <span id="rpg-stat-2">${currentStats.stat2}</span>
                 </div>
                 <div class="stat-row">
-                    <label>Health:</label>
-                    <span id="rpg-health">${currentStats.health}/${currentStats.maxHealth}</span>
+                    <label id="rpg-stat-3-label">${labels.stat3}:</label>
+                    <span id="rpg-stat-3">${currentStats.stat3}</span>
+                </div>
+                <div class="stat-row">
+                    <label id="rpg-stat-4-label">${labels.stat4}:</label>
+                    <span id="rpg-stat-4">${currentStats.stat4}</span>
                 </div>
                 <div class="stat-row">
                     <label>Location:</label>
@@ -78,14 +89,17 @@ function createCharacterSheet() {
     return html;
 }
 
+
 // Create the settings HTML template
 function createSettingsMenu() {
+    const labels = extension_settings[extensionName].statLabels || defaultSettings.statLabels;
     const html = `
         <div id="rpg-settings-menu" class="rpg-settings-menu" style="display: none;">
             <div class="rpg-settings-header">
                 <h3>RPG Custodian Settings</h3>
                 <div class="header-buttons">
                     <button id="rpg-settings-stats-btn" class="menu_button active">Stats</button>
+                    <button id="rpg-settings-labels-btn" class="menu_button">Labels</button>
                     <button id="rpg-settings-prompt-btn" class="menu_button">Prompt</button>
                     <button id="rpg-settings-close" class="menu_button">✕</button>
                 </div>
@@ -93,20 +107,20 @@ function createSettingsMenu() {
             <div id="rpg-settings-content" class="rpg-settings-content">
                 <div id="rpg-stats-editor" class="settings-section">
                     <div class="stat-input-row">
-                        <label>Level:</label>
-                        <input type="number" id="rpg-level-input" min="1" />
+                        <label id="settings-stat-1-label">${labels.stat1}:</label>
+                        <input type="number" id="rpg-stat-1-input" min="0" />
                     </div>
                     <div class="stat-input-row">
-                        <label>Experience:</label>
-                        <input type="number" id="rpg-xp-input" min="0" />
+                        <label id="settings-stat-2-label">${labels.stat2}:</label>
+                        <input type="number" id="rpg-stat-2-input" min="0" />
                     </div>
                     <div class="stat-input-row">
-                        <label>Health:</label>
-                        <input type="number" id="rpg-health-input" min="0" />
+                        <label id="settings-stat-3-label">${labels.stat3}:</label>
+                        <input type="number" id="rpg-stat-3-input" min="0" />
                     </div>
                     <div class="stat-input-row">
-                        <label>Max Health:</label>
-                        <input type="number" id="rpg-maxhealth-input" min="0" />
+                        <label id="settings-stat-4-label">${labels.stat4}:</label>
+                        <input type="number" id="rpg-stat-4-input" min="0" />
                     </div>
                     <div class="stat-input-row">
                         <label>Location:</label>
@@ -117,17 +131,44 @@ function createSettingsMenu() {
                         <textarea id="rpg-inventory-input" rows="4" placeholder="Enter items separated by commas"></textarea>
                     </div>
                 </div>
+                <div id="rpg-labels-editor" class="settings-section" style="display: none;">
+                    <div class="stat-input-row">
+                        <label>Stat 1 Label:</label>
+                        <input type="text" id="rpg-stat-1-label-input" value="${labels.stat1}" />
+                    </div>
+                    <div class="stat-input-row">
+                        <label>Stat 2 Label:</label>
+                        <input type="text" id="rpg-stat-2-label-input" value="${labels.stat2}" />
+                    </div>
+                    <div class="stat-input-row">
+                        <label>Stat 3 Label:</label>
+                        <input type="text" id="rpg-stat-3-label-input" value="${labels.stat3}" />
+                    </div>
+                    <div class="stat-input-row">
+                        <label>Stat 4 Label:</label>
+                        <input type="text" id="rpg-stat-4-label-input" value="${labels.stat4}" />
+                    </div>
+                </div>
                 <div id="rpg-prompt-editor" class="settings-section" style="display: none;">
                     <textarea id="rpg-prompt-input" rows="10"></textarea>
+                </div>
+            </div>
+            <div id="rpg-general-settings" class="settings-section">
+                <div class="stat-input-row">
+                    <label>Check Message Frequency:</label>
+                    <input 
+                        type="number" 
+                        id="rpg-frequency-input" 
+                        min="1" 
+                        value="${extension_settings[extensionName].checkFrequency}"
+                    />
+                    <span class="helper-text">Number of messages before checking for stat updates</span>
                 </div>
             </div>
         </div>
     `;
     
-    // Add the settings menu to the body
     $('body').append(html);
-    
-    
 }
 
 // Panel Management Functions
@@ -172,28 +213,33 @@ function savePanelPosition() {
 function initializeSettings() {
     let saveTimeout;
     
-    // Create and initialize the settings menu
     createSettingsMenu();
     
-    // Get elements
     const settingsMenu = $('#rpg-settings-menu');
     const statsEditor = $('#rpg-stats-editor');
+    const labelsEditor = $('#rpg-labels-editor');
     const promptEditor = $('#rpg-prompt-editor');
     const statsBtn = $('#rpg-settings-stats-btn');
+    const labelsBtn = $('#rpg-settings-labels-btn');
     const promptBtn = $('#rpg-settings-prompt-btn');
     
-    // Settings button click handler
     function onSettingsClick() {
         // Load current values
-        $('#rpg-level-input').val(currentStats.level);
-        $('#rpg-xp-input').val(currentStats.experience);
-        $('#rpg-health-input').val(currentStats.health);
-        $('#rpg-maxhealth-input').val(currentStats.maxHealth);
+        $('#rpg-stat-1-input').val(currentStats.stat1);
+        $('#rpg-stat-2-input').val(currentStats.stat2);
+        $('#rpg-stat-3-input').val(currentStats.stat3);
+        $('#rpg-stat-4-input').val(currentStats.stat4);
         $('#rpg-location-input').val(currentStats.location);
         $('#rpg-inventory-input').val(currentStats.inventory.join(', '));
         $('#rpg-prompt-input').val(extension_settings[extensionName].updatePrompt);
         
-        // Show the settings menu
+        // Load current labels
+        const labels = extension_settings[extensionName].statLabels;
+        $('#rpg-stat-1-label-input').val(labels.stat1);
+        $('#rpg-stat-2-label-input').val(labels.stat2);
+        $('#rpg-stat-3-label-input').val(labels.stat3);
+        $('#rpg-stat-4-label-input').val(labels.stat4);
+        
         settingsMenu.show();
     }
     
@@ -202,37 +248,57 @@ function initializeSettings() {
         settingsMenu.hide();
     });
     
-    // Tab switching
+      // Tab switching
     statsBtn.on('click', () => {
         statsBtn.addClass('active');
+        labelsBtn.removeClass('active');
         promptBtn.removeClass('active');
         statsEditor.show();
+        labelsEditor.hide();
+        promptEditor.hide();
+    });
+    
+    labelsBtn.on('click', () => {
+        labelsBtn.addClass('active');
+        statsBtn.removeClass('active');
+        promptBtn.removeClass('active');
+        labelsEditor.show();
+        statsEditor.hide();
         promptEditor.hide();
     });
     
     promptBtn.on('click', () => {
         promptBtn.addClass('active');
         statsBtn.removeClass('active');
+        labelsBtn.removeClass('active');
         promptEditor.show();
         statsEditor.hide();
+        labelsEditor.hide();
     });
     
-    // Save function
-    function saveSettings() {
+     function saveSettings() {
         const newStats = {
-            level: parseInt($('#rpg-level-input').val()) || 1,
-            experience: parseInt($('#rpg-xp-input').val()) || 0,
-            health: parseInt($('#rpg-health-input').val()) || 0,
-            maxHealth: parseInt($('#rpg-maxhealth-input').val()) || 100,
+            stat1: parseInt($('#rpg-stat-1-input').val()) || 0,
+            stat2: parseInt($('#rpg-stat-2-input').val()) || 0,
+            stat3: parseInt($('#rpg-stat-3-input').val()) || 0,
+            stat4: parseInt($('#rpg-stat-4-input').val()) || 0,
             location: $('#rpg-location-input').val(),
             inventory: $('#rpg-inventory-input').val().split(',').map(item => item.trim()).filter(item => item)
         };
         
-        const newPrompt = $('#rpg-prompt-input').val();
+        const newLabels = {
+            stat1: $('#rpg-stat-1-label-input').val() || 'Stat 1',
+            stat2: $('#rpg-stat-2-label-input').val() || 'Stat 2',
+            stat3: $('#rpg-stat-3-label-input').val() || 'Stat 3',
+            stat4: $('#rpg-stat-4-label-input').val() || 'Stat 4'
+        };
         
-        // Update current stats
+        const newPrompt = $('#rpg-prompt-input').val();
+
+        // Update current stats and labels
         currentStats = newStats;
         extension_settings[extensionName].characterStats = newStats;
+        extension_settings[extensionName].statLabels = newLabels;
         extension_settings[extensionName].updatePrompt = newPrompt;
         
         // Save settings
@@ -240,16 +306,22 @@ function initializeSettings() {
         
         // Update UI
         updateUI();
+        
+        // Update settings menu labels
+        for (let i = 1; i <= 4; i++) {
+            $(`#settings-stat-${i}-label`).text(`${newLabels[`stat${i}`]}:`);
+        }
     }
     
-    // Input change handler with debounce
+    
+      // Input change handler with debounce
     $('.rpg-settings-content input, .rpg-settings-content textarea').on('input', function() {
         clearTimeout(saveTimeout);
         saveTimeout = setTimeout(saveSettings, 1000);
     });
     
-    // Replace the existing onSettingsClick function
     $('#rpg-settings-btn').off('click').on('click', onSettingsClick);
+    $('#rpg-settings-close').on('click', () => settingsMenu.hide());
 }
 
 function loadSettings() {
@@ -261,6 +333,11 @@ function loadSettings() {
         saveSettingsDebounced();
     } else {
         console.log(`[${extensionName}] Existing settings found:`, extension_settings[extensionName]);
+        // Ensure statLabels exists, initialize with defaults if it doesn't
+        if (!extension_settings[extensionName].statLabels) {
+            extension_settings[extensionName].statLabels = defaultSettings.statLabels;
+            saveSettingsDebounced();
+        }
     }
     
     currentStats = extension_settings[extensionName].characterStats;
@@ -291,9 +368,14 @@ function saveState() {
 function updateUI() {
     console.log(`[${extensionName}] Updating UI with current stats:`, currentStats);
     
-    $('#rpg-level').text(currentStats.level);
-    $('#rpg-xp').text(currentStats.experience);
-    $('#rpg-health').text(`${currentStats.health}/${currentStats.maxHealth}`);
+    const labels = extension_settings[extensionName].statLabels || defaultSettings.statLabels;
+    
+    // Update stat values and labels
+    for (let i = 1; i <= 4; i++) {
+        $(`#rpg-stat-${i}`).text(currentStats[`stat${i}`]);
+        $(`#rpg-stat-${i}-label`).text(`${labels[`stat${i}`]}:`);
+    }
+    
     $('#rpg-location').text(currentStats.location);
     
     const inventoryHtml = currentStats.inventory
@@ -324,7 +406,7 @@ jQuery(async () => {
     // Initialize settings menu and functionality
     initializeSettings();
     
-    // Register event handlers (removed redundant settings button click handler as it's now handled in initializeSettings)
+    // Register event handlers
     console.log(`[${extensionName}] Setting up message received listener...`);
     eventSource.on(event_types.MESSAGE_RECEIVED, () => {
         console.log(`[${extensionName}] Message received, check counter:`, checkCounter);
