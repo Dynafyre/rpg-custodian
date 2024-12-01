@@ -1,7 +1,7 @@
 {
     "display_name": "RPG Custodian",
     "loading_order": 100,
-    "requires": ["context,extensions,slash-commands"],
+    "requires": [""],
     "js": "index.js",
     "css": "style.css",
     "author": "Dyna",
