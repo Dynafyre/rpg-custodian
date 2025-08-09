@@ -1,0 +1,21 @@
+# Development files
+*.log
+*.tmp
+.DS_Store
+Thumbs.db
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Node modules (if any)
+node_modules/
+
+# OS generated files
+*.tmp
+
+# Extension development specific
+# Add any extension-specific ignore patterns here

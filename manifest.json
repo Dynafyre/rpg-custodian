@@ -1,0 +1,10 @@
+{
+    "display_name": "RPG Custodian",
+    "loading_order": 100,
+    "requires": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "Dyna",
+    "version": "0.0.1",
+	"description": "A text based adventure mode with a living world!"
+}
