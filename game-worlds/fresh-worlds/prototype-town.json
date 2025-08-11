@@ -1,0 +1,55 @@
+{
+  "worldId": "prototype-town",
+  "name": "Mountain Town Prototype",
+  "description": "A small mountain town with various establishments and surrounding wilderness",
+  "version": "1.0",
+  "startingLocation": "town-square",
+  "locations": {
+    "town-square": {
+      "name": "Town Square",
+      "description": "The heart of the small mountain town, with a fountain at the center and cobblestone paths leading in all directions.",
+      "connections": ["inn", "shop", "brothel", "outskirts"],
+      "background": "town_square.jpg"
+    },
+    "inn": {
+      "name": "The Cozy Hearth Inn",
+      "description": "A warm, inviting tavern with the smell of hearty stew and the sound of friendly conversation.",
+      "connections": ["town-square"],
+      "background": "tavern_interior.jpg"
+    },
+    "shop": {
+      "name": "General Store",
+      "description": "Shelves lined with supplies, trinkets, and necessities for travelers and locals alike.",
+      "connections": ["town-square"],
+      "background": "shop_interior.jpg"
+    },
+    "brothel": {
+      "name": "The Velvet Rose",
+      "description": "An elegant establishment with red velvet curtains and the soft glow of candlelight.",
+      "connections": ["town-square"],
+      "background": "brothel_interior.jpg"
+    },
+    "outskirts": {
+      "name": "Town Outskirts", 
+      "description": "The edge of civilization, where well-trodden paths give way to wilderness.",
+      "connections": ["town-square", "forest"],
+      "background": "town_outskirts.jpg"
+    },
+    "forest": {
+      "name": "Whispering Woods",
+      "description": "Dense trees create a canopy overhead, with dappled sunlight filtering through the leaves.",
+      "connections": ["outskirts", "forbidden-grotto"],
+      "background": "forest_path.jpg"
+    },
+    "forbidden-grotto": {
+      "name": "Forbidden Grotto",
+      "description": "A mysterious cave entrance hidden among ancient trees, emanating an otherworldly energy.",
+      "connections": ["forest"],
+      "background": "mysterious_cave.jpg"
+    }
+  },
+  "gameSettings": {
+    "enableBackgroundChange": true,
+    "enableFirstVisitMessages": true
+  }
+}

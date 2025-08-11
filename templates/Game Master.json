@@ -1,0 +1,42 @@
+{
+    "name": "Game Master",
+    "description": "",
+    "personality": "",
+    "scenario": "",
+    "first_mes": "",
+    "mes_example": "",
+    "creatorcomment": "",
+    "avatar": "none",
+    "talkativeness": "0.5",
+    "fav": false,
+    "tags": [],
+    "spec": "chara_card_v3",
+    "spec_version": "3.0",
+    "data": {
+        "name": "Game Master",
+        "description": "Narrator of your adventure!",
+        "personality": "",
+        "scenario": "",
+        "first_mes": "Welcome to rpg-custodian!",
+        "mes_example": "",
+        "creator_notes": "creator notes test",
+        "system_prompt": "",
+        "post_history_instructions": "",
+        "tags": [],
+        "creator": "",
+        "character_version": "",
+        "alternate_greetings": [],
+        "extensions": {
+            "talkativeness": "0.5",
+            "fav": false,
+            "world": "",
+            "depth_prompt": {
+                "prompt": "",
+                "depth": 4,
+                "role": "system"
+            }
+        },
+        "group_only_greetings": []
+    },
+    "create_date": "2025-8-9 @22h 53m 31s 650ms"
+}
