@@ -2240,23 +2240,32 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         const idLine = [npc?.role, npc?.race, npc?.age].filter(Boolean).join(', ');
         sendGhostMessage(`🔍 **${npcName}**${idLine ? ` — ${idLine}` : ''}\n${parts.join('\n')}`);
 
-        // 2) Status-flavored appearance (LLM), grounded in her card description
+        // 2) Status-flavored appearance (LLM), grounded in her card + the live
+        // scene. Prefill suppresses the thinking step on reasoning models (same
+        // trick as the analyzer) so the budget is spent on the description.
         const flavor = [];
         if (rel.npcUnconscious) flavor.push('unconscious, limp and unresponsive');
+        else if ((rel.arousal || 1) >= 8) flavor.push('openly aroused — flushed, breathless, past hiding it');
         else if ((rel.arousal || 1) >= 6) flavor.push('visibly aroused, flushed and wanting');
         else if ((rel.arousal || 1) >= 4) flavor.push('a little flushed');
+        const stamNow = rel.npcStamina ?? npcMaxStamina(npcName);
+        if (!rel.npcUnconscious && stamNow < npcMaxStamina(npcName)) {
+            flavor.push(stamNow <= npcMaxStamina(npcName) / 3 ? 'utterly spent, barely upright' : 'worn and tired');
+        }
         if ((rel.pregnancies || 0) > 0) flavor.push(`${pregnancyStage(rel.pregnancy_progress)} pregnant, carrying ${rel.pregnancies}`);
-        for (const e of npcActiveEffects(npcName)) flavor.push(`under the effect of ${e.name}`);
+        for (const e of npcActiveEffects(npcName)) flavor.push(`under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
         const t = affectionTier(rel.affection);
-        const sys = `You are the GAME MASTER. In 2-3 vivid sentences, describe the physical APPEARANCE of ${npcName} as the player looks her over right now — how she looks, dresses, carries herself. Ground it in who she is and in WHERE this is happening; let her current state color the description. Do NOT relocate her — she is exactly at the stated place. Do NOT write dialogue or actions for her, and do NOT invent events — pure description only.`;
-        const prompt = `Setting (describe her HERE, not anywhere else): ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}\n` +
-            `Who she is: ${npc?.description || `${npc?.role || 'a townswoman'}`}\n` +
-            `Her feeling toward the player: ${t.label} (this colors how she looks at him).\n` +
-            (flavor.length ? `Her current physical state: ${flavor.join('; ')}.\n` : '') +
-            `Describe ${npcName}'s appearance now, here at ${locName(currentGameState.currentLocation)} (2-3 sentences, description only).`;
+        const sys = `You are the GAME MASTER. The player pauses to LOOK at ${npcName}. Write 4-6 sentences of rich physical description — her build, face, hair, attire, posture, expression, and how she carries herself in this exact moment. Make her listed current state and her feeling toward the player VISIBLE in the picture (an exhausted woman looks it; a wary one watches him back). Anchor her in the CURRENT scene from the recent story — if it shows her mid-conversation, travelling, resting, or fighting, describe her that way; NEVER return her to her usual haunt or routine, and NEVER relocate her from the stated place. Description only: no dialogue, no actions on her behalf, no new events, no thinking out loud — begin the description immediately.`;
+        const prompt = `Setting — she is HERE and nowhere else: ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}\n` +
+            (isInParty(npcName) ? `${npcName} is travelling WITH the player — she is at his side, not at her usual spot.\n` : '') +
+            `Who she is (appearance reference — IGNORE any location or routine this implies): ${npc?.description || `${npc?.role || 'a townswoman'}`}\n` +
+            `Her feeling toward the player: ${t.label} (this colors how she meets his gaze).\n` +
+            (flavor.length ? `Her current physical state (make this visible): ${flavor.join('; ')}.\n` : '') +
+            `Recent story (the live moment to describe her in):\n${recentSceneForAnalyzer()}\n\n` +
+            `Describe ${npcName}'s appearance now, here at ${locName(currentGameState.currentLocation)}.`;
         try {
-            const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 320 });
-            const desc = stripReasoning(raw);
+            const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 700, prefill: '👁️ ' });
+            const desc = stripReasoning(raw).replace(/^👁️\s*/, '');
             if (desc) sendGameMasterMessage(`👁️ ${desc}`);
         } catch (e) { console.error('RPG Custodian: examine failed', e); }
     }
@@ -3807,7 +3816,7 @@ Only roll if uncertain for THIS character: roughly (DC − their stat) between 5
   {"type":"adjust_stat","target":"player"|"HerName","stat":"ruggedness|charm|craftiness|virility","amount":N}  a PERMANENT change to a core stat (a hard-won training gain, a level of mastery, a permanent drain from dark magic). Use sparingly — for temporary changes use add_status.
   {"type":"equip_item","name":"..."}  the player equips/dons/wears/wields a piece of gear he holds (a sword, armor, an amulet). {"type":"unequip_item","name":"..."} he removes/sheathes/takes it off. (Consumables are use_item, not equip.)
   {"type":"birth","npc":"HerName","count":N,"kind":"live"|"egg"|"crystal"}  a BIRTH is happening in the scene — a mother AT or OVER term (Birth Overdue) is delivering: labor/pushing/crowning, laying an egg, or producing a crystal. Emit ONE per message for however many emerge in THAT message (count = born right now; e.g. triplets delivered one at a time across three messages → three births of count 1, or all at once → one birth of count 3). Never emit more than she is carrying. kind: "egg" for egg-laying mothers (dragons, harpies, other monster-girls), "crystal" if the sire's magic makes inert soul-crystals (a soul-mage / necromancer father), else "live". You may OMIT kind — the engine infers it from her race and the father. Do NOT invent Power Tokens, offspring, or names — the engine awards the tokens and names the young. Only emit when a birth actually occurs in the narrative.
-  {"type":"examine","npc":"HerName"}  the player looks over / examines / studies / sizes up / inspects / ADMIRES a PRESENT NPC — including looking her up and down, drinking in the sight of her, taking in her sleeping form, or appraising her appearance. The engine shows her stats and a status-flavored description. Emit whenever the player deliberately takes in or appraises a specific NPC's body/appearance/condition, EVEN when it is one beat inside a larger described action (e.g. "…stepping back, looking her up and down, admiring her sleeping form, before leaving" → emit examine for her). Do NOT skip it just because other things also happen in the same message. (Skip only for an incidental glance with no appraisal.) Use npc:"self" when the player checks himself over / takes stock of his own condition / looks at his own stats, gear, or gold — the engine shows HIS readout.
+  {"type":"examine","npc":"HerName"}  the player looks over / examines / studies / sizes up / inspects / ADMIRES a PRESENT NPC — including looking her up and down, drinking in the sight of her, taking in her sleeping form, or appraising her appearance. The engine shows her stats and a status-flavored description. Emit whenever the player deliberately takes in or appraises a specific NPC's body/appearance/condition, EVEN when it is one beat inside a larger described action (e.g. "…stepping back, looking her up and down, admiring her sleeping form, before leaving" → emit examine for her). Do NOT skip it just because other things also happen in the same message. A deliberate visual appraisal ALWAYS emits examine no matter what else the message contains — action, travel, or DIALOGUE. Talking with her at the same time does not make the look incidental: "I ask about her wares while letting my eyes wander over her" → emit examine for her AND still let the conversation proceed (target_npc stays set; she replies as normal). (Skip only for an incidental glance with no appraisal.) Use npc:"self" when the player checks himself over / takes stock of his own condition / looks at his own stats, gear, or gold — the engine shows HIS readout.
 Empty array when nothing changes.
 
 STAT MODS & SCALE (for add_status/add_objective mods on ANY character, player OR npc): a mod applies the whole time the effect is active. The core stats — ruggedness, charm, craftiness, virility — run ~1–10, so mod them by a SMALL integer ±1 to ±3 (up to ±5 for potent magic). Two special NPC stats may also be modded: FERTILITY is a PERCENTAGE (0–100%), so a fertility mod must be big to matter, +10 to +30 (a strong fertility potion ≈ +20). STAMINA is the small combat/sex HP pool (~1–10), so a stamina mod is +1 to +3 (up to +5); a POSITIVE stamina mod also tops up current Stamina and revives the unconscious. Simple consumables are just a short-duration add_status: a strength draught → kind "buff", mods [{stat:"ruggedness",amount:2}], duration 4; a shared fertility potion → player kind "buff" mods [{stat:"virility",amount:2}] AND on her mods [{stat:"fertility",amount:20}]; a poison → kind "debuff"/"poison", negative mod.
@@ -3879,6 +3888,7 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
             .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
             .replace(/<think>[\s\S]*$/gi, '')      // unterminated (truncated) think block
+            .replace(/<thinking>[\s\S]*$/gi, '')   // unterminated <thinking> variant
             .trim();
     }
 
@@ -4383,6 +4393,7 @@ Narrate the result briefly, grounded in this location.`;
         statusText: () => { projectPlayerStatus(); const ep = getCtx().extensionPrompts || context.extensionPrompts || {}; return ep[STATUS_PROMPT_KEY]?.value || '(none)'; },
         hurt: (target, amt) => (target && target !== 'player') ? spendNpcStamina(target, amt || 1) : spendStamina(amt || 1),
         examineSelf: () => examineSelf(),
+        examineNpc: (n) => examineNpc(n),
         maxStamina: () => maxStamina(),
         stamina: () => getStamina(),
         npcStamina: (n) => ({ cur: getRelationship(n).npcStamina, max: npcMaxStamina(n) }),
