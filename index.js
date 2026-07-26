@@ -1301,7 +1301,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             return [new SlashCommandEnumValue('', 'No connections available', enumTypes.enum, '❌')];
         }
         
-        return currentLocationData.connections.map(connectionKey => {
+        return currentLocationData.connections.filter(c => (Number(currentGameState.worldData.locations[c]?.secret) || 0) < 2).map(connectionKey => {
             const connectionData = currentGameState.worldData.locations[connectionKey];
             const description = connectionData ? connectionData.name : connectionKey;
             return new SlashCommandEnumValue(connectionKey, description, enumTypes.enum, '🚪');
@@ -1556,8 +1556,9 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 const currentLocationData = currentGameState.worldData.locations[currentGameState.currentLocation];
                 
                 let exitsList = '';
-                if (currentLocationData.connections && currentLocationData.connections.length > 0) {
-                    const exitNames = currentLocationData.connections.map(connectionKey => {
+                const visExits = visibleConnections(currentGameState.currentLocation);
+                if (visExits.length > 0) {
+                    const exitNames = visExits.map(connectionKey => {
                         const connectionData = currentGameState.worldData.locations[connectionKey];
                         return connectionData ? connectionData.name : connectionKey;
                     });
@@ -2721,10 +2722,14 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Common town knowledge: every resident knows who the town's public
         // figures are. Without this, models CONFABULATE names for absent cast
         // (Bryony once introduced the madam of the Velvet Rose as "Fern").
+        // Places likewise — but ONLY public ones (secret level 0): secret
+        // locations exist for NPCs only once the story reveals them.
         const known = (currentGameState.npcRoster || []).filter(n => !n.secret);
         if (known.length > 1) {
-            lines.push('', '[Common local knowledge — everyone here knows of these people; NEVER invent or swap their names/roles:]',
+            lines.push('', '[Common local knowledge — everyone here knows of these people and places; NEVER invent or swap names/roles:]',
                 known.map(n => `${n.name}, the ${n.role || 'resident'}${n.homeLocation ? ` (${locName(n.homeLocation)})` : ''}`).join(' · '));
+            const pubPlaces = Object.values(currentGameState.worldData?.locations || {}).filter(l => !(Number(l.secret) >= 1)).map(l => l.name);
+            if (pubPlaces.length) lines.push(`Places: ${pubPlaces.join(' · ')}`);
         }
 
         // position 1 = IN_CHAT, depth 4, system role — always near the live scene.
@@ -3720,8 +3725,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
 
         // Core verbs
         bar.append(mkBtn('🚶 Move', () => {
-            const loc = currentGameState.worldData.locations[currentGameState.currentLocation];
-            const items = (loc.connections || []).map(c => ({
+            const items = visibleConnections(currentGameState.currentLocation).map(c => ({
                 icon: '🚪', label: currentGameState.worldData.locations[c]?.name || c,
                 action: () => moveCommand({}, c),
             }));
@@ -3955,7 +3959,7 @@ PLAYER ACTION: "${playerText}"
 PLAYER STATS: ${statsContextForAnalyzer()}
 CURRENT TIME: ${TIME_PERIODS[currentGameState.currentTime].name} (Day ${currentGameState.dayCount}) [order: Morning→Day→Evening→Night]
 LOCATION: ${currentGameState.worldData.locations[currentGameState.currentLocation]?.name}
-KNOWN PLACES (any is a valid move destination — the engine routes there automatically): ${Object.entries(currentGameState.worldData.locations).map(([id, l]) => `"${l.name || id}"`).join(', ')} (adjacent right now: ${exitsContextForAnalyzer()})
+KNOWN PLACES (any is a valid move destination — the engine routes there automatically): ${knownPlacesForAnalyzer()} (adjacent right now: ${exitsContextForAnalyzer()})
 PRESENT NPCS: ${presentNpcContextForAnalyzer()}${(currentGameState.party || []).length ? `\nIN YOUR PARTY (travelling with you): ${currentGameState.party.join(', ')}` : ''}
 ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerObjectives().map(e => `"${e.name}" — ${e.endCondition || 'ongoing'}`).join('; ') || 'none'}`;
 
@@ -4135,6 +4139,26 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
      * location and travel there. Enforces adjacency for location coherency —
      * you can't leap to a distant place in one step.
      */
+    // === Location secrecy (world-management §3.4) ===
+    // 0 = public (NPCs know it, on menus) · 1 = unknown to NPCs (still on the
+    // player's menus) · 2 = hidden (off menus AND out of NPC context). The
+    // CUSTODIAN always knows every location — it is a silent arbiter, so
+    // secrets in its context cannot leak; secrecy applies only at the leaky
+    // surfaces (NPC/GM projections and player-facing menus).
+    function locSecret(id) { return Number(currentGameState.worldData?.locations?.[id]?.secret) || 0; }
+    // Connections shown on player-facing menus (Move popup, /move enum, look exits).
+    function visibleConnections(fromId) {
+        const loc = currentGameState.worldData?.locations?.[fromId];
+        return (loc?.connections || []).filter(c => locSecret(c) < 2);
+    }
+    function knownPlacesForAnalyzer() {
+        return Object.entries(currentGameState.worldData?.locations || {}).map(([id, l]) => {
+            const s = Number(l.secret) || 0;
+            const tag = s >= 2 ? " (secret: unknown to NPCs, not on the player's menus)" : s === 1 ? " (NPCs don't know of it)" : '';
+            return `"${l.name || id}"${tag}`;
+        }).join(', ');
+    }
+
     // When travel fails, the STORY must know — the 🚫 ghost is filtered from
     // story windows, and without this note the GM (and then the NPC) narrated
     // arriving at places the engine never moved them to.

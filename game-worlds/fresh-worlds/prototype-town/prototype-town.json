@@ -1,0 +1,92 @@
+{
+  "worldId": "prototype-town",
+  "name": "Mountain Town Prototype",
+  "description": "A small mountain town with various establishments and surrounding wilderness",
+  "version": "1.1",
+  "startingLocation": "outskirts",
+  "locations": {
+    "town-square": {
+      "name": "Town Square",
+      "description": "The heart of the small mountain town, with a fountain at the center and cobblestone paths leading in all directions.",
+      "connections": [
+        "inn",
+        "shop",
+        "brothel",
+        "outskirts"
+      ],
+      "background": "cityscape medieval market.jpg"
+    },
+    "inn": {
+      "name": "The Cozy Hearth Inn",
+      "description": "A warm, inviting tavern with the smell of hearty stew and the sound of friendly conversation.",
+      "connections": [
+        "town-square"
+      ],
+      "background": "tavern1.jpg"
+    },
+    "shop": {
+      "name": "General Store",
+      "description": "Shelves lined with supplies, trinkets, and necessities for travelers and locals alike.",
+      "connections": [
+        "town-square"
+      ],
+      "background": "TAI-warmtown.jpg"
+    },
+    "brothel": {
+      "name": "The Velvet Rose",
+      "description": "An elegant establishment with red velvet curtains and the soft glow of candlelight.",
+      "connections": [
+        "town-square"
+      ],
+      "background": "redlight.jpg"
+    },
+    "outskirts": {
+      "name": "Town Outskirts",
+      "description": "The edge of civilization, where well-trodden paths give way to wilderness.",
+      "connections": [
+        "town-square",
+        "forest"
+      ],
+      "background": "TAI-outdoor.jpg"
+    },
+    "forest": {
+      "name": "Whispering Woods",
+      "description": "Dense trees create a canopy overhead, with dappled sunlight filtering through the leaves. Narrow deer-trails wind deeper than most dare follow, and old woodsmen's tales speak of silver water glimpsed once and never found again.",
+      "connections": [
+        "outskirts",
+        "forbidden-grotto",
+        "moonlit-spring"
+      ],
+      "background": "TAI-getrest.jpg"
+    },
+    "forbidden-grotto": {
+      "name": "Forbidden Grotto",
+      "description": "A mysterious cave entrance hidden among ancient trees, emanating an otherworldly energy.",
+      "connections": [
+        "forest"
+      ],
+      "background": "post-apoc2.jpg"
+    },
+    "moonlit-spring": {
+      "name": "Moonlit Spring",
+      "description": "A hidden glade deep past the deer-trails, where a spring wells up cold and impossibly clear over pale stones. The water holds a faint silver shimmer even at midday, and the air tastes of mint and old magic. Few living souls know the way.",
+      "connections": [
+        "forest"
+      ],
+      "background": "TAI-getrest.jpg",
+      "secret": 2
+    }
+  },
+  "gameSettings": {
+    "enableBackgroundChange": true,
+    "enableFirstVisitMessages": true
+  },
+  "cast": [
+    "Marta",
+    "Wren",
+    "Seline",
+    "Bryony",
+    "Fern",
+    "Sylvara"
+  ]
+}
