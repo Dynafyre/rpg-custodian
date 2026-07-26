@@ -2573,15 +2573,18 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             const t = affectionTier(rel.affection || 0);
             const a = arousalTier(rel.arousal || 1);
 
-            const sys = `You are the RPG relationship JUDGE, and you are VERY STRICT. An NPC replied to the player. She was INSTRUCTED to play a stated disposition band (her current warmth/trust level, including its limits) and a stated physical band. Decide whether her reply stepped OUTSIDE those bands.
-The test is NOT "was she friendly or affectionate?" — warmth WITHIN her band scores 0. The test: did she show MORE trust, openness, tenderness, or initiative than her band allows (+1), or notably LESS — colder, withdrawn, trust visibly damaged (−1)? Reserve +2/−2 for extraordinary moments FAR outside the band (a heartfelt confession, a betrayal taking hold, a line irrevocably crossed). DEFAULT TO 0 — most replies, even pleasant, flirty, or grumpy ones, are inside their band.
-Judge AROUSAL separately, ONLY from physical evidence in her reply (proximity sought, breath, flush, trembling, touch, fluster): −2..+2, default 0, move only on clear physical signals beyond or below her stated physical band.
+            const sys = `You are the RPG relationship JUDGE. An NPC replied to the player. She was INSTRUCTED to play a stated disposition band (what she gives freely, and what she would NOT yet do) and a stated physical band. Decide whether her reply stepped OUTSIDE those bands. Acting outside her band is exactly HOW affection is built in this game — your job is to RECOGNIZE it consistently, every time it happens. Judge in two parts:
+1. TONE: pleasant, teasing, flirty, sharp, or grumpy TONE consistent with her band scores ZERO. Never reward mere friendliness or banter.
+2. CONCRETE ACTS: if in this reply she DOES something her band says she would NOT yet do — seeks out or invites his company, extends an invitation, confides something personal, initiates or prolongs touch, deliberately closes distance, does him an unasked kindness, grants anything the band withholds — that IS a band-break: affection +1. When in doubt between 0 and +1 over a CONCRETE act, score the act — missing a real act is the worse error. Give +2 only for a dramatic leap FAR beyond the band (a confession, a bedding invitation from a guarded woman, entrusting him with her life). Conversely, if she REFUSES or withdraws what her band normally gives freely — goes cold, revokes trust, pulls away — score −1 (−2 for an open rupture). If neither list is touched, 0.
+AROUSAL: judge separately from physical EVIDENCE in her reply measured against her stated physical band — lingering or roaming gazes, deliberate touches, closing distance, display, flushed or breathless signals, and sexual innuendo or provocative remarks SHE initiates (crude teasing is her body talking) → +1 (+2 if blatant); clear physical cooling below it → −1. Otherwise 0.
 Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "why": "<ten words max>"}`;
             const prompt = `NPC: ${npcName}
 Her disposition band she was told to play (${t.label}, affection ${rel.affection || 0}/10): she ${t.band}
 Her physical band (${a.label}, arousal ${rel.arousal || 1}/10): ${a.band}
+Scene context (for reading her reply — but score ONLY the reply itself):
+${recentSceneForAnalyzer().split('\n').slice(-6).join('\n')}
 Player's message: "${String(playerMsg?.mes || '').replace(/\s+/g, ' ').slice(0, 600)}"
-HER REPLY:
+HER REPLY (score this):
 ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
 
             const p = await generateJson({ prompt, systemPrompt: sys, budget: 220 });
@@ -4201,19 +4204,56 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
      * location and travel there. Enforces adjacency for location coherency —
      * you can't leap to a distant place in one step.
      */
+    // When travel fails, the STORY must know — the 🚫 ghost is filtered from
+    // story windows, and without this note the GM (and then the NPC) narrated
+    // arriving at places the engine never moved them to.
+    let travelIssueNote = null;
+
+    // BFS over the location graph: "head to the shop" from the outskirts
+    // routes through town square instead of failing on non-adjacency.
+    // Returns the hop list (excluding start), or null if unreachable.
+    function findPath(fromId, toId) {
+        const world = currentGameState.worldData;
+        const prev = { [fromId]: null };
+        const q = [fromId];
+        while (q.length) {
+            const cur = q.shift();
+            if (cur === toId) {
+                const path = [];
+                for (let n = toId; n !== fromId; n = prev[n]) path.unshift(n);
+                return path;
+            }
+            for (const c of (world.locations[cur]?.connections || [])) {
+                if (!(c in prev)) { prev[c] = cur; q.push(c); }
+            }
+        }
+        return null;
+    }
+
     async function doNlMove(dest) {
         const world = currentGameState.worldData;
-        const loc = world.locations[currentGameState.currentLocation];
-        const conns = loc?.connections || [];
         const want = String(dest || '').toLowerCase().trim();
-        const target = conns.find(c => {
-            const nm = (world.locations[c]?.name || c).toLowerCase();
-            return c.toLowerCase() === want || nm === want || nm.includes(want) || want.includes(nm);
+        if (!want) return false;
+        const targetId = Object.keys(world.locations).find(id => {
+            const nm = (world.locations[id]?.name || id).toLowerCase();
+            return id.toLowerCase() === want || nm === want || nm.includes(want) || want.includes(nm);
         });
-        if (target) { await moveCommand({}, target); return true; }
-        const exits = conns.map(c => world.locations[c]?.name || c).join(', ');
-        sendGhostMessage(`🚫 You can't reach "${dest}" directly from here. Exits: ${exits}.`);
-        return false;
+        if (!targetId) {
+            travelIssueNote = `IMPORTANT: the player tried to travel to "${dest}", but no such place is known here. The party ENDS UP STILL AT ${locName(currentGameState.currentLocation)} — you may play it for a light comic beat (setting off confidently, getting turned around, sheepishly ending where they started), but do NOT narrate them arriving anywhere new.`;
+            sendGhostMessage(`🚫 No place called "${dest}" around here.`);
+            return false;
+        }
+        if (targetId === currentGameState.currentLocation) return false;   // already here
+        const path = findPath(currentGameState.currentLocation, targetId);
+        if (!path) {
+            travelIssueNote = `IMPORTANT: the player tried to travel to ${locName(targetId)}, but NO ROUTE exists from ${locName(currentGameState.currentLocation)}. The party ENDS UP STILL AT ${locName(currentGameState.currentLocation)} — you may play the failed attempt for a light comic beat (a wrong turn, an impassable thicket, ending back where they started), but do NOT narrate them arriving at ${locName(targetId)}.`;
+            sendGhostMessage(`🚫 There's no way through to ${world.locations[targetId]?.name || dest} from here.`);
+            return false;
+        }
+        // Walk every leg — each emits its own 🚶 notice, so the story spine
+        // records the actual route taken (and presence syncs at each stop).
+        for (const hop of path) await moveCommand({}, hop);
+        return true;
     }
 
     // Fuzzy inventory match — tolerant of underscores/spacing/partial names
@@ -4292,7 +4332,7 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
 RECENT STORY (continuity — the scene as it stands; narrate ONLY the new action's result, consistent with where this finds everyone):
 ${recentStoryWindow(8000)}
 Player attempted: "${playerText}" (${intent?.narration_hint || ''})
-Mechanical outcome: ${outcome}${eff ? `\nState change: ${eff}` : ''}${koNote}${freshNote}
+Mechanical outcome: ${outcome}${eff ? `\nState change: ${eff}` : ''}${koNote}${freshNote}${travelIssueNote ? `\n${travelIssueNote}` : ''}
 Narrate the result briefly, grounded in this location and the story's current beat.`;
         try {
             return await generateProse({ prompt, systemPrompt: sys, budget: 400, rescuePrefill: 'The ' });
@@ -4355,6 +4395,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         currentGameState.rpgSuppressNextGen = false;   // /trigger below must not be suppressed
         currentGameState.rpgOrchestrating = true;
         pendingCharmNote = null;                       // never leak a stale charm read into a new turn
+        travelIssueNote = null;                        // ditto for last turn's failed-travel note
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
         try {
             const intent = await analyzeIntent(playerText);
@@ -4611,6 +4652,8 @@ Narrate the result briefly, grounded in this location and the story's current be
         setArousal: (n, v) => { const r = getRelationship(n); r.arousal = Math.max(1, Math.min(10, v)); savePlayer(); return r.arousal; },
         judgeReaction: (n, preLen) => judgeNpcReaction(n, preLen ?? Math.max(0, (getCtx().chat || []).length - 1)),
         spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
+        nlMove: (d) => doNlMove(d),
+        travelIssue: () => travelIssueNote,
         charmNote: (tier) => buildCharmInterpretationNote(tier ? { tier, success: tier === 'success' || tier === 'critical' } : null),
         maxStamina: () => maxStamina(),
         stamina: () => getStamina(),
