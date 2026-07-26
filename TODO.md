@@ -10,33 +10,23 @@ Scale (§6a)** and **NPC levels (§3)** are load-bearing inputs to several other
 
 ## 1. Romance & relationship feel pass 💕
 
-**Goal:** Affection, Arousal, and Charm DCs should *feel* right — progression
-earned, not lurching; arousal meaningful, not decorative; charm checks scaled
-sensibly to the ask and the relationship.
+**➡️ DESIGNED — full plan in `docs/game-design/romance-redesign.md`** (audit
+done 2026-07-25; affection was only moving on proposition charm checks ±1,
+causing the failed-cuddle-check dissonance).
 
-**Exists today:** 0–10 affection ladder (Wary→Adoring) projected behaviorally;
-arousal tracked on the relationship record; propositions = Charm checks with
-affection lowering DC; charm-on-proposition wired.
-
-**Needs exploration & refinement:**
-- [ ] **Audit Custodian adjustment triggers** — when does it emit
-      `adjust_affection` / `adjust_arousal` today, and when *should* it? Map the
-      actual trigger guidance in the analyzer prompt, then run NL probes
-      (kindness, gifts, insults, neglect, grand gestures, slow-burn scenes) and
-      log what fires. Refine the *category* description, not example lists.
-- [ ] **Affection pacing curve** — is ±1 per moment right? Should big swings be
-      rare/gated (e.g. betrayal can drop 3, but gaining >1/scene is exceptional)?
-      Consider per-scene or per-day caps to prevent speedrunning Adoring.
-- [ ] **Arousal mechanics** — define what arousal *does*: decay over time?
-      feeds into proposition DC alongside affection? threshold effects
-      (an aroused NPC may initiate)? Right now it risks being a tracked number
-      with no teeth.
-- [ ] **Charm DC formula review** — boldness-of-ask ladder × affection discount:
-      tabulate the actual DCs produced across (ask × affection) and sanity-check
-      the resulting odds against the 2d6 curve (core-mechanics §4). Wary+bold
-      should be near-impossible, Adoring+modest near-automatic.
+**The four pillars — ✅ ALL IMPLEMENTED 2026-07-25**
+(test/romance-redesign-test.js 10/10; knobs: +1 aff/period pacing cap, ±2
+extremes, arousal ±2/turn −1/period decay, post-coital stamina valve):
+- [x] **A. Verbose tier projection with behavioral ceilings**
+- [x] **B. Charm decoupled from affection** (+interpretation note,
+      her-initiative-never-rolls, lane-narrowed verbs)
+- [x] **C. Reaction judge** (band-break detection, pacing cap, tier-crossing
+      ghost lines)
+- [x] **D. Arousal with teeth** (ladder, decay, DC discount, stamina valve)
+- [ ] **Live playtest feedback pass** — Dyna plays the courtship arc; tune
+      judge strictness / band wording from real transcripts.
 - [ ] **Interaction with NPC difficulty (§3)** — a dragon queen at Wary should
-      not share DCs with a village girl at Wary.
+      not share DCs with a village girl at Wary (unchanged, still pending §3).
 
 ---
 

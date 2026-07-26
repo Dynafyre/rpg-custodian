@@ -2229,7 +2229,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         // 1) Mechanical readout
         const parts = [];
         parts.push(`💗 Disposition: **${affectionTier(rel.affection).label}** (affection ${rel.affection}/10)`);
-        parts.push(`🔥 Arousal: ${rel.arousal || 1}/10`);
+        parts.push(`🔥 Arousal: **${arousalTier(rel.arousal).label}** (${rel.arousal || 1}/10)`);
         parts.push(`❤️ Stamina: ${rel.npcStamina ?? npcMaxStamina(npcName)}/${npcMaxStamina(npcName)}${rel.npcUnconscious ? ' — UNCONSCIOUS' : ''}`);
         if (npc?.fertility != null) parts.push(`🌱 Fertility: ${fertilityPercent(npcName)}%`);
         if (npc?.wrestle) parts.push(`🤼 Contest DC: ${npc.wrestle.difficulty}`);
@@ -2245,9 +2245,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         // thinking (headroom + strip), prefill only as rescue.
         const flavor = [];
         if (rel.npcUnconscious) flavor.push('unconscious, limp and unresponsive');
-        else if ((rel.arousal || 1) >= 8) flavor.push('openly aroused — flushed, breathless, past hiding it');
-        else if ((rel.arousal || 1) >= 6) flavor.push('visibly aroused, flushed and wanting');
-        else if ((rel.arousal || 1) >= 4) flavor.push('a little flushed');
+        else if ((rel.arousal || 1) >= 3) flavor.push(arousalTier(rel.arousal).band);
         const stamNow = rel.npcStamina ?? npcMaxStamina(npcName);
         if (!rel.npcUnconscious && stamNow < npcMaxStamina(npcName)) {
             flavor.push(stamNow <= npcMaxStamina(npcName) / 3 ? 'utterly spent, barely upright' : 'worn and tired');
@@ -2536,6 +2534,88 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     }
     // The ephemeral note injected right before an NPC's first reply after a gap.
     const REUNION_PROMPT_KEY = 'RPG_CUSTODIAN_REUNION';
+
+    // === Charm-check interpretation (romance-redesign §B) ===
+    // A charm roll decides whether she ACCEPTS THE PLAYER'S FRAMING — not
+    // whether she likes him. The outcome becomes a one-shot note the addressed
+    // NPC reads before replying; her REACTION is hers (a seen-through lie can
+    // delight her), and the reaction judge reads that reply for tier movement.
+    const CHARM_PROMPT_KEY = 'RPG_CUSTODIAN_CHARM_READ';
+    let pendingCharmNote = null;   // set on a charm roll, consumed by the next addressed NPC
+
+    function buildCharmInterpretationNote(check) {
+        const player = context.powerUserSettings.personas?.[playerAvatar()] || 'the adventurer';
+        let read;
+        if (!check) read = 'His words land easily — nothing in them strains belief, and she takes them at face value.';
+        else if (check.tier === 'critical') read = 'His words land better than he could have hoped — she believes him completely, and finds herself genuinely moved by how he put it.';
+        else if (check.tier === 'success') read = 'She reads him as sincere and sees it his way — she is inclined to go along with what he said or asked.';
+        else if (check.tier === 'mixed') read = 'She HALF-believes him — wants to, but something rings uncertain; she hedges, tests him, or grants only part of it.';
+        else read = 'She is NOT persuaded — she sees straight through the framing to what she actually perceives underneath, and reacts to THAT truth however her nature dictates: amusement, suspicion, pity, or open delight at catching him. Being unconvinced does not have to mean being cold — her feelings are her own, and her disposition still applies.';
+        return `[How she received ${player}'s last words — play this reading in your reply:] ${read}`;
+    }
+
+    // === Reaction judge (romance-redesign §C) ===
+    // The heart of emergent romance: her reply was generated WITH her bands as
+    // instruction. If she still played warmer (or colder) than her band allows,
+    // the roleplay model judged that the moment earned it — the engine only
+    // detects the band-break and moves the tier. Affection: ±1 (±2 reserved
+    // for far-outside-band moments), gain paced per time period. Arousal: ±2
+    // on physical evidence. Default is always 0.
+    async function judgeNpcReaction(npcName, preReplyLen) {
+        try {
+            const chat = getCtx().chat || [];
+            const reply = chat.length > preReplyLen ? chat[chat.length - 1] : null;
+            if (!reply || reply.is_user || reply.is_system || reply.name !== npcName) return;
+            const replyText = String(reply.mes || '').trim();
+            if (!replyText) return;
+            const playerMsg = [...chat.slice(0, preReplyLen)].reverse().find(m => m.is_user);
+            const rel = getRelationship(npcName);
+            const t = affectionTier(rel.affection || 0);
+            const a = arousalTier(rel.arousal || 1);
+
+            const sys = `You are the RPG relationship JUDGE, and you are VERY STRICT. An NPC replied to the player. She was INSTRUCTED to play a stated disposition band (her current warmth/trust level, including its limits) and a stated physical band. Decide whether her reply stepped OUTSIDE those bands.
+The test is NOT "was she friendly or affectionate?" — warmth WITHIN her band scores 0. The test: did she show MORE trust, openness, tenderness, or initiative than her band allows (+1), or notably LESS — colder, withdrawn, trust visibly damaged (−1)? Reserve +2/−2 for extraordinary moments FAR outside the band (a heartfelt confession, a betrayal taking hold, a line irrevocably crossed). DEFAULT TO 0 — most replies, even pleasant, flirty, or grumpy ones, are inside their band.
+Judge AROUSAL separately, ONLY from physical evidence in her reply (proximity sought, breath, flush, trembling, touch, fluster): −2..+2, default 0, move only on clear physical signals beyond or below her stated physical band.
+Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "why": "<ten words max>"}`;
+            const prompt = `NPC: ${npcName}
+Her disposition band she was told to play (${t.label}, affection ${rel.affection || 0}/10): she ${t.band}
+Her physical band (${a.label}, arousal ${rel.arousal || 1}/10): ${a.band}
+Player's message: "${String(playerMsg?.mes || '').replace(/\s+/g, ' ').slice(0, 600)}"
+HER REPLY:
+${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
+
+            const p = await generateJson({ prompt, systemPrompt: sys, budget: 220 });
+            if (!p) return;
+            let dAff = Math.max(-2, Math.min(2, Math.round(Number(p.affection) || 0)));
+            const dAro = Math.max(-2, Math.min(2, Math.round(Number(p.arousal) || 0)));
+            if (!dAff && !dAro) return;
+
+            // Pacing cap (knob #1): ordinary gain +1 per time period per NPC;
+            // a far-outside +2 may breach it once. Losses are never capped.
+            const step = currentGameState.timeStep || 0;
+            if (dAff > 0) {
+                const gained = rel.affJudgeStep === step ? (rel.affGainedThisStep || 0) : 0;
+                const allowance = Math.max(0, (dAff >= 2 ? 2 : 1) - gained);
+                dAff = Math.min(dAff, allowance);
+                if (dAff > 0) { rel.affJudgeStep = step; rel.affGainedThisStep = gained + dAff; }
+            }
+            const beforeTier = affectionTier(rel.affection || 0).label;
+            if (dAff) rel.affection = Math.max(0, Math.min(10, (rel.affection || 0) + dAff));
+            if (dAro) rel.arousal = Math.max(1, Math.min(10, (rel.arousal || 1) + dAro));
+            savePlayer();
+            console.log(`RPG Custodian: reaction judge ${npcName}: aff ${dAff >= 0 ? '+' : ''}${dAff}, aro ${dAro >= 0 ? '+' : ''}${dAro} (${p.why || ''})`);
+
+            // Only a tier BOUNDARY crossing surfaces to the player — felt
+            // progress, not scorekeeping noise.
+            const afterTier = affectionTier(rel.affection || 0).label;
+            if (afterTier !== beforeTier) {
+                sendGhostMessage(dAff > 0
+                    ? `💗 Something shifts in ${npcName} — **${beforeTier} → ${afterTier}**.`
+                    : `💔 ${npcName} pulls back — **${beforeTier} → ${afterTier}**.`);
+                projectPlayerStatus();   // she plays the new band from the next line
+            }
+        } catch (e) { console.error('RPG Custodian: reaction judge failed', e); }
+    }
     function buildReunionNote(npcName) {
         const rel = getRelationship(npcName);
         if (rel.lastSeenStep == null) return null;                         // never met → no reunion
@@ -2606,8 +2686,9 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 return `‼️ ${npc.name} is UNCONSCIOUS — she has collapsed from exhaustion (Stamina 0) and is completely limp and unresponsive. She CANNOT speak, move, think, or react in any way. If ${npc.name} would respond, instead she simply lies there, out cold. Do NOT write dialogue or deliberate action for her until she is revived or wakes from rest.`;
             }
             const t = affectionTier(rel.affection);
-            let d = `${npc.name} (${t.label}${isInParty(npc.name) ? ', travelling with you' : ''}): ${npc.name} ${t.desc}.`;
-            if (rel.arousal >= 4) d += ` She is visibly aroused (${rel.arousal}/10).`;
+            const a = arousalTier(rel.arousal || 1);
+            let d = `${npc.name} (${t.label}${isInParty(npc.name) ? ', travelling with you' : ''}): ${npc.name} ${t.band}`;
+            if ((rel.arousal || 1) >= 3) d += ` Physically (${a.label}): ${a.band}`;
             if (rel.pregnancies > 0) d += ` She is carrying ${rel.pregnancies} of your ${rel.pregnancies === 1 ? 'child' : 'children'} — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} stage, ${rel.pregnancy_progress || 0}% developed.`;
             const npcFx = npcActiveEffects(npc.name);
             if (npcFx.length) d += ` Under effects: ${npcFx.map(effectLine).join(', ')}.`;
@@ -2615,7 +2696,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             return d;
         });
         if (dispositions.length) {
-            lines.push('', `[How those present feel toward ${name} — play these feelings:]`, ...dispositions);
+            lines.push('', `[How those present feel toward ${name} — each plays HER OWN line faithfully, INCLUDING its limits. These dispositions are strong and persistent: warmth beyond a stated line must be earned in the story, never assumed. She:]`, ...dispositions);
         }
 
         // Each present NPC's own home + daily routine, so she can speak to where
@@ -2811,16 +2892,39 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         savePlayer();
     }
 
-    // Affection 0–10 → tier + behavioral cue (core-mechanics §5b/§8). Written in
-    // the second person so the NPC reads it as her own feelings and plays them.
+    // Affection 0–10 → tier + behavioral BAND (romance-redesign §A). `desc` is
+    // the short line for compact readouts; `band` is the rich projection the
+    // NPC plays: inner stance, body language, what she gives freely, and — the
+    // gate — what she would NOT yet do at this tier. The band is also the
+    // yardstick the reaction judge measures her replies against: warmth beyond
+    // the band is the signal that the moment earned a tier step.
     function affectionTier(v) {
-        if (v <= 0)  return { label: 'Wary', desc: 'is guarded around you, a near-stranger she has little reason to trust yet' };
-        if (v <= 2)  return { label: 'Cordial', desc: 'is polite but reserved with you, still keeping a careful distance' };
-        if (v <= 4)  return { label: 'Warming', desc: 'is growing comfortable around you and offers small, genuine kindnesses' };
-        if (v <= 6)  return { label: 'Fond', desc: 'plainly likes you, seeks out your company, and smiles more easily with you' };
-        if (v <= 8)  return { label: 'Smitten', desc: 'is openly attracted to you — flirtatious, warm, and eager for your attention' };
-        if (v <= 9)  return { label: 'Devoted', desc: 'has fallen for you: trusting, tender, and unafraid to show she wants you' };
-        return { label: 'Adoring', desc: 'loves you completely and trusts you without reservation, cherishing every moment at your side' };
+        if (v <= 0)  return { label: 'Wary', desc: 'is guarded around you, a near-stranger she has little reason to trust yet',
+            band: 'sees him as a stranger whose motives are unproven. Inwardly her wall is up; her attention stays on her own business, and she reads him rather than warms to him. She keeps physical distance, angles herself half-away, and lets no touch happen or linger. Freely given: civility, trade, directions, guarded small talk with an exit in view. She would NOT yet: seek out his company, confide anything personal, share private space with him, or accept flirtation as anything but noise — and she does not extend invitations of any kind herself.' };
+        if (v <= 2)  return { label: 'Cordial', desc: 'is polite but reserved with you, still keeping a careful distance',
+            band: 'finds him tolerable, even mildly interesting, but owes him nothing. She is polite and businesslike, will chat within arm\'s reach of her comfort, and may laugh at a good line — then put the counter back between them. Freely given: conversation, fair dealing, casual company in public places. She would NOT yet: make time for him on purpose, share meals alone, speak of her past or feelings, tolerate more than incidental touch, or invite him anywhere private.' };
+        if (v <= 4)  return { label: 'Warming', desc: 'is growing comfortable around you and offers small, genuine kindnesses',
+            band: 'has decided he might be worth knowing. Her guard lowers in increments: she remembers what he says, offers small unprompted kindnesses, lingers a little in his company. Body language eases — she faces him fully, allows brief friendly touch, sits nearer than strictly necessary. Freely given: real conversation, small favors, shared time in public, honest answers to honest questions. She would NOT yet: call it anything, invite him into her private spaces or her bed, accept overt romantic advances without pulling back — desire may flicker, but trust has not caught up.' };
+        if (v <= 6)  return { label: 'Fond', desc: 'plainly likes you, seeks out your company, and smiles more easily with you',
+            band: 'genuinely likes him and no longer hides it well. She seeks out his company, teases, confides in pieces, touches his arm when she laughs. Privacy stops being a wall: sharing a table, a walk, a quiet corner, even ordinary time in her own space feels natural. Freely given: her time, her stories, casual affectionate touch, care when he is hurt, maybe an invitation into her private world — tea in the back room, a spare cot — offered as friendship with something unspoken underneath. She would NOT yet: leap into his bed on a bold ask, say aloud what this is becoming, or forgive carelessness with her trust cheaply.' };
+        if (v <= 8)  return { label: 'Smitten', desc: 'is openly attracted to you — flirtatious, warm, and eager for your attention',
+            band: 'wants him and has mostly stopped pretending otherwise. She lights up when he arrives, flirts openly, finds reasons to touch and be touched, and her invitations — shared evenings, closeness, staying just a little longer — carry clear intent. Freely given: open affection, kisses that are welcome rather than won, jealousy she can\'t fully hide, first moves of her own. She would NOT yet: surrender the last of her self-protection — declarations, promises, or anything she would be ruined to lose — without the story earning it.' };
+        if (v <= 9)  return { label: 'Devoted', desc: 'has fallen for you: trusting, tender, and unafraid to show she wants you',
+            band: 'has fallen, and knows it. Her trust is deep and given without accounting; her body and bed are his for the asking, and she asks for him in return. She plans around him, defends him to others, and shows tenderness without embarrassment. Freely given: nearly everything — intimacy, loyalty, vulnerability, her honest heart. She would NOT yet: only the very last things — binding her whole life to his word — wait on proof that lasts.' };
+        return { label: 'Adoring', desc: 'loves you completely and trusts you without reservation, cherishing every moment at your side',
+            band: 'loves him completely and without reservation. There is no wall left; his presence is her home. She trusts his word over appearances, gives affection lavishly and unprompted, and every choice she makes bends toward a life with him in it. Nothing within her power is withheld.' };
+    }
+
+    // Arousal 1–10 → physical band (romance-redesign §D). Purely bodily: what
+    // her body is doing regardless of what her pride says. Projected to the
+    // NPC/GM and judged from physical evidence in her replies.
+    function arousalTier(v) {
+        const a = Math.max(1, Math.min(10, v || 1));
+        if (a <= 2) return { label: 'Calm', band: 'Her body is at ease — breathing even, skin cool, attention undistracted by him physically.' };
+        if (a <= 4) return { label: 'Stirred', band: 'Something about him has her faintly stirred — glances that last a half-second too long, a warmth in her cheeks she could still deny, small self-conscious adjustments of hair and clothing.' };
+        if (a <= 6) return { label: 'Flushed', band: 'Her body is plainly interested — color in her face, breath a touch short, finding reasons to stand near him, touches that linger. She knows it, and is hiding it imperfectly.' };
+        if (a <= 8) return { label: 'Aching', band: 'Desire has real hold of her — flushed skin, quickened breath, restless hands, drawing close to him without deciding to. Composure takes active effort and keeps slipping.' };
+        return { label: 'Desperate', band: 'Her body has overruled her pride — trembling, breathless, pressing near, barely keeping her hands from him. Every sense is full of him, and it shows in everything she does.' };
     }
 
     // === Stamina: the unified HP pool for combat AND sex (core-mechanics §5b) ===
@@ -2901,6 +3005,11 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         const was = rel.npcUnconscious;
         rel.npcStamina = Math.max(0, rel.npcStamina - n);
         rel.npcUnconscious = rel.npcStamina <= 0;
+        // Post-coital physiology (romance-redesign §D): orgasms spend Stamina,
+        // so exhaustion IS the sated state. 1 left → running out of steam
+        // (arousal caps at 5); 0 → satisfied and spent (arousal drops to 2).
+        if (rel.npcStamina <= 0) rel.arousal = Math.min(rel.arousal || 1, 2);
+        else if (rel.npcStamina === 1) rel.arousal = Math.min(rel.arousal || 1, 5);
         // On the moment she drops: note WHEN (for autonomous waking) and WHERE she
         // is right now (party → with you; otherwise her scheduled spot), so an
         // unconscious NPC stays put instead of walking her schedule.
@@ -3397,7 +3506,16 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 : `⌛ ${label} **${e.name}** ${e.polarity === 'positive' ? 'fades' : 'passes'}.`);
         };
         expire(rd, 'Your');
-        for (const [name, rel] of Object.entries(rd.relationships || {})) expire(rel, `${name}'s`);
+        for (const [name, rel] of Object.entries(rd.relationships || {})) {
+            expire(rel, `${name}'s`);
+            // Arousal cools by 1 per time period toward calm (romance-redesign
+            // §D) — bodies cool off; affection doesn't. Step-guarded so a
+            // repeated prune in the same period can't double-decay.
+            if ((rel.arousal || 1) > 1 && rel.arousalDecayStep !== step) {
+                rel.arousal -= 1;
+                rel.arousalDecayStep = step;
+            }
+        }
         savePlayer();
     }
     function removeCustomStatus(target, name, reason) {
@@ -3723,7 +3841,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (!present.length) return 'none';
         return present.map(n => {
             const t = affectionTier(getNpcAffection(n.name));
-            let s = `${n.name} (${n.role || 'townsperson'}) [disposition toward player: ${t.label}, affection ${getNpcAffection(n.name)} — warmer disposition lowers the DC of charming/persuading her; a Wary/Cordial NPC resists harder]`;
+            const ar = getRelationship(n.name).arousal || 1;
+            let s = `${n.name} (${n.role || 'townsperson'}) [disposition toward player: ${t.label}, affection ${getNpcAffection(n.name)}; arousal ${arousalTier(ar).label} ${ar}/10 — warmer disposition AND higher arousal both lower the DC of charming/persuading her; a Wary, Calm NPC resists hardest]`;
             if (n.wrestle) s += ` [a physical contest/wrestle against her is a ${n.wrestle.stat} check, difficulty ${n.wrestle.difficulty}]`;
             if (n.shopInventory) s += ` [MERCHANT, sells: ${n.shopInventory.map(i => `"${i.name}" ${i.price}g`).join(', ')}]`;
             const offer = (n.quests || []).filter(q => !getQuestState(q.id) || getQuestState(q.id).state === undefined);
@@ -3810,8 +3929,9 @@ Call a check when the action is genuinely UNCERTAIN for this character AND both 
 - Combat, fighting creatures or people, brawling, wrestling, physical danger → ruggedness.
 - Risky feats of strength / endurance / agility (climbing a sheer cliff under threat, forcing a jammed door) → ruggedness.
 - Seducing, kissing, persuading, intimidating, haggling hard with, or charming a present NPC against their inclination → charm.
-- A PROPOSITION — the FIRST time the player asks for/initiates something she could refuse (a first kiss, an invitation to bed, escalating to a new act) → a CHARM check. DC scales with BOLDNESS and is LOWERED by her affection (Smitten/Devoted barely resist; Wary strongly resists). Success = she consents (effects may include adjust_affection/adjust_arousal); failure = she declines (small adjust_affection −).
-- BUT once she has CONSENTED and intimacy is already UNDERWAY (the recent scene shows them kissing / having sex / in bed together), do NOT roll charm again for continued consensual acts — thrusts, pace, positions, "keep going", finishing. Those are NOT new propositions. Just narrate and emit orgasm/adjust_arousal effects as they occur. Only roll charm again if he pushes a genuinely NEW boundary she might refuse.
+- A PROPOSITION — the FIRST time the player asks for/initiates something she could refuse (a first kiss, an invitation to bed, escalating to a new act) → a CHARM check. DC scales with BOLDNESS of the ask and is LOWERED by her affection AND her current arousal (a Smitten or aroused woman wants to believe him; a Wary, calm one strongly resists). The check decides whether she ACCEPTS HIS FRAMING — reads his words as sincere, trustworthy, in her interest — NOT whether she likes him more. NEVER emit adjust_affection or adjust_arousal on either branch of a charm check: her feelings move only through her own reactions, which the engine reads separately. Success = she goes along with what he said or asked; failure = she is not persuaded and reacts to what she actually perceives (which may be amusement, suspicion, or delight at catching him — her call, not automatically coldness).
+- If SHE offered or initiated it — her own invitation, her own advance — the player ACCEPTING is NEVER a proposition and rolls NOTHING. There is nothing to persuade. Only the player pushing PAST what she has herself offered rolls charm.
+- BUT once she has CONSENTED and intimacy is already UNDERWAY (the recent scene shows them kissing / having sex / in bed together), do NOT roll charm again for continued consensual acts — thrusts, pace, positions, "keep going", finishing. Those are NOT new propositions. Just narrate and emit orgasm effects as they occur. Only roll charm again if he pushes a genuinely NEW boundary she might refuse.
 - Deceiving/lying to, reading true intent, casting a spell, solving a hard puzzle, spotting something hidden → craftiness.
 - Crafting, carving, building, or repairing something useful → craftiness.
 If the player's action pursues an ACTIVE QUEST OBJECTIVE listed below, you MUST roll that quest's stated check and put its complete_quest in effects_on_success.
@@ -3838,8 +3958,8 @@ Only roll if uncertain for THIS character: roughly (DC − their stat) between 5
   {"type":"turnin_quest","id":"..."} player reports a COMPLETED quest to its giver. The engine pays the reward and closes it — do NOT also emit adjust_gold or complete_quest with it.
   {"type":"adjust_gold","amount":N}  ONLY for ad-hoc gold NOT covered above (finding coins, a bribe, gambling).
   {"type":"add_item","name":"..."} / {"type":"remove_item","name":"..."}
-  {"type":"adjust_affection","npc":"...","amount":N}  relationship shift on the 0–10 scale: successful flirt/seduction/kindness +1; a real romantic milestone +2; insult/betrayal −1 or −2. Put on effects_on_success/failure as fits.
-  {"type":"adjust_arousal","npc":"...","amount":N}  how turned-on she is (1–10), rises with foreplay/teasing.
+  {"type":"adjust_affection","npc":"...","amount":N}  ONLY for an external/mechanical cause acting on her feelings: a charm potion, a love or hate spell, a curse, a magical aura. NEVER for conversation, kindness, flirting, seduction, gifts, or check outcomes — the engine reads her own reactions and moves affection itself.
+  {"type":"adjust_arousal","npc":"...","amount":N}  ONLY for an external/physical-mechanical cause: an aphrodisiac, a lust spell, an alchemical heat. NEVER for flirtation, teasing, or foreplay in the scene — the engine reads her reactions and moves arousal itself.
   {"type":"orgasm","actor":"player"|"npc","npc":"HerName","internal":true/false,"count":N}  a CLIMAX just happened. ALWAYS include "npc" (the partner). For a PLAYER climax, set "internal":true if he finished INSIDE her during P-in-V (this triggers the fertilization roll) or "internal":false if he pulled out / finished externally (no fertilization). Both cost 1 Stamina. If unstated whether he pulled out, assume internal:true. count = climaxes in this action (default 1). An NPC climax costs her 1 Stamina.
   {"type":"damage","target":"player"|"npc","npc":"HerName","amount":N}  Stamina lost to a combat hit/injury.
   {"type":"heal","target":"player"|"HerName","amount":N or "full"}  RESTORATION magic / a healing draught / a mending spell / bandaging restores CURRENT Stamina to someone (player or a present NPC) — WITHOUT passing time and without raising their max. amount = how many Stamina points mended (a minor cure ~2, a strong heal ~4), or "full" for a complete restoration. It also revives an unconscious target. Use this for healing spells, restoration potions, first aid, laying-on-of-hands, etc. (Distinct from "rest", which restores EVERYONE and passes time, and from an add_status with a stamina mod, which temporarily raises the MAX pool.)
@@ -4200,14 +4320,22 @@ Narrate the result briefly, grounded in this location and the story's current be
         // with a reunion note (relationship, elapsed time, what she's been up to).
         const reunion = buildReunionNote(npcName);
         if (reunion) context.setExtensionPrompt(REUNION_PROMPT_KEY, reunion, 1, 0);   // depth 0 = closest to the generation
+        // A charm roll this turn? The first addressed NPC consumes its
+        // interpretation — how she read his words — as a one-shot note.
+        const charmNote = pendingCharmNote; pendingCharmNote = null;
+        if (charmNote) context.setExtensionPrompt(CHARM_PROMPT_KEY, charmNote, 1, 0);
+        const preReplyLen = (getCtx().chat || []).length;
         try {
             await context.executeSlashCommandsWithOptions(`/trigger await=true ${npcName}`, { source: 'rpg-custodian' });
         } catch (e) { console.error('RPG Custodian: trigger NPC failed', e); }
         finally {
             if (reunion) context.setExtensionPrompt(REUNION_PROMPT_KEY, '', 1, 0);     // one-shot: clear after this reply
+            if (charmNote) context.setExtensionPrompt(CHARM_PROMPT_KEY, '', 1, 0);
             noteSeen(npcName);                                                         // she has now seen him this moment
             savePlayer();
         }
+        // Her reply is on the page — read it against her bands (reaction judge).
+        await judgeNpcReaction(npcName, preReplyLen);
     }
 
     // Poll until no generation is in progress (or timeout).
@@ -4226,6 +4354,7 @@ Narrate the result briefly, grounded in this location and the story's current be
     async function orchestratePlayerAction(playerText) {
         currentGameState.rpgSuppressNextGen = false;   // /trigger below must not be suppressed
         currentGameState.rpgOrchestrating = true;
+        pendingCharmNote = null;                       // never leak a stale charm read into a new turn
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
         try {
             const intent = await analyzeIntent(playerText);
@@ -4242,8 +4371,10 @@ Narrate the result briefly, grounded in this location and the story's current be
                     if (delta <= 2) {
                         sendGhostMessage(`✔️ ${intent.narration_hint || 'Action'} — trivial for you (${intent.check.stat}); no roll needed.`);
                         effects = intent.effects_on_success;
+                        if (intent.check.stat === 'charm') pendingCharmNote = buildCharmInterpretationNote(null);
                     } else {
                         check = skillCheck(intent.check.stat, intent.check.difficulty);
+                        if (check.statName === 'charm') pendingCharmNote = buildCharmInterpretationNote(check);
                         effects = check.success ? intent.effects_on_success : intent.effects_on_failure;
                         sendGhostMessage(skillCheckLine(check, intent.narration_hint || 'Action') +
                             (intent.check.reason ? `\n_${intent.check.reason}_` : ''));
@@ -4476,6 +4607,11 @@ Narrate the result briefly, grounded in this location and the story's current be
         hurt: (target, amt) => (target && target !== 'player') ? spendNpcStamina(target, amt || 1) : spendStamina(amt || 1),
         examineSelf: () => examineSelf(),
         examineNpc: (n) => examineNpc(n),
+        setAffection: (n, v) => { const r = getRelationship(n); r.affection = Math.max(0, Math.min(10, v)); savePlayer(); return r.affection; },
+        setArousal: (n, v) => { const r = getRelationship(n); r.arousal = Math.max(1, Math.min(10, v)); savePlayer(); return r.arousal; },
+        judgeReaction: (n, preLen) => judgeNpcReaction(n, preLen ?? Math.max(0, (getCtx().chat || []).length - 1)),
+        spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
+        charmNote: (tier) => buildCharmInterpretationNote(tier ? { tier, success: tier === 'success' || tier === 'critical' } : null),
         maxStamina: () => maxStamina(),
         stamina: () => getStamina(),
         npcStamina: (n) => ({ cur: getRelationship(n).npcStamina, max: npcMaxStamina(n) }),
