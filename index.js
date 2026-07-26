@@ -3888,7 +3888,8 @@ LADDER (absolute difficulty): Easy 8, Moderate 10, Hard 12, Very Hard 14, Legend
 Only roll if uncertain for THIS character: roughly (DC − their stat) between 5 and 11. If (DC − stat) ≤ 4 they can't really fail — skip the roll and apply the effect. "reason" reads like a GM's aside on why the moment is worth a roll.
 
 === EFFECTS ("effects_on_success"/"effects_on_failure": arrays of {type,...}) ===
-  {"type":"move","destination":"..."}  the player travels/walks/heads to a CONNECTED location (see EXITS). Deterministic, no check. The player can only reach a directly-connected location; a distant place is not reachable in one step.
+A single message often contains SEVERAL effects — a look taken while talking, a job accepted while setting off, a place entered while greeting someone. Emit ALL of them, in narrative order. NEVER let one effect crowd out another: dialogue does not cancel a travel, a travel does not cancel an acceptance, a look does not replace a move.
+  {"type":"move","destination":"..."}  the player travels to / heads for / walks to / steps INTO any KNOWN PLACE (see the list). Give the place he actually INTENDS to reach — the engine finds the route there automatically, however many stops it takes; never substitute an intermediate stop for the real destination. Entering, going inside, or arriving at a named place IS a move — emit it even when the message also looks around, greets someone, or converses (emit the move FIRST, then the rest). Deterministic, no check.
   {"type":"advance_time","periods":N}  narrative time passes. Each period is a step Morning→Day→Evening→Night→(next) Morning. A FULL DAY IS EXACTLY 4 PERIODS — for an explicit span of days use N = days×4 EXACTLY: "one day" = 4, "two days" = 8, "three days" = 12, "a week" = 28. For a time-of-day span, count periods from CURRENT TIME to the target: from Morning "long into the evening" = 2; "that night"/"until nightfall" = to Night; "sleep until morning" = to next Morning.
   {"type":"add_party","npc":"..."}  a present NPC agrees to travel WITH the player or to spend extended time together (join me, come along, let's spend the day together, share stories into the evening). She then follows the player everywhere until dismissed.
   {"type":"remove_party","npc":"..."}  a companion parts ways / is dismissed / stays behind.
@@ -3954,7 +3955,7 @@ PLAYER ACTION: "${playerText}"
 PLAYER STATS: ${statsContextForAnalyzer()}
 CURRENT TIME: ${TIME_PERIODS[currentGameState.currentTime].name} (Day ${currentGameState.dayCount}) [order: Morning→Day→Evening→Night]
 LOCATION: ${currentGameState.worldData.locations[currentGameState.currentLocation]?.name}
-EXITS (connected locations you can travel to): ${exitsContextForAnalyzer()}
+KNOWN PLACES (any is a valid move destination — the engine routes there automatically): ${Object.entries(currentGameState.worldData.locations).map(([id, l]) => `"${l.name || id}"`).join(', ')} (adjacent right now: ${exitsContextForAnalyzer()})
 PRESENT NPCS: ${presentNpcContextForAnalyzer()}${(currentGameState.party || []).length ? `\nIN YOUR PARTY (travelling with you): ${currentGameState.party.join(', ')}` : ''}
 ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerObjectives().map(e => `"${e.name}" — ${e.endCondition || 'ongoing'}`).join('; ') || 'none'}`;
 

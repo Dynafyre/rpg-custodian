@@ -50,6 +50,20 @@ try {
     const objectives = await page.evaluate(() => (window.rpgCustodianDebug.player().customEffects || []).filter(e => e.category === 'quest').map(e => e.name));
     console.log('objectives:', JSON.stringify(objectives));
     check('composite acceptance still creates the objective', objectives.length > 0, objectives.join(','));
+    const locAfter = await page.evaluate(() => window.rpgCustodianDebug.state().currentLocation);
+    check('travel routed to the TRUE destination (brothel), not one hop', locAfter === 'brothel', `loc=${locAfter}`);
+
+    // ---- 2b) Enter-while-looking must still move (Dyna's brothel repro) ----
+    await page.evaluate(() => window.rpgCustodianDebug.teleport('town-square')); await wait(800);
+    await page.type('#send_textarea', 'Dyna enters the Brothel with Bryony in tow. Looking around the place and the Madam.');
+    await page.keyboard.press('Enter');
+    let sb2 = false;
+    for (let i = 0; i < 55; i++) { await wait(2000); const b = await page.evaluate(() => window.rpgCustodianDebug.busy()); if (b) sb2 = true; if (sb2 && !b) break; }
+    await wait(2000);
+    const intent2 = consoleLogs.filter(l => l.includes('intent =')).slice(-1)[0] || '';
+    console.log('intent2:', intent2.replace(/^.*intent = /, '').slice(0, 260));
+    const locEnter = await page.evaluate(() => window.rpgCustodianDebug.state().currentLocation);
+    check('entering while looking around still moves the engine', locEnter === 'brothel', `loc=${locEnter}`);
 
     // ---- 3) Her unprompted innuendo → minimum +1 arousal ----
     await page.evaluate(() => { window.rpgCustodianDebug.setAffection('Bryony', 2); window.rpgCustodianDebug.setArousal('Bryony', 1); });
