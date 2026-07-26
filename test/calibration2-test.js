@@ -60,6 +60,9 @@ try {
     console.log('judge:', judgeLog);
     check('unprompted cock-talk → arousal at least +1', r.aro >= 2, `aro=${r.aro}`);
     check('businesslike tone → affection unchanged', r.aff === 2, `aff=${r.aff}`);
+    const lastSys = await page.evaluate(() => [...SillyTavern.getContext().chat].reverse().find(m => m.is_system)?.mes || '');
+    console.log('ghost:', lastSys.slice(0, 120));
+    check('increment shown to player as system message', /arousal \+\d/.test(lastSys));
 
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;

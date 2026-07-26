@@ -2613,15 +2613,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (dAro) rel.arousal = Math.max(1, Math.min(10, (rel.arousal || 1) + dAro));
             savePlayer();
 
-            // Only a tier BOUNDARY crossing surfaces to the player — felt
-            // progress, not scorekeeping noise.
+            // Every increment is shown to the player (Dyna's call) — with a
+            // flourish line added when a tier boundary is crossed.
+            const bits = [];
+            if (dAff) bits.push(`💗 affection ${dAff > 0 ? '+' : ''}${dAff} → ${rel.affection}/10 (${affectionTier(rel.affection).label})`);
+            if (dAro) bits.push(`🔥 arousal ${dAro > 0 ? '+' : ''}${dAro} → ${rel.arousal}/10 (${arousalTier(rel.arousal).label})`);
             const afterTier = affectionTier(rel.affection || 0).label;
-            if (afterTier !== beforeTier) {
-                sendGhostMessage(dAff > 0
-                    ? `💗 Something shifts in ${npcName} — **${beforeTier} → ${afterTier}**.`
-                    : `💔 ${npcName} pulls back — **${beforeTier} → ${afterTier}**.`);
-                projectPlayerStatus();   // she plays the new band from the next line
-            }
+            const shift = afterTier !== beforeTier
+                ? `\n${dAff > 0 ? `💗 Something shifts in ${npcName} — **${beforeTier} → ${afterTier}**.` : `💔 ${npcName} pulls back — **${beforeTier} → ${afterTier}**.`}`
+                : '';
+            if (bits.length) sendGhostMessage(`${npcName}: ${bits.join(' · ')}${shift}`);
+            if (shift) projectPlayerStatus();   // she plays the new band from the next line
         } catch (e) { console.error('RPG Custodian: reaction judge failed', e); }
     }
     function buildReunionNote(npcName) {
@@ -2883,6 +2885,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     function adjustNpcAffection(name, delta) {
         const rel = getRelationship(name);
         rel.affection = Math.max(0, Math.min(10, (rel.affection || 0) + delta));  // clamp 0–10
+        if (delta) sendGhostMessage(`${name}: 💗 affection ${delta > 0 ? '+' : ''}${delta} → ${rel.affection}/10 (${affectionTier(rel.affection).label})`);
         savePlayer();
     }
 
@@ -3002,8 +3005,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Post-coital physiology (romance-redesign §D): orgasms spend Stamina,
         // so exhaustion IS the sated state. 1 left → running out of steam
         // (arousal caps at 5); 0 → satisfied and spent (arousal drops to 2).
-        if (rel.npcStamina <= 0) rel.arousal = Math.min(rel.arousal || 1, 2);
-        else if (rel.npcStamina === 1) rel.arousal = Math.min(rel.arousal || 1, 5);
+        const aroBefore = rel.arousal || 1;
+        if (rel.npcStamina <= 0) rel.arousal = Math.min(aroBefore, 2);
+        else if (rel.npcStamina === 1) rel.arousal = Math.min(aroBefore, 5);
+        if ((rel.arousal || 1) < aroBefore) {
+            sendGhostMessage(`${npcName}: 😮‍💨 ${rel.npcStamina <= 0 ? 'utterly satisfied' : 'running out of steam'} — 🔥 arousal settles to ${rel.arousal}/10 (${arousalTier(rel.arousal).label})`);
+        }
         // On the moment she drops: note WHEN (for autonomous waking) and WHERE she
         // is right now (party → with you; otherwise her scheduled spot), so an
         // unconscious NPC stays put instead of walking her schedule.
@@ -4105,7 +4112,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     if ((eff.target || 'player') === 'player') { spendStamina(eff.amount || 1); sendGhostMessage(`💢 You take ${eff.amount || 1} — Stamina ${getStamina()}/${maxStamina()}${getPlayerRpgData()?.stats.unconscious ? ' — you black out!' : ''}`); }
                     else if (eff.npc) { const rel = spendNpcStamina(eff.npc, eff.amount || 1); sendGhostMessage(`⚔️ ${eff.npc} takes ${eff.amount || 1} — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she goes down!' : ''}`); }
                     break;
-                case 'adjust_arousal': { const rel = getRelationship(eff.npc); rel.arousal = Math.max(1, Math.min(10, (rel.arousal || 1) + (eff.amount || 0))); savePlayer(); break; }
+                case 'adjust_arousal': { const rel = getRelationship(eff.npc); rel.arousal = Math.max(1, Math.min(10, (rel.arousal || 1) + (eff.amount || 0))); if (eff.amount) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${rel.arousal}/10 (${arousalTier(rel.arousal).label})`); savePlayer(); break; }
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;
@@ -4215,7 +4222,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
 
     function effectsSummary(effects) {
         // These emit their own rich ghost messages — don't also echo them here.
-        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item']);
+        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item']);
         return (effects || []).filter(e => !SELF_NARRATING.has(e.type)).map(e => {
             if (e.type === 'add_item') return `+${e.name}`;
             if (e.type === 'remove_item') return `-${e.name}`;
