@@ -170,7 +170,9 @@ hidden-but-NL-reachable), V2-card cast onboarding wizard (home, schedule,
 stats, secret, expressions zip, location-anchor hygiene), world bundles with
 name-conflict handling.
 
-- [ ] Phase 1: location secrecy engine support (independent of editor)
+- [x] Phase 1: location secrecy engine support ✅ 2026-07-26 (levels 0/1/2;
+      Moonlit Spring seeded in prototype-town; secrecy-test.js 8/8 — the
+      Custodian even check-gates hidden-place searches unprompted)
 - [ ] Phase 2: World Manager popup + storage decision + delete
 - [ ] Phase 3: map builder (view/edit prototype-town first)
 - [ ] Phase 4: cast onboarding wizard
