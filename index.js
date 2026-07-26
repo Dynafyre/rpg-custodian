@@ -4234,7 +4234,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
     }
 
     async function narrateResult(playerText, intent, check) {
-        const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences, narrate the RESULT of the player's action from the mechanical outcome given. Keep it grounded in WHERE the scene is happening (the stated location) — do not drift the action to another place. Narrate only the world and the player's action/outcome. Do NOT speak, act, or write dialogue for any named NPC — they respond for themselves. If you need to reason first, do it inside <think></think> tags; the narration itself is pure prose. Be concise.`;
+        const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences, narrate the RESULT of the player's action from the mechanical outcome given. Keep it grounded in WHERE the scene is happening (the stated location) — do not drift the action to another place. Narrate only the world and the player's action/outcome. You NEVER give a named NPC dialogue, expressions, gestures, reactions, or movements — not one spoken word, not a frozen smirk, not a turn away. Each NPC responds for HERSELF after you; your narration must END before any NPC reacts, covering only the player's side and the ambient scene. If you need to reason first, do it inside <think></think> tags; the narration itself is pure prose. Be concise.`;
         let outcome;
         if (check) outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${check.success ? 'SUCCESS' : 'FAILURE'}.`;
         else if (intent?.mechanical) outcome = 'The action succeeds automatically (no roll needed).';
@@ -4397,7 +4397,12 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // then walk off — still gets GM narration for the rest of it.
                 const pureMove = moved && !check && (effects || []).every(e => e.type === 'move');
                 const pureExamine = !moved && !check && (effects || []).length > 0 && (effects || []).every(e => e.type === 'examine');
-                if (!pureMove && !pureExamine) {
+                // A charm exchange with an NPC who is about to reply is HER
+                // scene: the check line + interpretation note + her own reply
+                // carry the outcome. GM narration here was speaking her
+                // reactions for her (voice-stealing) — skip it entirely.
+                const charmExchange = intent?.check?.stat === 'charm' && detectAddressedNpcs(playerText).length > 0;
+                if (!pureMove && !pureExamine && !charmExchange) {
                     const gm = await narrateResult(playerText, intent, check);
                     if (gm) sendGameMasterMessage(gm);
                 }
