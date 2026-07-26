@@ -160,6 +160,23 @@ the debuff-contest resist template. No initiative, no rounds, no pacing.
 
 ---
 
+## 6.5 World management & authoring 🗺️✍️
+
+**➡️ DESIGNED — full spec in `docs/game-design/world-management.md`**
+(2026-07-26). World Manager popup (Create/Import/Edit/Delete/Export), creation
+wizard, touch-first graphical map builder (nodes, join, background image,
+pinch-zoom, node scale), 3-level location secrecy (public / unknown-to-NPCs /
+hidden-but-NL-reachable), V2-card cast onboarding wizard (home, schedule,
+stats, secret, expressions zip, location-anchor hygiene), world bundles with
+name-conflict handling.
+
+- [ ] Phase 1: location secrecy engine support (independent of editor)
+- [ ] Phase 2: World Manager popup + storage decision + delete
+- [ ] Phase 3: map builder (view/edit prototype-town first)
+- [ ] Phase 4: cast onboarding wizard
+- [ ] Phase 5: creation wizard shell
+- [ ] Phase 6: export/import bundles + conflict rename
+
 ## 7. Spellcasting system ✨
 
 **Goal:** Build the real spell system on the existing seed layer.
