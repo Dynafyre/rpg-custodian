@@ -42,20 +42,7 @@
           "pregnancies": 0,
           "pregnancy_progress": 0
         },
-        "quests": [
-          {
-            "id": "cull-frostfang-wolves",
-            "title": "Cull the Frostfang Wolves",
-            "brief": "A pack of frostfang wolves has been harrying the forest road and spooking travelers. Thin them out — cull the pack in the Whispering Woods — and I'll pay you fifty coin for the trouble.",
-            "reward_gold": 50,
-            "check_stat": "ruggedness",
-            "check_difficulty": 8,
-            "location": "forest",
-            "success_narration": "The frostfang pack lies scattered and broken; the forest road is safe once more.",
-            "turnin_line": "Good work. The road's quiet again. Here — fifty coin, as promised. You've a warrior's hands, stranger."
-          }
-        ],
-        "card_version": "1.2",
+        "card_version": "1.3",
         "race": "human",
         "age": "late 20s",
         "fertility": 28,

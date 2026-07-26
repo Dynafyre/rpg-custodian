@@ -2135,7 +2135,6 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     description: charData.description || '',
                     schedule: rpgMeta.schedule || {},
                     homeLocation: rpgMeta.home_location || null,
-                    quests: rpgMeta.quests || [],
                     shopInventory: rpgMeta.shop_inventory || null,
                     wrestle: rpgMeta.wrestle || null,
                     fertility: rpgMeta.fertility,
@@ -2459,7 +2458,6 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         rd.inventory = rd.inventory || { items: [], currency: 0 };
         rd.inventory.items = rd.inventory.items || [];
         rd.customEffects = rd.customEffects || [];
-        rd.quests = rd.quests || {};
         return rd;
     }
 
@@ -2771,34 +2769,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
 
     // --- Quests (player-side state stored in rpg_data.quests keyed by quest id) ---
-    function getQuestState(id) { return getPlayerRpgData()?.quests?.[id] || null; }
-    function setQuestState(id, patch) {
-        const rd = getPlayerRpgData(); if (!rd) return;
-        rd.quests[id] = { ...(rd.quests[id] || {}), ...patch };
-        savePlayer();
-    }
-    function acceptQuest(npc, quest) {
-        setQuestState(quest.id, { state: 'active', giver: npc.name });
-        sendGhostMessage(`📜 **Quest accepted:** ${quest.title}\n${quest.brief}`);
-        renderActionBar();
-    }
-    function attemptQuest(npc, quest) {
-        const check = skillCheck(quest.check_stat, quest.check_difficulty);
-        sendGhostMessage(skillCheckLine(check, `Attempting: ${quest.title}`));
-        if (check.success) {
-            setQuestState(quest.id, { state: 'completed' });
-            sendGameMasterMessage(`⚔️ ${quest.success_narration}`);
-        } else {
-            sendGameMasterMessage(`The task proves too much this time — you'll have to try again.`);
-        }
-        renderActionBar();
-    }
-    function turnInQuest(npc, quest) {
-        addGold(quest.reward_gold);
-        setQuestState(quest.id, { state: 'turned_in' });
-        sendGameMasterMessage(`**${npc.name}:** "${quest.turnin_line}"\n\n💰 You received **${quest.reward_gold} gold**. (Total: ${getGold()})`);
-        renderActionBar();
-    }
+    // (The old pre-authored card-quest system — accept/attempt/turnin by id —
+    // is GONE, demolished 2026-07-25 after it collided with an emergent job:
+    // "accepting a job from Bryony" got force-fit onto her card's wolves quest.
+    // ALL quests are bespoke add_objective records now; the condition judge
+    // completes them. Legacy rd.quests data in old saves is inert.)
 
     // --- Shop ---
     function openShop(npc) {
@@ -3745,48 +3720,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // simple, always-useful verbs only.
     }
 
-    /** Quest buttons relevant to a present NPC and the player's location/progress. */
-    function getAvailableQuestActions(npc) {
-        const out = [];
-        for (const quest of (npc.quests || [])) {
-            const st = getQuestState(quest.id)?.state;
-            if (!st) out.push({ label: `📜 Ask about work`, action: () => offerQuest(npc, quest) });
-            else if (st === 'completed') out.push({ label: `✅ Turn in: ${quest.title}`, action: () => turnInQuest(npc, quest) });
-        }
-        // Attempt button appears at the quest's target location while active.
-        for (const npc2 of currentGameState.npcRoster || []) {
-            for (const quest of (npc2.quests || [])) {
-                const st = getQuestState(quest.id)?.state;
-                if (st === 'active' && quest.location === currentGameState.currentLocation) {
-                    if (!out.find(o => o.label.includes(quest.title)))
-                        out.push({ label: `⚔️ ${quest.title}`, action: () => attemptQuest(npc2, quest) });
-                }
-            }
-        }
-        return out;
-    }
-    function offerQuest(npc, quest) {
-        openActionPopup(`📜 ${quest.title}`, [
-            { icon: '💬', label: quest.brief, sub: `Reward: ${quest.reward_gold}g`, action: () => {} },
-            { icon: '✅', label: 'Accept', action: () => acceptQuest(npc, quest) },
-            { icon: '✋', label: 'Decline', action: () => {} },
-        ]);
-    }
-
-    // Quest-attempt actions can also fire at a location even when the giver is
-    // absent — expose the attempt scan for the action bar above.
-    function getActiveQuestAttemptsHere() {
-        const out = [];
-        for (const npc of currentGameState.npcRoster || []) {
-            for (const quest of (npc.quests || [])) {
-                if (getQuestState(quest.id)?.state === 'active' && quest.location === currentGameState.currentLocation) {
-                    out.push({ npc, quest });
-                }
-            }
-        }
-        return out;
-    }
-
     // ========================================================================
     // INTENT ANALYZER — emergent natural-language → mechanics
     // ========================================================================
@@ -3830,8 +3763,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             `virility ${effectiveStat('virility')} (fertility); ` +
             `Stamina ${getStamina()}/${maxStamina()} (HP for combat & sex), Mana ${rd.stats.mana ?? 0}/${maxMana()} (magic pool); ` +
             `gold ${rd.inventory.currency}; inventory [${rd.inventory.items.map(i => i.name).join(', ') || 'empty'}]`;
-        const active = Object.entries(rd.quests || {}).filter(([, q]) => q.state === 'active' || q.state === 'completed');
-        if (active.length) s += `; active quests: ${active.map(([id, q]) => `"${id}" (${q.state})`).join(', ')}`;
         const worn = equippedItemsSummary();
         if (worn.length) s += `; EQUIPPED (factor situational bonuses into your DC): ${worn.join(', ')}`;
         const statuses = playerCustomEffects();
@@ -3848,10 +3779,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             let s = `${n.name} (${n.role || 'townsperson'}) [disposition toward player: ${t.label}, affection ${getNpcAffection(n.name)}; arousal ${arousalTier(ar).label} ${ar}/10 — warmer disposition AND higher arousal both lower the DC of charming/persuading her; a Wary, Calm NPC resists hardest]`;
             if (n.wrestle) s += ` [a physical contest/wrestle against her is a ${n.wrestle.stat} check, difficulty ${n.wrestle.difficulty}]`;
             if (n.shopInventory) s += ` [MERCHANT, sells: ${n.shopInventory.map(i => `"${i.name}" ${i.price}g`).join(', ')}]`;
-            const offer = (n.quests || []).filter(q => !getQuestState(q.id) || getQuestState(q.id).state === undefined);
-            if (offer.length) s += ` [offers quest(s): ${offer.map(q => `id "${q.id}" titled "${q.title}", reward ${q.reward_gold}g`).join('; ')}]`;
-            const turnin = (n.quests || []).filter(q => getQuestState(q.id)?.state === 'completed');
-            if (turnin.length) s += ` [will pay out completed quest(s): ${turnin.map(q => `"${q.id}"`).join(', ')}]`;
             return s;
         }).join('; ');
     }
@@ -3861,18 +3788,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const conns = loc?.connections || [];
         if (!conns.length) return 'none';
         return conns.map(c => `"${currentGameState.worldData.locations[c]?.name || c}"`).join(', ');
-    }
-
-    function questAttemptContextForAnalyzer() {
-        const here = [];
-        for (const npc of currentGameState.npcRoster || []) {
-            for (const q of (npc.quests || [])) {
-                if (getQuestState(q.id)?.state === 'active' && q.location === currentGameState.currentLocation) {
-                    here.push(`"${q.id}" — objective: ${q.brief} (a ${q.check_stat} check, difficulty ${q.check_difficulty}; on success emit complete_quest)`);
-                }
-            }
-        }
-        return here.length ? here.join('; ') : 'none';
     }
 
     // GM messages that are pure MECHANICAL notifications (travel, time passing,
@@ -3937,7 +3852,7 @@ Call a check when the action is genuinely UNCERTAIN for this character AND both 
 - BUT once she has CONSENTED and intimacy is already UNDERWAY (the recent scene shows them kissing / having sex / in bed together), do NOT roll charm again for continued consensual acts — thrusts, pace, positions, "keep going", finishing. Those are NOT new propositions. Just narrate and emit orgasm effects as they occur. Only roll charm again if he pushes a genuinely NEW boundary she might refuse.
 - Deceiving/lying to, reading true intent, casting a spell, solving a hard puzzle, spotting something hidden → craftiness.
 - Crafting, carving, building, or repairing something useful → craftiness.
-If the player's action pursues an ACTIVE QUEST OBJECTIVE listed below, you MUST roll that quest's stated check and put its complete_quest in effects_on_success.
+If the player's action pursues one of his ACTIVE OBJECTIVES (listed below), roll whatever check the attempt itself deserves — the engine's judge notices completion on its own; NEVER emit a completion effect for an objective.
 
 === WHEN NOT TO ROLL ===
 - Trivial / foregone actions (grab a stick off the ground, walk, look around, sit) → "check": null; add effects only if something is actually gained.
@@ -3956,9 +3871,6 @@ Only roll if uncertain for THIS character: roughly (DC − their stat) between 5
   {"type":"remove_party","npc":"..."}  a companion parts ways / is dismissed / stays behind.
   {"type":"buy_item","name":"..."}   buy from a PRESENT merchant. The engine charges the price — do NOT also emit adjust_gold.
   {"type":"use_item","name":"..."}   consume/use an item the player HOLDS (drink a potion, crush a soul crystal, etc.). SOUL CRYSTALS: the inert gems born under the Crystal Curse are collectible spell-fuel — when the player GATHERS/pockets them emit add_item "soul crystal" (one per crystal); when he CRUSHES/channels/uses one emit use_item "soul crystal" (the engine restores 1 Mana and consumes it).
-  {"type":"accept_quest","id":"..."} player agrees to a present NPC's offered quest (use the given id).
-  {"type":"complete_quest","id":"..."} player finishes a quest's objective (usually gated behind the quest's check).
-  {"type":"turnin_quest","id":"..."} player reports a COMPLETED quest to its giver. The engine pays the reward and closes it — do NOT also emit adjust_gold or complete_quest with it.
   {"type":"adjust_gold","amount":N}  ONLY for ad-hoc gold NOT covered above (finding coins, a bribe, gambling).
   {"type":"add_item","name":"..."} / {"type":"remove_item","name":"..."}
   {"type":"adjust_affection","npc":"...","amount":N}  ONLY for an external/mechanical cause acting on her feelings: a charm potion, a love or hate spell, a curse, a magical aura. NEVER for conversation, kindness, flirting, seduction, gifts, or check outcomes — the engine reads her own reactions and moves affection itself.
@@ -4020,7 +3932,7 @@ CURRENT TIME: ${TIME_PERIODS[currentGameState.currentTime].name} (Day ${currentG
 LOCATION: ${currentGameState.worldData.locations[currentGameState.currentLocation]?.name}
 EXITS (connected locations you can travel to): ${exitsContextForAnalyzer()}
 PRESENT NPCS: ${presentNpcContextForAnalyzer()}${(currentGameState.party || []).length ? `\nIN YOUR PARTY (travelling with you): ${currentGameState.party.join(', ')}` : ''}
-ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
+ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerObjectives().map(e => `"${e.name}" — ${e.endCondition || 'ongoing'}`).join('; ') || 'none'}`;
 
         // Plain-JSON prompting (no jsonSchema — DeepSeek's structured-output mode
         // returned empty intermittently). Retry once on an empty/unparseable reply.
@@ -4148,13 +4060,10 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
 
     function applyEffects(effects) {
         let list = (effects || []).slice();
-        // Defensive dedup: buy_item and turnin_quest own their gold, so drop any
-        // redundant adjust_gold the analyzer emitted alongside them; and a
-        // turnin already completes the quest, so drop a paired complete_quest.
+        // Defensive dedup: buy_item owns its gold, so drop any redundant
+        // adjust_gold the analyzer emitted alongside it.
         const hasBuy = list.some(e => e.type === 'buy_item');
-        const turnins = list.filter(e => e.type === 'turnin_quest').map(e => e.id);
-        if (hasBuy || turnins.length) list = list.filter(e => e.type !== 'adjust_gold');
-        if (turnins.length) list = list.filter(e => !(e.type === 'complete_quest' && turnins.includes(e.id)));
+        if (hasBuy) list = list.filter(e => e.type !== 'adjust_gold');
         for (const eff of list) {
             switch (eff.type) {
                 case 'add_item':
@@ -4171,9 +4080,6 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
                 case 'adjust_affection': adjustNpcAffection(eff.npc, eff.amount || 0); break;
                 case 'buy_item': buyItemByName(eff.name); break;
                 case 'use_item': useItemByName(eff.name); break;
-                case 'accept_quest': { const f = findQuestById(eff.id); if (f) acceptQuest(f.npc, f.quest); break; }
-                case 'complete_quest': { const f = findQuestById(eff.id); if (f && getQuestState(eff.id)?.state === 'active') setQuestState(eff.id, { state: 'completed' }); break; }
-                case 'turnin_quest': { const f = findQuestById(eff.id); if (f && getQuestState(eff.id)?.state === 'completed') turnInQuest(f.npc, f.quest); break; }
                 case 'orgasm':
                     if ((eff.actor || 'player') === 'player') resolvePlayerOrgasm(eff.npc, eff.internal !== false, eff.count || 1);
                     else if (eff.npc) { const rel = spendNpcStamina(eff.npc, eff.count || 1); sendGhostMessage(`💦 ${eff.npc} climaxes — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`); }
@@ -4274,13 +4180,6 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
         return i >= 0 ? rd.inventory.items[i] : null;
     }
 
-    function findQuestById(id) {
-        for (const npc of currentGameState.npcRoster || []) {
-            const quest = (npc.quests || []).find(q => q.id === id);
-            if (quest) return { npc, quest };
-        }
-        return null;
-    }
     function buyItemByName(name) {
         const present = getNpcsAt(currentGameState.currentLocation);
         for (const npc of present) {
@@ -4609,7 +4508,6 @@ Narrate the result briefly, grounded in this location and the story's current be
         teleport: async (locId) => { currentGameState.currentLocation = locId; await syncPresence(); renderActionBar(); },
         act: (text) => orchestratePlayerAction(text),
         busy: () => !!currentGameState.rpgOrchestrating,
-        forceQuest: (id, state) => setQuestState(id, { state: state || 'active', giver: 'Bryony' }),
         orgasm: (npc, internal, count) => resolvePlayerOrgasm(npc, internal !== false, count || 1),
         buff: (target, stat, amt, source) => addCustomStatus(target || 'player', { name: source || 'debug elixir', kind: amt >= 0 ? 'buff' : 'debuff', polarity: amt >= 0 ? 'positive' : 'negative', mods: [{ stat, amount: amt }], duration: 4 }),
         heal: (target, amt) => healStamina(target || 'player', amt),
@@ -4654,6 +4552,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
         nlMove: (d) => doNlMove(d),
         travelIssue: () => travelIssueNote,
+        clearLegacyQuests: () => { const rd = getPlayerRpgData(); if (rd && rd.quests) { delete rd.quests; savePlayer(); return 'legacy card-quest state removed'; } return 'nothing to clear'; },
         charmNote: (tier) => buildCharmInterpretationNote(tier ? { tier, success: tier === 'success' || tier === 'critical' } : null),
         maxStamina: () => maxStamina(),
         stamina: () => getStamina(),
