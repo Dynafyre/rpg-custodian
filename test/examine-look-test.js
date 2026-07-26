@@ -37,10 +37,44 @@ try {
     await page.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('New Game'))?.click());
     await wait(20000);
 
+    // ---- Part 0: story context beats card habits (Dyna's tea-scene repro) ----
+    // An evening in the shop's BACK ROOM, tea and flirting, being put up in a
+    // cot — examine must describe THAT Wren, not the card's shopkeeper-at-work.
+    await page.evaluate(() => window.rpgCustodianDebug.teleport('shop')); await wait(1200);
+    await page.evaluate(() => {
+        const c = SillyTavern.getContext();
+        const push = (name, mes, user = false) => { const m = { name, is_user: user, is_system: false, send_date: 'now', mes }; c.chat.push(m); c.addOneMessage(m); };
+        push('Game Master', 'Evening settles over the trading post. Wren bolts the front door, snuffs the counter lamp, and leads you through the curtain into the cramped back room — a kettle, two mismatched chairs, shelves of personal oddments.');
+        push('Reigngard', 'I settle into the offered chair, watching her pour the tea. "You always this hospitable to customers after close?"', true);
+        push('Wren', 'She snorts, pressing a chipped cup into my hands and folding herself into the other chair, knees drawn up, braid loosened for the night. "Only the ones who overpay without haggling." Hours slip by — stories, teasing, her guard lowering inch by inch.');
+        push('Game Master', 'It is deep night now. Wren drags a canvas cot from behind a shelf and wrestles it open beside the stove, smoothing a quilt over it — she is putting you up for the night, here in her back room.');
+    });
+    await wait(500);
+    const before0 = await chatLen();
+    await page.evaluate(() => { window.rpgCustodianDebug.examineNpc('Wren'); });
+    await wait(20000);
+    const out0 = await tailFrom(before0);
+    const gm0 = out0.find(m => m.w === 'Game Master' && m.mes.startsWith('👁️'));
+    console.log('\nTea-scene examine:', gm0 ? gm0.mes.replace(/\s+/g, ' ').slice(0, 400) : '(none)');
+    check('tea-scene: description present', !!gm0);
+    if (gm0) {
+        check('tea-scene: NOT at the counter/ledger/stool', !/behind the counter|her ledger|the ledger|stool|shelves of goods|open ledger/i.test(gm0.mes));
+        check('tea-scene: anchored in the live scene (cot/tea/night/back room)', /cot|tea|quilt|stove|back room|night|lamplight|curtain|chair/i.test(gm0.mes));
+    }
+
     // ---- Part 1: button examine, on a party member days into the road ----
     await page.evaluate(() => window.rpgCustodianDebug.addParty('Wren'));
     await page.evaluate(() => window.rpgCustodianDebug.tick(9)); // ~2+ days of travel together
     await page.evaluate(() => window.rpgCustodianDebug.teleport('forest')); await wait(1500);
+    // Real /move emits a 🚶 travel notice; teleport doesn't — seed the spine
+    // line + one road beat so the story records leaving the back room.
+    await page.evaluate(() => {
+        const c = SillyTavern.getContext();
+        const push = (name, mes) => { const m = { name, is_user: false, is_system: false, send_date: 'now', mes }; c.chat.push(m); c.addOneMessage(m); };
+        push('Game Master', '🚶 **Whispering Woods** — you set out from the trading post at dawn, Wren shouldering a pack at your side, and the days blur into trail-dust and campfires.');
+        push('Game Master', 'Two days into the wilds, the canopy closes overhead. Wren walks a half-step behind you, pack straps creaking, scanning the undergrowth.');
+    });
+    await wait(500);
     const joined = await page.evaluate(() => window.rpgCustodianDebug.rel('Wren').partyJoinedStep);
     check('party tenure tracked (partyJoinedStep set)', joined != null);
     const before = await chatLen();
@@ -60,6 +94,7 @@ try {
         check('not cut mid-sentence', /[.!?…"']\s*$/.test(txt.trim()));
         if (partyNow.includes('Wren')) {
             check('scene-aware (not relocated to her shop)', !/behind the counter|at her shop|in her shop|on her stool|behind her counter/i.test(txt));
+            check('moved on from the previous scene (no cot/quilt/stove)', !/cot|quilt|stove/i.test(txt));
         }
     }
 

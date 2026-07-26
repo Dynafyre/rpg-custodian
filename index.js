@@ -2265,14 +2265,14 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 ? `${npcName} has been travelling at the player's side for ${elapsedPhrase(onRoad)} — the road together is her everyday life now, and this moment finds her living it.`
                 : `${npcName} travels at the player's side; this journey is her life right now.`;
         }
-        const sys = `You are the GAME MASTER. The player pauses to LOOK at ${npcName}. Write 4-6 sentences of rich physical description — her build, face, hair, attire, posture, expression, and how she carries herself in this exact moment. Make her listed current state and her feeling toward the player VISIBLE in the picture (an exhausted woman looks it; a wary one watches him back). The recent story is the truth of the moment: describe her as she is inside it — mid-conversation, on the road, resting, fighting, whatever the scene holds — as though this is simply her life. Keep every detail inside the present scene at the stated place. Description only: no dialogue, no actions on her behalf, no new events. If you need to reason first, do it inside <think></think> tags; the description itself is pure prose.`;
+        const sys = `You are the GAME MASTER. The player pauses to LOOK at ${npcName}. Write 4-6 sentences of rich physical description — her build, face, hair, attire, body position, posture, expression, and what she is in the middle of doing in this exact moment. The RECENT STORY below is the ground truth of the moment: her whereabouts within the scene, her position, her activity, her dress and mood all come FROM IT — read it closely and describe her exactly where the last beats of the story place her, mid-whatever the story has her doing. The stated location only names where in the world this is; the story tells you where WITHIN it she is. Make her listed current state and her feeling toward the player VISIBLE in the picture (an exhausted woman looks it; a wary one watches him back). Description only: no dialogue, no actions on her behalf, no new events. If you need to reason first, do it inside <think></think> tags; the description itself is pure prose.`;
         const prompt = `Setting: ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}\n` +
             (tenure ? `${tenure}\n` : '') +
             `Who she is (general appearance & manner): ${npc?.description || `${npc?.role || 'a townswoman'}`}\n` +
             `Her feeling toward the player: ${t.label} (this colors how she meets his gaze).\n` +
             (flavor.length ? `Her current physical state (make this visible): ${flavor.join('; ')}.\n` : '') +
-            `Recent story (the live moment to describe her in):\n${recentSceneForAnalyzer()}\n\n` +
-            `Describe ${npcName}'s appearance now, here at ${locName(currentGameState.currentLocation)}.`;
+            `RECENT STORY (ground truth — her position, activity, and surroundings come from the latest beats of this):\n${recentStoryWindow()}\n\n` +
+            `Describe ${npcName} now, exactly as the story's final beats find her.`;
         try {
             const desc = (await generateProse({ prompt, systemPrompt: sys, budget: 700, rescuePrefill: '👁️ ' })).replace(/^👁️\s*/, '');
             if (desc) sendGameMasterMessage(`👁️ ${desc}`);
@@ -3765,6 +3765,32 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (m.name === 'Game Master' && GM_MECHANICAL_PREFIX.test(m.mes)) return false;   // travel/time/look notifications
         return true;
     }
+    /**
+     * A LONG linear story window for GM description/narration prompts. Walks
+     * backwards through story messages (spam-filtered, UNtruncated) until the
+     * char budget is spent. Frontier models take huge inputs happily — the
+     * stingy analyzer window is what left descriptions blind to the evening
+     * the player just spent. Default ~40k chars ≈ 10k tokens.
+     */
+    // Travel & time notices form the window's location/time SPINE — without
+    // them the story reads as one unbroken scene and descriptions linger in
+    // places the player already left. (Look/inventory noise stays excluded.)
+    const STORY_SPINE_PREFIX = /^\s*(🚶|⏰|🗓️)/;
+    function recentStoryWindow(maxChars = 40000) {
+        const chat = getCtx().chat || [];
+        const lines = [];
+        let used = 0;
+        for (let i = chat.length - 1; i >= 0 && used < maxChars; i--) {
+            const m = chat[i];
+            const spine = m.name === 'Game Master' && STORY_SPINE_PREFIX.test(m.mes || '');
+            if (!isStoryMessage(m) && !spine) continue;
+            const line = `${m.is_user ? 'Player' : m.name}: ${String(m.mes).replace(/\s+/g, ' ')}`;
+            used += line.length;
+            lines.push(line);
+        }
+        return lines.length ? lines.reverse().join('\n') : '(scene just beginning)';
+    }
+
     function recentSceneForAnalyzer() {
         const chat = getCtx().chat || [];
         // A wide, spam-filtered window: the Custodian spends its whole story budget
@@ -4143,9 +4169,11 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
             ? `\nIMPORTANT: ${fresh.join(' and ')} has JUST taken hold on the player — narrate it SETTLING IN and gripping him. Do NOT narrate it fading, receding, being shrugged off, or resolved.`
             : '';
         const prompt = `Setting (keep the scene HERE): ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}
+RECENT STORY (continuity — the scene as it stands; narrate ONLY the new action's result, consistent with where this finds everyone):
+${recentStoryWindow(8000)}
 Player attempted: "${playerText}" (${intent?.narration_hint || ''})
 Mechanical outcome: ${outcome}${eff ? `\nState change: ${eff}` : ''}${koNote}${freshNote}
-Narrate the result briefly, grounded in this location.`;
+Narrate the result briefly, grounded in this location and the story's current beat.`;
         try {
             return await generateProse({ prompt, systemPrompt: sys, budget: 400, rescuePrefill: 'The ' });
         } catch (e) { console.error('RPG Custodian: narration failed', e); return null; }
