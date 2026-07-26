@@ -37,9 +37,12 @@ try {
     await page.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('New Game'))?.click());
     await wait(20000);
 
-    // ---- Part 1: button examine, on a party member away from her shop ----
+    // ---- Part 1: button examine, on a party member days into the road ----
     await page.evaluate(() => window.rpgCustodianDebug.addParty('Wren'));
+    await page.evaluate(() => window.rpgCustodianDebug.tick(9)); // ~2+ days of travel together
     await page.evaluate(() => window.rpgCustodianDebug.teleport('forest')); await wait(1500);
+    const joined = await page.evaluate(() => window.rpgCustodianDebug.rel('Wren').partyJoinedStep);
+    check('party tenure tracked (partyJoinedStep set)', joined != null);
     const before = await chatLen();
     await page.evaluate(() => { window.rpgCustodianDebug.examineNpc('Wren'); }); // fire-and-forget: don't await the LLM promise
     await wait(15000);

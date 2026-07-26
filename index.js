@@ -2241,8 +2241,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         sendGhostMessage(`🔍 **${npcName}**${idLine ? ` — ${idLine}` : ''}\n${parts.join('\n')}`);
 
         // 2) Status-flavored appearance (LLM), grounded in her card + the live
-        // scene. Prefill suppresses the thinking step on reasoning models (same
-        // trick as the analyzer) so the budget is spent on the description.
+        // scene. Think-first via generateProse: reasoning models keep their
+        // thinking (headroom + strip), prefill only as rescue.
         const flavor = [];
         if (rel.npcUnconscious) flavor.push('unconscious, limp and unresponsive');
         else if ((rel.arousal || 1) >= 8) flavor.push('openly aroused — flushed, breathless, past hiding it');
@@ -2255,17 +2255,26 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if ((rel.pregnancies || 0) > 0) flavor.push(`${pregnancyStage(rel.pregnancy_progress)} pregnant, carrying ${rel.pregnancies}`);
         for (const e of npcActiveEffects(npcName)) flavor.push(`under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
         const t = affectionTier(rel.affection);
-        const sys = `You are the GAME MASTER. The player pauses to LOOK at ${npcName}. Write 4-6 sentences of rich physical description — her build, face, hair, attire, posture, expression, and how she carries herself in this exact moment. Make her listed current state and her feeling toward the player VISIBLE in the picture (an exhausted woman looks it; a wary one watches him back). Anchor her in the CURRENT scene from the recent story — if it shows her mid-conversation, travelling, resting, or fighting, describe her that way; NEVER return her to her usual haunt or routine, and NEVER relocate her from the stated place. Description only: no dialogue, no actions on her behalf, no new events, no thinking out loud — begin the description immediately.`;
-        const prompt = `Setting — she is HERE and nowhere else: ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}\n` +
-            (isInParty(npcName) ? `${npcName} is travelling WITH the player — she is at his side, not at her usual spot.\n` : '') +
-            `Who she is (appearance reference — IGNORE any location or routine this implies): ${npc?.description || `${npc?.role || 'a townswoman'}`}\n` +
+        // Positive framing beats negation: telling the model to "ignore her
+        // usual spot" made it describe her BY CONTRAST to it. Instead we state
+        // her present life as fact (road tenure) and never mention the old one.
+        let tenure = '';
+        if (isInParty(npcName)) {
+            const onRoad = rel.partyJoinedStep != null ? (currentGameState.timeStep || 0) - rel.partyJoinedStep : 0;
+            tenure = onRoad >= 4
+                ? `${npcName} has been travelling at the player's side for ${elapsedPhrase(onRoad)} — the road together is her everyday life now, and this moment finds her living it.`
+                : `${npcName} travels at the player's side; this journey is her life right now.`;
+        }
+        const sys = `You are the GAME MASTER. The player pauses to LOOK at ${npcName}. Write 4-6 sentences of rich physical description — her build, face, hair, attire, posture, expression, and how she carries herself in this exact moment. Make her listed current state and her feeling toward the player VISIBLE in the picture (an exhausted woman looks it; a wary one watches him back). The recent story is the truth of the moment: describe her as she is inside it — mid-conversation, on the road, resting, fighting, whatever the scene holds — as though this is simply her life. Keep every detail inside the present scene at the stated place. Description only: no dialogue, no actions on her behalf, no new events. If you need to reason first, do it inside <think></think> tags; the description itself is pure prose.`;
+        const prompt = `Setting: ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}\n` +
+            (tenure ? `${tenure}\n` : '') +
+            `Who she is (general appearance & manner): ${npc?.description || `${npc?.role || 'a townswoman'}`}\n` +
             `Her feeling toward the player: ${t.label} (this colors how she meets his gaze).\n` +
             (flavor.length ? `Her current physical state (make this visible): ${flavor.join('; ')}.\n` : '') +
             `Recent story (the live moment to describe her in):\n${recentSceneForAnalyzer()}\n\n` +
             `Describe ${npcName}'s appearance now, here at ${locName(currentGameState.currentLocation)}.`;
         try {
-            const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 700, prefill: '👁️ ' });
-            const desc = stripReasoning(raw).replace(/^👁️\s*/, '');
+            const desc = (await generateProse({ prompt, systemPrompt: sys, budget: 700, rescuePrefill: '👁️ ' })).replace(/^👁️\s*/, '');
             if (desc) sendGameMasterMessage(`👁️ ${desc}`);
         } catch (e) { console.error('RPG Custodian: examine failed', e); }
     }
@@ -2306,6 +2315,10 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         currentGameState.party = currentGameState.party || [];
         if (!currentGameState.party.includes(npcName)) {
             currentGameState.party.push(npcName);
+            // Tenure: how long she's been on the road with you (feeds examine
+            // descriptions so travel reads as her present life, not an outing).
+            getRelationship(npcName).partyJoinedStep = currentGameState.timeStep || 0;
+            savePlayer();
             sendGhostMessage(`🧑‍🤝‍🧑 **${npcName} joins you** — she'll travel at your side until you part ways.`);
         }
         saveCurrentState();
@@ -2315,6 +2328,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         const wasParty = (currentGameState.party || []).includes(npcName);
         const rel = getRelationship(npcName);
         const here = currentGameState.currentLocation;
+        rel.partyJoinedStep = null;
 
         if (rel.npcUnconscious) {
             // Leaving her unconscious: pin her HERE and record the circumstance so
@@ -3421,8 +3435,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         const list = items.map(it => `- id "${it.id}": ${it.text}`).join('\n');
         const prompt = `RECENT STORY:\n${recentSceneForAnalyzer()}\n\nCONDITIONS TO JUDGE:\n${list}\n\nOutput JSON like {"<id>": true|false, ...}.`;
         try {
-            const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 300, prefill: '{' });
-            const parsed = parseIntent(raw) || parseIntent('{' + String(raw || ''));
+            const parsed = await generateJson({ prompt, systemPrompt: sys, budget: 300 });
             return (parsed && typeof parsed === 'object') ? parsed : {};
         } catch (e) { console.error('RPG Custodian: condition eval failed', e); return {}; }
     }
@@ -3526,8 +3539,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         try {
             const sys = `You are the RPG ITEM APPRAISER. Given an item, invent a BRIEF, BALANCED equipment effect. Output ONLY JSON:\n{"effect":"<max ~6 words shown next to the name, e.g. '+1 Craftiness in nature', 'No penalty in the dark', '+1 Ruggedness for combat'>","usage":"equip"|"consume","slot":"weapon|offhand|armor|head|accessory|tool|none","stat":"ruggedness|charm|craftiness|virility"|null,"amount":<integer, usually 1, rarely 2>,"condition":"<short phrase for WHEN a stat bonus applies, or empty string if always>"}\nRules: wearable gear/tools/weapons/jewelry → "equip"; potions/food/scrolls/one-use → "consume" (and usually stat null). Keep bonuses small. If the effect is purely situational (light source, etc.) set stat null.`;
             const prompt = `Item: "${prettyItem(item.name)}"${item.desc ? ` — ${item.desc}` : ''}.`;
-            const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 160, prefill: '{' });
-            const p = parseIntent(raw) || parseIntent('{' + String(raw || ''));
+            const p = await generateJson({ prompt, systemPrompt: sys, budget: 160 });
             if (!p) return;
             item.effectText = (p.effect && String(p.effect).trim()) || item.effectText || '';
             if (p.usage === 'consume' || p.usage === 'equip') item.usage = p.usage;
@@ -3866,9 +3878,12 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
         if (window.RPGC_LOG_PROMPT) console.log('RPG Custodian: ANALYZER PROMPT\n' + prompt);
         for (let attempt = 0; attempt < 2; attempt++) {
             try {
-                // prefill '{' pushes the model straight into JSON (skipping a
-                // reasoning preamble); big budget covers models that still think.
-                const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 900, prefill: '{' });
+                // Attempt 0: think-first — the Custodian keeps its reasoning,
+                // with headroom so thinking can't starve the JSON. Attempt 1:
+                // prefill '{' rescue, which skips the thinking channel.
+                const raw = await context.generateRaw(attempt === 0
+                    ? { prompt, systemPrompt: sys, responseLength: 900 + THINK_HEADROOM }
+                    : { prompt, systemPrompt: sys, responseLength: 900, prefill: '{' });
                 if (window.RPGC_LOG_PROMPT) console.log('RPG Custodian: ANALYZER RAW =', String(raw).slice(0, 500));
                 let parsed = parseIntent(raw);
                 if (!parsed) parsed = parseIntent('{' + String(raw || ''));  // prefill may be stripped from the echo
@@ -3883,6 +3898,46 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
     }
 
     // Strip a reasoning model's thinking blocks so only the answer remains.
+    // Reasoning models think from the SAME token budget as their answer — the
+    // API exposes no separate thinking budget. So LLM calls here run
+    // THINK-FIRST: generous headroom on top of the answer budget, think block
+    // stripped afterwards — the model keeps its reasoning. Only when thinking
+    // consumed the whole budget (nothing usable survived the strip/parse) does
+    // a rescue retry use a prefill, which starts the assistant turn directly
+    // and skips the thinking channel entirely.
+    const THINK_HEADROOM = 900;
+
+    /**
+     * Prose call: think-first with headroom, strip, prefill-rescue on empty.
+     * rescuePrefill is re-prepended if the backend didn't echo it. Returns ''
+     * only if both passes produced nothing.
+     */
+    async function generateProse({ prompt, systemPrompt, budget, rescuePrefill = '' }) {
+        let text = '';
+        try {
+            text = stripReasoning(await context.generateRaw({ prompt, systemPrompt, responseLength: budget + THINK_HEADROOM }));
+        } catch (e) { console.warn('RPG Custodian: prose call failed, trying prefill rescue', e); }
+        if (!text) {
+            const raw = await context.generateRaw({ prompt, systemPrompt, responseLength: budget, prefill: rescuePrefill || undefined });
+            text = stripReasoning(raw);
+            if (text && rescuePrefill && !text.startsWith(rescuePrefill.trim())) text = rescuePrefill + text;
+        }
+        return text;
+    }
+
+    /**
+     * JSON call: think-first with headroom, parse, prefill-'{' rescue.
+     * Returns the parsed object, or null.
+     */
+    async function generateJson({ prompt, systemPrompt, budget }) {
+        try {
+            const parsed = parseIntent(await context.generateRaw({ prompt, systemPrompt, responseLength: budget + THINK_HEADROOM }));
+            if (parsed) return parsed;
+        } catch (e) { console.warn('RPG Custodian: json call failed, trying prefill rescue', e); }
+        const raw = await context.generateRaw({ prompt, systemPrompt, responseLength: budget, prefill: '{' });
+        return parseIntent(raw) || parseIntent('{' + String(raw || ''));
+    }
+
     function stripReasoning(s) {
         return String(s || '')
             .replace(/<think>[\s\S]*?<\/think>/gi, '')
@@ -4069,7 +4124,7 @@ ACTIVE QUEST OBJECTIVES HERE: ${questAttemptContextForAnalyzer()}`;
     }
 
     async function narrateResult(playerText, intent, check) {
-        const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences, narrate the RESULT of the player's action from the mechanical outcome given. Keep it grounded in WHERE the scene is happening (the stated location) — do not drift the action to another place. Narrate only the world and the player's action/outcome. Do NOT speak, act, or write dialogue for any named NPC — they respond for themselves. Do NOT use <think> tags or reasoning; write only the narration prose. Be concise.`;
+        const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences, narrate the RESULT of the player's action from the mechanical outcome given. Keep it grounded in WHERE the scene is happening (the stated location) — do not drift the action to another place. Narrate only the world and the player's action/outcome. Do NOT speak, act, or write dialogue for any named NPC — they respond for themselves. If you need to reason first, do it inside <think></think> tags; the narration itself is pure prose. Be concise.`;
         let outcome;
         if (check) outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${check.success ? 'SUCCESS' : 'FAILURE'}.`;
         else if (intent?.mechanical) outcome = 'The action succeeds automatically (no roll needed).';
@@ -4092,8 +4147,7 @@ Player attempted: "${playerText}" (${intent?.narration_hint || ''})
 Mechanical outcome: ${outcome}${eff ? `\nState change: ${eff}` : ''}${koNote}${freshNote}
 Narrate the result briefly, grounded in this location.`;
         try {
-            const raw = await context.generateRaw({ prompt, systemPrompt: sys, responseLength: 400 });
-            return stripReasoning(raw);
+            return await generateProse({ prompt, systemPrompt: sys, budget: 400, rescuePrefill: 'The ' });
         } catch (e) { console.error('RPG Custodian: narration failed', e); return null; }
     }
 
