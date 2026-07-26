@@ -72,18 +72,25 @@ already supports — "the Rose" for The Velvet Rose), **description**, **tags**
 level** (§3.4).
 
 ### 3.4 Location secrecy (mirrors the NPC `secret` flag)
+
+**Principle (Dyna's clarification):** the Custodian ALWAYS knows every
+location, secret or not. It is a silent arbiter — all player-facing prose is
+subletted to the GM and NPCs — so a secret held in its context cannot leak.
+Secrecy is applied at the LEAKY surfaces only: NPC/GM context and the
+player-facing menus. Keeping secret places in the Custodian's KNOWN PLACES
+list also preserves the well-functioning fuzzy destination matching — never
+route around it with "verbatim" passthrough.
+
 - **Level 0 — public:** all NPCs know of it (it joins the common-knowledge
-  directory alongside people); listed in Move/Look menus and the analyzer's
-  KNOWN PLACES.
+  directory alongside people); listed in Move/Look menus.
 - **Level 1 — unknown:** NPCs don't know it exists by default (out of the
   common-knowledge directory and NPC context), but it still appears in the
   PLAYER's move options — he found it, they haven't.
 - **Level 2 — hidden:** out of global NPC context AND absent from the shown
-  Move/Look lists and the analyzer's KNOWN PLACES — but `doNlMove`'s
-  name-matching still includes it, so a natural-language move by the player
-  (or an NPC leading him) lands there. The analyzer needs one guidance line:
-  _"a place not on the list may still exist — if the player names a specific
-  place, emit the move with his name for it verbatim."_ **World authors seed
+  Move/Look menus. The Custodian still holds it in KNOWN PLACES, annotated
+  `(secret — move there only when the player or an NPC explicitly names,
+  seeks, or leads the way to it)`, so fuzzy matching works unchanged and it
+  never volunteers the place as a helpful suggestion. **World authors seed
   clues** to level-2 places in NPC cards and location descriptions; the
   engine keeps the secret until the story spends it.
 - (Engine support for secrecy is independent of the editor and can ship
