@@ -672,7 +672,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             list.append('<div class="pe-fx-title">Active effects:</div>');
             for (const e of fx) {
                 const row = $('<div class="pe-fx-row"></div>');
-                row.append($('<span class="pe-fx-label"></span>').text(`${effectIcon(e)} ${e.name}${statusModString(e.mods)}`));
+                row.append($('<span class="pe-fx-label"></span>').text(effectDetailLine(e)));
                 const del = $('<button type="button" class="rpg-map-btn pe-fx-del" title="Remove">✖</button>');
                 del.on('click', () => {
                     const rel = getRelationship(name);
@@ -3643,7 +3643,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (npc?.fertility != null) parts.push(`🌱 Fertility: ${fertilityPercent(npcName)}%`);
         if (npc?.wrestle) parts.push(`🤼 Contest DC: ${npc.wrestle.difficulty}`);
         if ((rel.pregnancies || 0) > 0) parts.push(`🤰 Pregnancy: ${rel.pregnancies} carried — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} (${rel.pregnancy_progress || 0}%)`);
-        for (const e of npcActiveEffects(npcName)) parts.push(effectLine(e));
+        for (const e of npcActiveEffects(npcName)) parts.push(effectDetailLine(e));
         if (isCrystalCursed(npcName)) parts.push(`💠 **Crystal Curse** — her issue turns to soulgems (${(getRelationship(npcName).crystalCurse?.expiresStep == null) ? 'permanent until broken' : `${Math.max(0, getRelationship(npcName).crystalCurse.expiresStep - (currentGameState.timeStep || 0))} periods left`})`);
         if (isInParty(npcName)) parts.push('🧑‍🤝‍🧑 Travelling with you');
         const idLine = [npc?.role, npc?.race, npc?.age].filter(Boolean).join(', ');
@@ -3660,7 +3660,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             flavor.push(stamNow <= npcMaxStamina(npcName) / 3 ? 'utterly spent, barely upright' : 'worn and tired');
         }
         if ((rel.pregnancies || 0) > 0) flavor.push(`${pregnancyStage(rel.pregnancy_progress)} pregnant, carrying ${rel.pregnancies}`);
-        for (const e of npcActiveEffects(npcName)) flavor.push(`under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
+        for (const e of npcActiveEffects(npcName)) flavor.push(e.selfNote ? `under the effect of ${e.name}: ${e.selfNote}` : `under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
         const t = affectionTier(rel.affection);
         // Positive framing beats negation: telling the model to "ignore her
         // usual spot" made it describe her BY CONTRAST to it. Instead we state
@@ -3962,6 +3962,34 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         return `[How she received ${player}'s last words — play this reading in your reply:] ${read}`;
     }
 
+    // === NPC status self-knowledge & lifecycle reactions ===
+    // An afflicted/blessed NPC KNOWS her own condition: a natural description
+    // (how it feels to her, how long it holds, what ends it) is generated ONCE
+    // at application and projected while active. And when a status begins,
+    // wears off, or is broken IN PLAY (never by admin-menu edits), she gets a
+    // one-shot reaction note — the reunion-comment pattern — so her next reply
+    // acknowledges it.
+
+    async function generateStatusSelfNote(target, rec) {
+        try {
+            if (!(await waitForGenerationIdle(20000))) return;
+            const ends = statusEndsLabel(rec);
+            const sys = `You are the RPG narrator. In 1-2 third-person sentences, describe how the effect "${rec.name}" feels and shows for ${target} from her OWN awareness: what she notices in her body or mind, roughly how long it will hold, and what she senses would end it. Ground it strictly in the given facts; invent sensation, not mechanics. Output only the description.`;
+            const prompt = `Effect on ${target}: "${rec.name}" (${rec.kind}${statusModString(rec.mods)})${rec.desc ? ` — ${rec.desc}` : ''}. Ends: ${ends || 'permanent until broken'}.`;
+            const text = await generateProse({ prompt, systemPrompt: sys, budget: 130, rescuePrefill: 'She ' });
+            if (text) { rec.selfNote = text.trim(); savePlayer(); projectPlayerStatus(); }
+        } catch (e) { console.warn('RPG Custodian: status self-note generation failed', e); }
+    }
+
+    /** Queue a one-shot status reaction for her next reply (in-play events only). */
+    function queueStatusReaction(target, text) {
+        if (!target || target === 'player') return;
+        const rel = getRelationship(target);
+        rel.statusReactionNote = rel.statusReactionNote ? `${rel.statusReactionNote} ${text}` : text;
+        savePlayer();
+    }
+    const STATUSREACT_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS_REACT';
+
     // === Whereabouts knowledge (Custodian-gated) ===
     // Locals know each other's routines, so an NPC asked "where's Fern?" can
     // answer honestly — but only when the Custodian judges the conversation
@@ -4140,7 +4168,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if ((rel.arousal || 1) >= 3) d += ` Physically (${a.label}): ${a.band}`;
             if (rel.pregnancies > 0) d += ` She is carrying ${rel.pregnancies} of your ${rel.pregnancies === 1 ? 'child' : 'children'} — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} stage, ${rel.pregnancy_progress || 0}% developed.`;
             const npcFx = npcActiveEffects(npc.name);
-            if (npcFx.length) d += ` Under effects: ${npcFx.map(effectLine).join(', ')}.`;
+            if (npcFx.length) d += ` Under effects (she KNOWS her own condition): ${npcFx.map(e => e.selfNote ? `${e.name} — ${e.selfNote}` : effectDetailLine(e)).join(' | ')}`;
             if (isCrystalCursed(npc.name)) d += ` She bears the CRYSTAL CURSE — any child she births comes as an inert soulgem (until broken by magic).`;
             return d;
         });
@@ -4854,6 +4882,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     function npcStatMod(npcName, stat) { return effectStatMod(getRelationship(npcName).customEffects, stat); }
     function npcActiveEffects(npcName) { return (getRelationship(npcName).customEffects || []).filter(e => e.active !== false); }
     function effectLine(e) { const el = statusEndsLabel(e); return `${effectIcon(e)} ${e.name}${statusModString(e.mods)}${el ? ` (${el})` : ''}`; }
+    /** Full detail line: description + how it ends (times, conditions, triggers). */
+    function effectDetailLine(e) {
+        const el = statusEndsLabel(e);
+        return `${effectIcon(e)} ${e.name}${statusModString(e.mods)}${e.desc ? ` — ${e.desc}` : ''} · ends: ${el || 'permanent'}`;
+    }
     function statusIcon(pol) { return pol === 'positive' ? '🌟' : pol === 'negative' ? '☠️' : '✨'; }
     // Unified effect vocabulary — buff/debuff/pact/blessing/vow/curse/quest are all
     // one thing (an effect that is applied and later ends); `kind` just picks the face.
@@ -4936,6 +4969,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             const kindWord = rec.kind && rec.kind !== 'status' ? rec.kind : `${rec.polarity} status`;
             sendGhostMessage(`${effectIcon(rec)} **${rec.name}** — ${who} a ${kindWord}.${statusModString(rec.mods)}${rec.desc ? ` ${rec.desc}` : ''}${ends ? `\n_Ends when: ${ends}._` : ''}`);
         }
+        // NPC self-knowledge (generated once, async) + in-play application reaction
+        if (!isPlayer) {
+            generateStatusSelfNote(target, rec);
+            if (!quiet && category !== 'quest') {
+                queueStatusReaction(target, `The effect "${rec.name}"${rec.desc ? ` (${rec.desc})` : ''} has JUST taken hold of her — she feels it settling in right now.`);
+            }
+        }
         return rec;
     }
     // Finish a quest-objective: grant its reward, announce, remove it.
@@ -4952,18 +4992,21 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     function pruneCustomStatuses(quiet = false) {
         const rd = getPlayerRpgData(); if (!rd) return;
         const step = currentGameState.timeStep || 0;
-        const expire = (holder, label) => {
+        const expire = (holder, label, npcName = null) => {
             if (!holder.customEffects?.length) return;
             const gone = holder.customEffects.filter(e => e.expiresStep != null && step >= e.expiresStep);
             if (!gone.length) return;
             holder.customEffects = holder.customEffects.filter(e => !gone.includes(e));
-            if (!quiet) for (const e of gone) sendGhostMessage(e.category === 'quest'
-                ? `⌛ Objective **${e.name}** expired — the chance has passed.`
-                : `⌛ ${label} **${e.name}** ${e.polarity === 'positive' ? 'fades' : 'passes'}.`);
+            if (!quiet) for (const e of gone) {
+                sendGhostMessage(e.category === 'quest'
+                    ? `⌛ Objective **${e.name}** expired — the chance has passed.`
+                    : `⌛ ${label} **${e.name}** ${e.polarity === 'positive' ? 'fades' : 'passes'}.`);
+                if (npcName && e.category !== 'quest') queueStatusReaction(npcName, `Her "${e.name}" has just worn off with time — she feels it fading away.`);
+            }
         };
         expire(rd, 'Your');
         for (const [name, rel] of Object.entries(rd.relationships || {})) {
-            expire(rel, `${name}'s`);
+            expire(rel, `${name}'s`, name);
             // Arousal cools by 1 per time period toward calm (romance-redesign
             // §D) — bodies cool off; affection doesn't. Step-guarded so a
             // repeated prune in the same period can't double-decay.
@@ -4982,7 +5025,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (!removed.length) return false;
         holder.customEffects = holder.customEffects.filter(e => !removed.includes(e));
         savePlayer();
-        for (const e of removed) sendGhostMessage(`✅ **${e.name}** ends${reason ? ` — ${reason}` : ''}.`);
+        for (const e of removed) {
+            sendGhostMessage(`✅ **${e.name}** ends${reason ? ` — ${reason}` : ''}.`);
+            if (target && target !== 'player') queueStatusReaction(target, `The effect "${e.name}" on her has JUST ended${reason ? ` — ${reason}` : ''}. She feels it lift.`);
+        }
         return true;
     }
     // Permanent stat change (a level-up boon, a curse that drains, a blessing that
@@ -5785,6 +5831,14 @@ Narrate the result briefly, grounded in this location and the story's current be
         // Whereabouts knowledge, when the Custodian judged the ask warrants it
         const whereNote = pendingWhereaboutsNote; pendingWhereaboutsNote = null;
         if (whereNote) context.setExtensionPrompt(WHEREABOUTS_PROMPT_KEY, whereNote, 1, 0);
+        // In-play status lifecycle reaction (applied/lifted/worn-off since her
+        // last reply) — one-shot, reunion-comment style
+        const relForNote = getRelationship(npcName);
+        const statusNote = relForNote.statusReactionNote || null;
+        if (statusNote) {
+            context.setExtensionPrompt(STATUSREACT_PROMPT_KEY, `[What ${npcName} is feeling right now — weave a genuine reaction into her reply:] ${statusNote}`, 1, 0);
+            relForNote.statusReactionNote = null;
+        }
         const preReplyLen = (getCtx().chat || []).length;
         try {
             await context.executeSlashCommandsWithOptions(`/trigger await=true ${npcName}`, { source: 'rpg-custodian' });
@@ -5793,6 +5847,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             if (reunion) context.setExtensionPrompt(REUNION_PROMPT_KEY, '', 1, 0);     // one-shot: clear after this reply
             if (charmNote) context.setExtensionPrompt(CHARM_PROMPT_KEY, '', 1, 0);
             if (whereNote) context.setExtensionPrompt(WHEREABOUTS_PROMPT_KEY, '', 1, 0);
+            if (statusNote) context.setExtensionPrompt(STATUSREACT_PROMPT_KEY, '', 1, 0);
             noteSeen(npcName);                                                         // she has now seen him this moment
             savePlayer();
         }
