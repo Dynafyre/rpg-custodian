@@ -476,6 +476,125 @@ jQuery(async () => {
     }
 
     // ========================================================================
+    // PLAYER CHARACTER EDITOR
+    // ========================================================================
+    // Direct edit of the hero's numbers (stats, pools, purse, progression) +
+    // a bespoke-status forge: describe an effect in words, the Custodian
+    // designs the record (name/kind/mods/ends), the engine applies it.
+
+    function openPlayerEditor() {
+        const rd = getPlayerRpgData();
+        if (!rd) { wmToast('No RPG character yet — use Create Character first.', 'warning'); return; }
+        $('#rpg-player-overlay').remove();
+        const s = rd.stats;
+        const num = (id, label, val, min, max) => `<label>${label} <input id="${id}" type="number" min="${min}" max="${max}" value="${val}"></label>`;
+        const ov = $(`
+            <div id="rpg-player-overlay">
+                <div class="rpg-form-panel">
+                    <div class="rpg-popup-title">🧬 Edit Character</div>
+                    <div class="cf-row">
+                        ${num('pe-rug', '💪 Ruggedness', s.ruggedness ?? 3, 1, 10)}
+                        ${num('pe-charm', '😏 Charm', s.charm ?? 3, 1, 10)}
+                    </div>
+                    <div class="cf-row">
+                        ${num('pe-craft', '🦊 Craftiness', s.craftiness ?? 3, 1, 10)}
+                        ${num('pe-vir', '🔥 Virility', s.virility ?? 3, 1, 10)}
+                    </div>
+                    <div class="cf-row">
+                        ${num('pe-stam', `❤️ Stamina (max ${maxStamina()})`, getStamina(), 0, 99)}
+                        ${num('pe-mana', `🔮 Mana (max ${maxMana()})`, s.mana ?? 0, 0, 99)}
+                    </div>
+                    <div class="cf-row">
+                        ${num('pe-gold', '🪙 Gold', getGold(), 0, 999999)}
+                        ${num('pe-level', '🎚️ Level', s.level ?? 1, 1, 99)}
+                    </div>
+                    <div class="cf-row">
+                        ${num('pe-xp', '✨ XP', s.experience ?? 0, 0, 999999)}
+                        ${num('pe-tokens', '⭐ Power Tokens', s.power_tokens ?? 0, 0, 9999)}
+                    </div>
+                    <div id="pe-effects"></div>
+                    <label>🪄 Request a bespoke effect from the Custodian
+                        <textarea id="pe-status-req" rows="3" placeholder="e.g. a lingering wolf-bite fever, weakening me until cured · a road-blessing, +1 charm for a day · a one-use battle draught for my next fight · a fey pact: +2 craftiness while I owe the errand"></textarea>
+                    </label>
+                    <button type="button" id="pe-forge" class="rpg-map-btn">🪄 Forge effect <span id="pe-throbber" style="display:none">⏳</span></button>
+                    <div id="pe-forge-result"></div>
+                    <div class="mp-buttons">
+                        <button id="pe-save" class="rpg-map-btn">💾 Save</button>
+                        <button id="pe-close" class="rpg-map-btn">Close</button>
+                    </div>
+                </div>
+            </div>`);
+        $('body').append(ov);
+        // Active effects & objectives, each with a remove control.
+        const renderEffects = () => {
+            const list = $('#pe-effects').empty();
+            const fx = playerCustomEffects();
+            if (!fx.length) return;
+            list.append('<div class="pe-fx-title">Active effects & objectives:</div>');
+            for (const e of fx) {
+                const row = $('<div class="pe-fx-row"></div>');
+                row.append($('<span class="pe-fx-label"></span>').text(`${effectIcon(e)} ${e.name}${statusModString(e.mods)}`));
+                const del = $('<button type="button" class="rpg-map-btn pe-fx-del" title="Remove">✖</button>');
+                del.on('click', () => {
+                    const rd2 = getPlayerRpgData();
+                    rd2.customEffects = (rd2.customEffects || []).filter(x => x !== e && x.id !== e.id);
+                    savePlayer();
+                    sendGhostMessage(`✅ **${e.name}** ends — dispelled.`);
+                    projectPlayerStatus(); renderActionBar();
+                    renderEffects();
+                });
+                row.append(del);
+                list.append(row);
+            }
+        };
+        renderEffects();
+        $('#pe-close').on('click', () => $('#rpg-player-overlay').remove());
+        $('#pe-save').on('click', () => {
+            const v = (id, min, max) => Math.max(min, Math.min(max, Number($(`#${id}`).val()) || 0));
+            s.ruggedness = v('pe-rug', 1, 10); s.charm = v('pe-charm', 1, 10);
+            s.craftiness = v('pe-craft', 1, 10); s.virility = v('pe-vir', 1, 10);
+            s.level = v('pe-level', 1, 99);
+            s.experience = v('pe-xp', 0, 999999);
+            s.power_tokens = v('pe-tokens', 0, 9999);
+            s.mana = Math.min(v('pe-mana', 0, 99), maxMana());
+            s.stamina = Math.min(v('pe-stam', 0, 99), maxStamina());
+            if (s.stamina > 0) s.unconscious = false;
+            rd.inventory.currency = v('pe-gold', 0, 999999);
+            savePlayer();
+            projectPlayerStatus(); renderActionBar();
+            $('#rpg-player-overlay').remove();
+            wmToast('Character updated.', 'success');
+        });
+        $('#pe-forge').on('click', async function () {
+            const text = String($('#pe-status-req').val() || '').trim();
+            if (!text) return;
+            const btn = $(this);
+            btn.prop('disabled', true); $('#pe-throbber').show();
+            try {
+                const rec = await forgeBespokeStatus(text);
+                $('#pe-forge-result').html(rec
+                    ? `<div class="pe-forged">${effectIcon(rec)} <b></b>${statusModString(rec.mods)} — applied.</div>`
+                    : `<div class="pe-forged">The Custodian couldn't shape that one — try rewording.</div>`);
+                if (rec) { $('#pe-forge-result .pe-forged b').text(rec.name); $('#pe-status-req').val(''); renderEffects(); }
+            } catch (e) {
+                console.error('RPG Custodian: bespoke forge failed', e);
+                $('#pe-forge-result').text('The forge sputtered — check the console.');
+            } finally { btn.prop('disabled', false); $('#pe-throbber').hide(); }
+        });
+    }
+
+    /** The Custodian designs an effect record from the player's words. */
+    async function forgeBespokeStatus(text) {
+        const sys = `You are the RPG CUSTODIAN. The player asks you to design a bespoke applied effect from a plain-language request. Output ONLY JSON:
+{"name":"short evocative name","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"one line of what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|stamina","amount":N}],"duration":N,"end_condition":"plain-English story event that ends it, or omit","expires_on_check":"a stat name for a ONE-USE pre-buff spent on the next trial of that stat, or omit"}
+Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for potent magic). duration is in time periods (4 per day) — always give lingering NEGATIVE effects a duration backstop even when they have an end_condition. Honor the SPIRIT of the request: a one-use "before my next fight" boost gets expires_on_check; a curse gets an end_condition worth roleplaying toward. Invent flavor freely; never refuse.`;
+        const prompt = `Player's request: "${text}"\nPlayer right now: ${statsContextForAnalyzer()}`;
+        const p = await generateJson({ prompt, systemPrompt: sys, budget: 300 });
+        if (!p || !p.name) return null;
+        return addCustomStatus('player', p);
+    }
+
+    // ========================================================================
     // CAST ONBOARDING WIZARD (world-management §4, phase 4)
     // ========================================================================
     // Any V2 character — already-installed or imported from a card file —
@@ -1121,6 +1240,7 @@ jQuery(async () => {
         items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
         items.push({ icon: '✨', label: 'Create Character', action: () => createRPGCharacterCommand() });
         items.push({ icon: '👤', label: 'Character Sheet', action: () => showRPGCharacterInfoCommand({}, '') });
+        items.push({ icon: '🧬', label: 'Edit Character', action: () => openPlayerEditor() });
         if (currentGameState.isActive) {
             items.push({ icon: '⏰', label: 'Wait (advance time)', action: () => waitCommand({}, '') });
             items.push({ icon: '📅', label: 'Date & Time', action: () => dateCommand({}, '') });
