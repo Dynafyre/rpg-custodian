@@ -748,7 +748,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             }
         };
         $('#cast-filter').on('input', renderList);
-        $('#cast-pick-cancel').on('click', () => { $('#rpg-cast-overlay').remove(); openCastManager(worldId); });
+        $('#cast-pick-cancel').on('click', (e) => { e.stopPropagation(); $('#rpg-cast-overlay').remove(); openCastManager(worldId); });
         renderList();
     }
 
@@ -854,12 +854,14 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
         setToggle($('#cf-secret'), !!rc.secret);
         $('#cf-shop').val(rc.shop || '');
-        $('#cf-cancel').on('click', () => {
+        $('#cf-cancel').on('click', (e) => {
+            e.stopPropagation();
             $('#rpg-cast-overlay').remove();
             if (opts.adopting) delete world.castData[name];   // adoption not completed
             openCastManager(worldId);   // flow back to the cast list
         });
-        $('#cf-save').on('click', () => {
+        $('#cf-save').on('click', (e) => {
+            e.stopPropagation();
             const schedule = {};
             for (const p of periods) schedule[p] = $(`.cf-period[data-p="${p}"]`).val();
             card.extensions = card.extensions || {};
@@ -4667,6 +4669,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
 
     // --- Contextual action bar (buttons above the input) ---
     function openActionPopup(title, items) {
+        // Disarm any stale dismiss listener from a previous popup — a bubbling
+        // click from OUTSIDE a popup row (e.g. a form's Save button reopening
+        // a popup) would otherwise instantly kill the new popup.
+        $(document).off('click.rpgActionPop');
         $('#rpg-action-popup').remove();
         const pop = $('<div id="rpg-action-popup" class="rpg-popup"></div>');
         pop.append($('<div class="rpg-popup-title"></div>').text(title));

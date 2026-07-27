@@ -125,6 +125,9 @@ try {
     check('edit reopens form with saved values', await page.evaluate(() => document.getElementById('cf-role')?.value) === 'wandering alchemist');
     await page.evaluate(() => { document.getElementById('cf-role').value = 'master alchemist'; });
     await page.click('#cf-save'); await wait(600);
+    const backToList = await page.evaluate(() => document.querySelector('#rpg-action-popup .rpg-popup-title')?.textContent || '');
+    check('save flows back to the cast list (popup survives the bubbling click)', /Cast of/.test(backToList), backToList.slice(0, 40));
+    await page.evaluate(() => document.getElementById('rpg-action-popup')?.remove());
     w = await world();
     const rc2 = (w.castData?.[castName]?.data || w.castData?.[castName])?.extensions?.rpg_custodian || {};
     check('edit saves + bumps card_version', rc2.role === 'master alchemist' && parseFloat(rc2.card_version) > parseFloat(rc.card_version), `${rc.card_version} → ${rc2.card_version}`);
