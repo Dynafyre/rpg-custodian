@@ -2879,13 +2879,13 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 char.avatar === 'Game Master.png'
             );
 
-            if (gameMaster && !cardHasGreeting(gameMaster)) {
+            if (gameMaster && !cardHasGreeting(gameMaster) && Number(gameMaster.talkativeness) === 0) {
                 console.log('RPG Custodian: Game Master character already exists');
                 return;
             }
 
             console.log(gameMaster
-                ? 'RPG Custodian: Game Master card has a greeting, recreating without it...'
+                ? 'RPG Custodian: Game Master card needs normalizing (greeting/talkativeness), recreating...'
                 : 'RPG Custodian: Game Master not found, creating from template...');
             await createGameMasterFromTemplate();
 
@@ -2942,16 +2942,19 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             formData.append('post_history_instructions', charData.post_history_instructions || '');
             formData.append('creator', charData.creator || '');
             formData.append('character_version', charData.character_version || '');
-            
+            // RPG cards never auto-speak: talkativeness 0 on BOTH spec
+            // surfaces (V1 root via this field, V2 via the extensions blob).
+            // Omitting the field let ST default V1 to 0.5 while our extensions
+            // said 0 → "Spec v2 data mismatch" warnings on every load.
+            formData.append('talkativeness', '0');
+
             // Handle tags
             if (charData.tags && charData.tags.length > 0) {
                 formData.append('tags', charData.tags.join(','));
             }
             
-            // Add extensions data
-            if (charData.extensions) {
-                formData.append('extensions', JSON.stringify(charData.extensions));
-            }
+            // Add extensions data (normalized: talkativeness 0 always)
+            formData.append('extensions', JSON.stringify({ ...(charData.extensions || {}), talkativeness: 0 }));
             
             // Create character using SillyTavern's API with proper headers
             const saveResponse = await fetch('/api/characters/create', {
@@ -3027,7 +3030,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 if (!existing) {
                     console.log(`RPG Custodian: Creating cast member "${castName}"...`);
                     await createCharacterFromCardData(cardData, castName);
-                } else if (liveVersion !== srcVersion || cardHasGreeting(existing)) {
+                } else if (liveVersion !== srcVersion || cardHasGreeting(existing) || Number(existing.talkativeness) !== 0) {
                     console.log(`RPG Custodian: Refreshing "${castName}" card (${liveVersion || 'none'} → ${srcVersion})`);
                     await createCharacterFromCardData(cardData, castName);
                 }

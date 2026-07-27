@@ -68,10 +68,11 @@ try {
         const cast = ['Game Master', 'Bryony', 'Fern', 'Marta', 'Seline', 'Sylvara', 'Wren'];
         return SillyTavern.getContext().characters
             .filter(c => cast.includes(c.name))
-            .map(c => ({ name: c.name, fm: c.data?.first_mes || c.first_mes || '', alts: (c.data?.alternate_greetings || []).filter(Boolean).length }));
+            .map(c => ({ name: c.name, fm: c.data?.first_mes || c.first_mes || '', alts: (c.data?.alternate_greetings || []).filter(Boolean).length, t1: Number(c.talkativeness), t2: Number(c.data?.extensions?.talkativeness) }));
     });
     console.log('cards:', JSON.stringify(greetings));
     check('all RPG cards greeting-less', greetings.length > 0 && greetings.every(c => !c.fm && !c.alts));
+    check('talkativeness 0 on BOTH spec surfaces (no v1/v2 mismatch)', greetings.every(c => c.t1 === 0 && c.t2 === 0));
 
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;
