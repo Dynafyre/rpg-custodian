@@ -1403,11 +1403,8 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
     async function createRpgGroup(worldData) {
         // Members are avatar filenames; cast + Game Master must already exist.
         const memberAvatars = ['Game Master.png'];
-        const chars = getCtx().characters;
         for (const castName of (worldData.cast || [])) {
-            // avatar-name match first, plain name as fallback (imported cards
-            // don't always have avatar === "<Name>.png")
-            const char = chars.find(c => c.avatar === `${castName}.png`) || chars.find(c => c.name === castName);
+            const char = castCharFor(castName);
             if (char) memberAvatars.push(char.avatar);
         }
 
@@ -1459,7 +1456,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             return;
         }
 
-        const presentAvatars = getNpcsAt(currentGameState.currentLocation).map(npc => `${npc.name}.png`);
+        const presentAvatars = getNpcsAt(currentGameState.currentLocation).map(npc => castCharFor(npc.name)?.avatar || `${npc.name}.png`);
         const disabled = [];
         for (const avatar of group.members) {
             if (avatar === 'Game Master.png') continue;        // GM never muted
@@ -1499,6 +1496,16 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         if (!groupId) {
             groupId = await createRpgGroup(worldData);
             if (!groupId) return null;
+        } else {
+            // Reconcile membership with the resolved cast avatars — e.g. when
+            // adopted originals migrate to their RPGC_ world copies, a stale
+            // member list would leave the real cast un-triggerable.
+            const expected = ['Game Master.png', ...(worldData.cast || []).map(n => castCharFor(n)?.avatar).filter(Boolean)];
+            if (JSON.stringify([...expected].sort()) !== JSON.stringify([...group.members].sort())) {
+                console.log('RPG Custodian: reconciling group members →', expected.join(', '));
+                group.members = expected;
+                try { await editGroup(groupId, true, false); } catch (e) { console.error('RPG Custodian: group member reconcile failed', e); }
+            }
         }
         await openGroupById(groupId);
         return groupId;
@@ -3058,6 +3065,22 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     }
 
     /**
+     * Resolve the CHARACTER that embodies a cast member. Ownership-aware:
+     * a card only counts as world-owned if it carries the rpg_custodian
+     * block. Adopted originals (a user's own character pulled into a cast)
+     * are NEVER matched — the world plays a separate RPGC_<name>.png copy,
+     * so the original card is never touched. (Learned the hard way: a blind
+     * name-fallback let the refresh cycle overwrite seven of Dyna's original
+     * cards, nuking their greetings.)
+     */
+    function castCharFor(name) {
+        const chars = getCtx().characters;
+        return chars.find(c => c.avatar === `${name}.png` && c.data?.extensions?.rpg_custodian)   // legacy world-generated card
+            || chars.find(c => c.avatar === `RPGC_${name}.png`)                                    // world-owned copy of an adopted character
+            || null;
+    }
+
+    /**
      * Ensure the world's cast of NPCs exists as SillyTavern characters,
      * creating any missing ones from the card JSONs shipped with the world.
      * Also builds the in-memory NPC roster (schedules) for presence tracking.
@@ -3103,16 +3126,18 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 // always gives the current cast without manual deletion). A live
                 // card that still carries a greeting also refreshes (greetings
                 // are stripped at creation and would spam fresh group chats).
-                const existing = getCtx().characters.find(char => char.avatar === `${castName}.png`)
-                    || getCtx().characters.find(char => char.name === castName);
+                // ONLY world-owned cards are ever created/refreshed — adopted
+                // originals stay untouched; their world copy lives at RPGC_<name>.
+                const existing = castCharFor(castName);
+                const fileName = existing ? existing.avatar.replace(/\.png$/, '') : `RPGC_${castName}`;
                 const liveVersion = existing?.data?.extensions?.rpg_custodian?.card_version;
                 const srcVersion = rpgMeta.card_version;
                 if (!existing) {
-                    console.log(`RPG Custodian: Creating cast member "${castName}"...`);
-                    await createCharacterFromCardData(cardData, castName);
+                    console.log(`RPG Custodian: Creating cast member "${castName}" as ${fileName}.png...`);
+                    await createCharacterFromCardData(cardData, fileName);
                 } else if (liveVersion !== srcVersion || cardHasGreeting(existing) || Number(existing.talkativeness) !== 0) {
                     console.log(`RPG Custodian: Refreshing "${castName}" card (${liveVersion || 'none'} → ${srcVersion})`);
-                    await createCharacterFromCardData(cardData, castName);
+                    await createCharacterFromCardData(cardData, fileName);
                 }
             } catch (error) {
                 console.error(`RPG Custodian: Failed to ensure cast member "${castName}":`, error);

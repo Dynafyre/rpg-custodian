@@ -89,6 +89,14 @@ try {
     const relT = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal }; }, castName);
     check('relationship seeded from world-authored values (Fond 5, aroused 2)', relT.aff === 5 && relT.aro === 2, JSON.stringify(relT));
 
+    // ---- THE ORIGINAL CARD IS SACRED: adoption + play must not touch it ----
+    const cardStates = await page.evaluate(n => SillyTavern.getContext().characters
+        .filter(c => c.name === n)
+        .map(c => ({ avatar: c.avatar, fm: (c.data?.first_mes || c.first_mes || '').length, owned: !!c.data?.extensions?.rpg_custodian })), castName);
+    console.log('Trizel cards:', JSON.stringify(cardStates));
+    check('world copy exists at RPGC_ namespace', cardStates.some(c => /^RPGC_/.test(c.avatar) && c.owned));
+    check('original cards keep their first message', cardStates.filter(c => !/^RPGC_/.test(c.avatar)).every(c => c.fm > 0));
+
     // ---- live NPC effects: forge + remove ----
     await openMenuItem('Worlds (play');
     await clickPopupItem('Castlandia');
