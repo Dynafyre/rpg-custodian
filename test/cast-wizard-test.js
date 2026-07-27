@@ -138,6 +138,21 @@ try {
     await clickPopupItem('👥 Cast'); await wait(400);
     await clickPopupItem(castName); await wait(400);
     await clickPopupItem('Edit RPG details'); await wait(500);
+    // 🧠 character note: debounced auto-save + live card push
+    await page.type('#cf-note', 'Deliver the finished elixir to the manor by nightfall.');
+    await wait(4500);   // 2s debounce + card rewrite + refresh
+    const noteSaved = await page.evaluate(() => {
+        const w2 = SillyTavern.getContext().extensionSettings['rpg-custodian'].authoredWorlds['castlandia'];
+        const card = Object.values(w2.castData)[0];
+        return (card.data || card).extensions?.depth_prompt?.prompt || card.extensions?.depth_prompt?.prompt || '';
+    });
+    check('character note debounce-saved to world data', /elixir/.test(noteSaved), noteSaved.slice(0, 50));
+    const noteLive = await page.evaluate(n => {
+        const c = SillyTavern.getContext().characters.find(x => x.avatar === `RPGC_${n}.png`);
+        return c?.data?.extensions?.depth_prompt?.prompt || '';
+    }, castName);
+    check('character note hot-pushed to her live card', /elixir/.test(noteLive), noteLive.slice(0, 50));
+    check('note state indicator shows saved', /saved/.test(await page.evaluate(() => document.getElementById('cf-note-state')?.textContent || '')));
     await page.evaluate(() => { document.getElementById('cf-aff').value = '8'; document.getElementById('cf-aro').value = '4'; document.getElementById('cf-stam').value = '1'; });
     await page.click('#cf-apply'); await wait(900);
     const relApplied = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal, sta: r.npcStamina, ko: !!r.npcUnconscious }; }, castName);
@@ -175,6 +190,7 @@ try {
     const rowRect = await page2.evaluate(() => { const el = document.querySelector('#cast-list .rpg-menu-item'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
     if (rowRect) {
         await page2.touchscreen.tap(rowRect.x, rowRect.y); await wait(700);
+        await page2.evaluate(() => document.getElementById('cf-secret')?.scrollIntoView({ block: 'center' })); await wait(300);
         const tgl = await page2.evaluate(() => { const b = document.getElementById('cf-secret'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
         if (tgl) {
             await page2.touchscreen.tap(tgl.x, tgl.y); await wait(300);

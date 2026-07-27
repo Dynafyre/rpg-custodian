@@ -874,6 +874,9 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                         <label>Initial arousal (1–10) <input id="cf-aro" type="number" min="1" max="10"></label>
                     </div>
                     <label>Current stamina — live game only, applied by ⚡ <input id="cf-stam" type="number" min="0" max="99"></label>
+                    <label>🧠 Character note — her forefront thoughts / current objective <span id="cf-note-state"></span>
+                        <textarea id="cf-note" rows="2" placeholder="auto-saves as you type; future task & mind-altering systems write here too"></textarea>
+                    </label>
                     <label>Home <select id="cf-home">${locOptions}</select></label>
                     <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
                     <button type="button" id="cf-secret" class="rpg-toggle">🕵️ Secret (unknown to other NPCs): <b>No</b></button>
@@ -901,6 +904,31 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             if (live) $('#cf-stam').val(getRelationship(name).npcStamina ?? npcMaxStamina(name)).attr('max', npcMaxStamina(name));
             else $('#cf-stam').prop('disabled', true).attr('placeholder', 'no running game');
         }
+
+        // 🧠 Character note (ST depth_prompt): her forefront thoughts/objective.
+        // Debounced 2s auto-save into castData + version bump; hot-pushed onto
+        // her live card when a session has her on stage. Future NPC-task and
+        // mind-altering systems write this same field.
+        $('#cf-note').val(card.extensions?.depth_prompt?.prompt || '');
+        let noteTimer = null;
+        $('#cf-note').on('input', function () {
+            $('#cf-note-state').text('… typing');
+            clearTimeout(noteTimer);
+            noteTimer = setTimeout(async () => {
+                const val = String($('#cf-note').val() || '').trim();
+                card.extensions = card.extensions || {};
+                card.extensions.depth_prompt = { prompt: val, depth: card.extensions.depth_prompt?.depth ?? 4, role: card.extensions.depth_prompt?.role || 'system' };
+                const rc3 = card.extensions.rpg_custodian;
+                if (rc3) rc3.card_version = ((parseFloat(rc3.card_version || '1.0') || 1) + 0.1).toFixed(1);
+                context.saveSettingsDebounced();
+                const live = currentGameState.isActive && currentGameState.worldData?.worldId === worldId && castCharFor(name);
+                if (live) {
+                    try { await createCharacterFromCardData(card, castCharFor(name).avatar.replace(/\.png$/, '')); }
+                    catch (e) { console.error('RPG Custodian: live note push failed', e); }
+                }
+                $('#cf-note-state').text(live ? '✓ saved & live' : '✓ saved');
+            }, 2000);
+        });
         $('#cf-home').val(rc.home_location && world.locations[rc.home_location] ? rc.home_location : world.startingLocation);
         for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
