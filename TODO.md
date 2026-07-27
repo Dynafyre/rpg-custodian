@@ -185,8 +185,12 @@ name-conflict handling.
       import + RPG-ify form w/ schedule & anchor-hygiene warnings; verified
       end-to-end with Trizel; cast-wizard-test.js 9/9 incl. mobile.
       Expressions-zip upload deferred)
-- [ ] Phase 5: creation wizard shell
-- [ ] Phase 6: export/import bundles + conflict rename
+- [ ] Phase 5: creation wizard shell (the pieces all exist — create → map
+      builder → cast manager are each one tap apart; a guided stepper is
+      polish, not function)
+- [x] Phase 6: export/import bundles ✅ 2026-07-27 (.rpgworld zip: world.json
+      w/ embedded castData + referenced backgrounds; conflict-rename on
+      import; bundle-test.js 6/6 round trip incl. play)
 
 ## 6.9 Multi-world persona hygiene 🧹
 
