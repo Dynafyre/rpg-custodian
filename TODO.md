@@ -173,7 +173,10 @@ name-conflict handling.
 - [x] Phase 1: location secrecy engine support ✅ 2026-07-26 (levels 0/1/2;
       Moonlit Spring seeded in prototype-town; secrecy-test.js 8/8 — the
       Custodian even check-gates hidden-place searches unprompted)
-- [ ] Phase 2: World Manager popup + storage decision + delete
+- [x] Phase 2: World Manager popup + storage + create/delete ✅ 2026-07-26
+      (authored worlds in extensionSettings w/ embedded castData; unified
+      loadWorldData; minimal create wizard w/ conflict re-prompt;
+      worldmanager-test.js 8/8 incl. mobile)
 - [ ] Phase 3: map builder (view/edit prototype-town first)
 - [ ] Phase 4: cast onboarding wizard
 - [ ] Phase 5: creation wizard shell
