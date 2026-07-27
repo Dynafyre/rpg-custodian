@@ -229,3 +229,31 @@ code {
 @media (max-width: 500px) {
     #rpg-map-panel { right: 5px; left: 5px; width: auto; top: auto; bottom: 5px; max-height: 70vh; }
 }
+
+/* === Cast onboarding wizard (world-management phase 4) === */
+#rpg-cast-overlay {
+    position: fixed; left: 0; top: 0; width: 100vw; height: 100vh; height: 100dvh;
+    z-index: 10002; background: rgba(0, 0, 0, 0.55);
+    display: flex; align-items: center; justify-content: center;
+}
+.rpg-form-panel {
+    width: min(420px, calc(100vw - 16px));
+    max-height: min(86vh, 86dvh); overflow-y: auto;
+    background: rgba(22, 26, 34, 0.98); border: 1px solid rgba(120, 180, 255, 0.5);
+    border-radius: 12px; padding: 14px; display: flex; flex-direction: column; gap: 9px;
+}
+.rpg-form-panel label { display: flex; flex-direction: column; gap: 3px; font-size: 13px; opacity: 0.95; }
+.rpg-form-panel input, .rpg-form-panel textarea, .rpg-form-panel select {
+    background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.25);
+    border-radius: 6px; color: inherit; padding: 8px; font-size: 14px;
+}
+.rpg-form-panel .cf-row { display: flex; gap: 10px; }
+.rpg-form-panel .cf-row > label { flex: 1; }
+.rpg-form-panel .cf-sched { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rpg-form-panel .mp-check { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; }
+.rpg-form-panel .mp-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.rpg-form-panel .cast-warn {
+    background: rgba(180, 120, 20, 0.2); border: 1px solid rgba(230, 170, 60, 0.5);
+    border-radius: 8px; padding: 8px; font-size: 12.5px;
+}
+#cast-list { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; }

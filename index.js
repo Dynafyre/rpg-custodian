@@ -417,6 +417,7 @@ jQuery(async () => {
         const items = [
             { icon: '🎲', label: 'New Game', sub: `start fresh in ${w.displayName || w.name}`, action: () => newGame(w.name) },
             { icon: '✏️', label: 'Edit world', sub: w.authored ? 'open the map builder' : 'creates an editable copy that overrides the shipped files', action: () => openMapEditor(w.name) },
+            { icon: '👥', label: 'Cast', sub: w.authored ? 'add, edit, or remove world characters' : 'creates an editable copy that overrides the shipped files', action: () => openCastManager(w.name) },
             { icon: '📤', label: 'Export bundle', sub: 'coming with the bundle system', action: () => wmToast('World export arrives with the export/import bundle phase.') },
         ];
         if (w.authored) {
@@ -472,6 +473,221 @@ jQuery(async () => {
         saveWorldRegistry(getWorldRegistry().filter(x => x !== id));
         await loadRegisteredWorlds();
         wmToast(`World "${id}" deregistered.`, 'success');
+    }
+
+    // ========================================================================
+    // CAST ONBOARDING WIZARD (world-management §4, phase 4)
+    // ========================================================================
+    // Any V2 character — already-installed or imported from a card file —
+    // becomes world cast through the RPG-ify form, which writes the
+    // rpg_custodian extensions block into the world's embedded castData.
+    // Adopting a character means the world manages its card from then on
+    // (ensureCastExists refreshes it; greetings are stripped in RPG use).
+
+    /** Location-anchoring hygiene: phrases like "always perched behind the
+     *  counter" make models relocate the NPC there forever (the Wren lesson). */
+    function anchorWarnings(text) {
+        const rx = /\b(always|usually|often|can be found|is found|never leaves)\b[^.]{0,40}\b(sitting|sits|standing|stands|perched|behind|at the|in the|inside)\b|behind the counter|in (his|her) (shop|store|stall|inn|tavern|tower|hut)|spends (his|her) (days?|time) (in|at)/gi;
+        return String(text || '').match(rx) || [];
+    }
+
+    async function openCastManager(worldId) {
+        let world = authoredWorlds()[worldId];
+        if (!world) world = await materializeShippedWorld(worldId);
+        if (!world) { wmToast(`World "${worldId}" could not be loaded.`, 'error'); return; }
+        const items = [
+            { icon: '➕', label: 'Add from installed characters', sub: 'pick any character you already have', action: () => openCastPicker(worldId) },
+            { icon: '📁', label: 'Import a card file', sub: 'V2 card as .json or .png', action: () => { $('#rpg-cast-file').remove(); const inp = $('<input id="rpg-cast-file" type="file" accept=".json,.png,application/json,image/png" style="display:none">'); $('body').append(inp); inp.on('change', function () { importCastCardFile(worldId, this.files?.[0]); }); inp.trigger('click'); } },
+        ];
+        for (const name of (world.cast || [])) {
+            const rc = (world.castData?.[name]?.data || world.castData?.[name] || {}).extensions?.rpg_custodian || {};
+            items.push({
+                icon: rc.secret ? '🕵️' : '👤',
+                label: name,
+                sub: `${rc.role || 'no role yet'} — home: ${world.locations?.[rc.home_location]?.name || rc.home_location || 'unset'}`,
+                action: () => openCastMemberActions(worldId, name),
+            });
+        }
+        openActionPopup(`👥 Cast of ${world.name || worldId}`, items);
+    }
+
+    function openCastMemberActions(worldId, name) {
+        openActionPopup(`👤 ${name}`, [
+            { icon: '✏️', label: 'Edit RPG details', action: () => openCastForm(worldId, name) },
+            { icon: '🗑️', label: 'Remove from cast', sub: 'the character itself stays installed', action: () => {
+                if (!confirm(`Remove ${name} from this world's cast?`)) return;
+                const world = authoredWorlds()[worldId];
+                world.cast = (world.cast || []).filter(n => n !== name);
+                if (world.castData) delete world.castData[name];
+                context.saveSettingsDebounced();
+                wmToast(`${name} removed from the cast.`, 'success');
+            } },
+        ]);
+    }
+
+    function openCastPicker(worldId) {
+        const world = authoredWorlds()[worldId];
+        $('#rpg-cast-overlay').remove();
+        const existing = new Set(world.cast || []);
+        const chars = getCtx().characters.filter(c => c.name !== 'Game Master' && !existing.has(c.name));
+        const ov = $(`
+            <div id="rpg-cast-overlay">
+                <div class="rpg-form-panel">
+                    <div class="rpg-popup-title">➕ Add cast member</div>
+                    <input id="cast-filter" type="text" placeholder="filter characters…">
+                    <div id="cast-list"></div>
+                    <div class="mp-buttons"><button id="cast-pick-cancel" class="rpg-map-btn">Cancel</button></div>
+                </div>
+            </div>`);
+        $('body').append(ov);
+        const renderList = () => {
+            const q = String($('#cast-filter').val() || '').toLowerCase();
+            const list = $('#cast-list').empty();
+            for (const c of chars.filter(c => c.name.toLowerCase().includes(q)).slice(0, 60)) {
+                const row = $('<div class="rpg-menu-item"></div>').text(`👤 ${c.name}`);
+                row.on('click', () => { $('#rpg-cast-overlay').remove(); adoptCharacter(worldId, c); });
+                list.append(row);
+            }
+        };
+        $('#cast-filter').on('input', renderList);
+        $('#cast-pick-cancel').on('click', () => $('#rpg-cast-overlay').remove());
+        renderList();
+    }
+
+    async function importCastCardFile(worldId, file) {
+        // NOTE: the file input stays in the DOM until the upload finishes —
+        // removing it first invalidated the File handle mid-fetch.
+        if (!file) { $('#rpg-cast-file').remove(); return; }
+        try {
+            // Snapshot into memory first: streaming the input's File directly
+            // into a multipart fetch intermittently drops the connection.
+            const payload = new File([await file.arrayBuffer()], file.name, { type: file.type });
+            const fd = new FormData();
+            fd.append('avatar', payload);
+            fd.append('file_type', file.name.split('.').pop().toLowerCase());
+            const r = await fetch('/api/characters/import', { method: 'POST', headers: context.getRequestHeaders({ omitContentType: true }), body: fd });
+            if (!r.ok) throw new Error(String(r.status));
+            const data = await r.json();
+            await context.getCharacters();
+            const char = getCtx().characters.find(c => c.avatar === data.file_name || c.avatar === `${data.file_name}.png`)
+                || getCtx().characters.find(c => c.name === String(data.file_name).replace(/\.png$/, ''));
+            if (!char) { wmToast('Imported, but the character could not be located afterwards.', 'error'); return; }
+            adoptCharacter(worldId, char);
+        } catch (e) { console.error('RPG Custodian: card import failed', e); wmToast('Card import failed.', 'error'); }
+        finally { $('#rpg-cast-file').remove(); }
+    }
+
+    /** Snapshot a live ST character into an embeddable castData card. */
+    function cardFromLiveChar(char) {
+        const d = char.data || {};
+        return {
+            name: char.name,
+            description: d.description ?? char.description ?? '',
+            personality: d.personality ?? char.personality ?? '',
+            scenario: d.scenario ?? char.scenario ?? '',
+            mes_example: d.mes_example ?? char.mes_example ?? '',
+            creator_notes: d.creator_notes ?? '',
+            system_prompt: d.system_prompt || '',
+            post_history_instructions: d.post_history_instructions || '',
+            creator: d.creator || '',
+            character_version: d.character_version || '',
+            tags: structuredClone(d.tags || []),
+            extensions: structuredClone(d.extensions || {}),
+        };
+    }
+
+    function adoptCharacter(worldId, char) {
+        const world = authoredWorlds()[worldId];
+        if ((world.cast || []).includes(char.name)) { wmToast(`${char.name} is already in this cast.`, 'warning'); return; }
+        world.castData = world.castData || {};
+        world.castData[char.name] = cardFromLiveChar(char);
+        openCastForm(worldId, char.name, { adopting: true });
+    }
+
+    /** The RPG-ify form: writes the rpg_custodian block into castData. */
+    function openCastForm(worldId, name, opts = {}) {
+        const world = authoredWorlds()[worldId];
+        const card = world.castData?.[name];
+        if (!card) { wmToast(`No card data for ${name}.`, 'error'); return; }
+        const rc = card.extensions?.rpg_custodian || {};
+        $('#rpg-cast-overlay').remove();
+
+        const locOptions = Object.entries(world.locations || {}).map(([id, l]) => `<option value="${id}">${$('<i>').text(l.name || id).html()}</option>`).join('');
+        const periods = ['Morning', 'Day', 'Evening', 'Night'];
+        const warns = anchorWarnings(card.description);
+        const ov = $(`
+            <div id="rpg-cast-overlay">
+                <div class="rpg-form-panel">
+                    <div class="rpg-popup-title">🎭 ${$('<i>').text(name).html()} — RPG details</div>
+                    ${warns.length ? `<div class="cast-warn">⚠️ Location-anchored phrasing in her card description may pin her to one spot in narration: <b>${$('<i>').text(warns.join(' · ')).html()}</b> — consider rewording the card.</div>` : ''}
+                    <label>Role (public identity) <input id="cf-role" type="text" placeholder="innkeeper, wandering knight, witch…"></label>
+                    <div class="cf-row">
+                        <label>Race <input id="cf-race" type="text"></label>
+                        <label>Age <input id="cf-age" type="text"></label>
+                    </div>
+                    <div class="cf-row">
+                        <label>Fertility % <input id="cf-fert" type="number" min="0" max="100"></label>
+                        <label>Ruggedness <input id="cf-rug" type="number" min="1" max="10"></label>
+                    </div>
+                    <label>Home <select id="cf-home">${locOptions}</select></label>
+                    <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
+                    <div class="cf-row">
+                        <label class="mp-check"><input id="cf-secret" type="checkbox"> 🕵️ Secret (unknown to other NPCs)</label>
+                        <label class="mp-check"><input id="cf-rom" type="checkbox"> 💕 Romanceable</label>
+                    </div>
+                    <label>Shop category (if merchant) <input id="cf-shop" type="text" placeholder="alchemist, smith, general…"></label>
+                    <label>Wrestle/contest DC (blank = none) <input id="cf-wrestle" type="number" min="6" max="18"></label>
+                    <div class="mp-buttons">
+                        <button id="cf-save" class="rpg-map-btn">💾 Save</button>
+                        <button id="cf-cancel" class="rpg-map-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>`);
+        $('body').append(ov);
+        $('#cf-role').val(rc.role || '');
+        $('#cf-race').val(rc.race || '');
+        $('#cf-age').val(rc.age || '');
+        $('#cf-fert').val(rc.fertility ?? 30);
+        $('#cf-rug').val(rc.ruggedness ?? 2);
+        $('#cf-home').val(rc.home_location && world.locations[rc.home_location] ? rc.home_location : world.startingLocation);
+        for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
+        $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
+        $('#cf-secret').prop('checked', !!rc.secret);
+        $('#cf-rom').prop('checked', rc.romanceable !== false);
+        $('#cf-shop').val(rc.shop || '');
+        $('#cf-wrestle').val(rc.wrestle?.difficulty ?? '');
+        $('#cf-cancel').on('click', () => {
+            $('#rpg-cast-overlay').remove();
+            if (opts.adopting) delete world.castData[name];   // adoption not completed
+        });
+        $('#cf-save').on('click', () => {
+            const schedule = {};
+            for (const p of periods) schedule[p] = $(`.cf-period[data-p="${p}"]`).val();
+            const wr = Number($('#cf-wrestle').val());
+            card.extensions = card.extensions || {};
+            const prev = card.extensions.rpg_custodian || {};
+            card.extensions.rpg_custodian = {
+                ...prev,
+                version: prev.version || '1.0',
+                role: String($('#cf-role').val() || '').trim(),
+                race: String($('#cf-race').val() || '').trim(),
+                age: String($('#cf-age').val() || '').trim(),
+                fertility: Math.max(0, Math.min(100, Number($('#cf-fert').val()) || 0)),
+                ruggedness: Math.max(1, Math.min(10, Number($('#cf-rug').val()) || 2)),
+                home_location: $('#cf-home').val(),
+                schedule,
+                secret: $('#cf-secret').prop('checked') || undefined,
+                romanceable: $('#cf-rom').prop('checked'),
+                shop: String($('#cf-shop').val() || '').trim() || undefined,
+                wrestle: wr ? { stat: 'ruggedness', difficulty: wr } : undefined,
+                base_stats: prev.base_stats || { affection: 0, arousal: 1, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 },
+                card_version: ((parseFloat(prev.card_version || '1.0') || 1.0) + 0.1).toFixed(1),
+            };
+            if (!(world.cast || []).includes(name)) world.cast = [...(world.cast || []), name];
+            context.saveSettingsDebounced();
+            $('#rpg-cast-overlay').remove();
+            wmToast(`${name} ${opts.adopting ? 'joined the cast of' : 'updated in'} ${world.name || worldId}.`, 'success');
+        });
     }
 
     // ========================================================================
@@ -988,7 +1204,9 @@ jQuery(async () => {
         const memberAvatars = ['Game Master.png'];
         const chars = getCtx().characters;
         for (const castName of (worldData.cast || [])) {
-            const char = chars.find(c => c.avatar === `${castName}.png`);
+            // avatar-name match first, plain name as fallback (imported cards
+            // don't always have avatar === "<Name>.png")
+            const char = chars.find(c => c.avatar === `${castName}.png`) || chars.find(c => c.name === castName);
             if (char) memberAvatars.push(char.avatar);
         }
 
@@ -2680,7 +2898,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 // always gives the current cast without manual deletion). A live
                 // card that still carries a greeting also refreshes (greetings
                 // are stripped at creation and would spam fresh group chats).
-                const existing = getCtx().characters.find(char => char.avatar === `${castName}.png`);
+                const existing = getCtx().characters.find(char => char.avatar === `${castName}.png`)
+                    || getCtx().characters.find(char => char.name === castName);
                 const liveVersion = existing?.data?.extensions?.rpg_custodian?.card_version;
                 const srcVersion = rpgMeta.card_version;
                 if (!existing) {
@@ -3255,7 +3474,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Places likewise — but ONLY public ones (secret level 0): secret
         // locations exist for NPCs only once the story reveals them.
         const known = (currentGameState.npcRoster || []).filter(n => !n.secret);
-        if (known.length > 1) {
+        if (known.length) {
             lines.push('', '[Common local knowledge — everyone here knows of these people and places; NEVER invent or swap names/roles:]',
                 known.map(n => `${n.name}, the ${n.role || 'resident'}${n.homeLocation ? ` (${locName(n.homeLocation)})` : ''}`).join(' · '));
             const pubPlaces = Object.values(currentGameState.worldData?.locations || {}).filter(l => !(Number(l.secret) >= 1)).map(l => l.name);
