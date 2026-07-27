@@ -3962,6 +3962,36 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         return `[How she received ${player}'s last words — play this reading in your reply:] ${read}`;
     }
 
+    // === Whereabouts knowledge (Custodian-gated) ===
+    // Locals know each other's routines, so an NPC asked "where's Fern?" can
+    // answer honestly — but only when the Custodian judges the conversation
+    // calls for it (a one-shot note, never standing context bloat). Secret
+    // NPCs are omitted entirely; an NPC currently at a SECRET place gets a
+    // "nobody's quite sure where she gets to" instead of a leak.
+    const WHEREABOUTS_PROMPT_KEY = 'RPG_CUSTODIAN_WHEREABOUTS';
+    let pendingWhereaboutsNote = null;
+
+    function buildWhereaboutsNote() {
+        const player = context.powerUserSettings.personas?.[playerAvatar()] || 'the adventurer';
+        const lines = [];
+        for (const npc of (currentGameState.npcRoster || [])) {
+            if (npc.secret) continue;
+            const rel = getRelationship(npc.name);
+            let where;
+            if (rel.npcUnconscious && rel.stashedAt) where = `laid up at ${locName(rel.stashedAt)}`;
+            else if (isInParty(npc.name)) where = `off with ${player} — they were seen leaving together`;
+            else {
+                const locId = scheduledLocationFor(npc.name);
+                where = (locId && locSecret(locId) === 0)
+                    ? `at ${locName(locId)}, as her routine has it this time of day`
+                    : 'nobody is quite sure where she gets to at this hour';
+            }
+            lines.push(`${npc.name}, the ${npc.role || 'resident'} — ${where}`);
+        }
+        if (!lines.length) return null;
+        return `[Where folk are at this hour — daily routines are common local knowledge, and she may share this freely if asked:]\n${lines.join('\n')}`;
+    }
+
     // === Reaction judge (romance-redesign §C) ===
     // The heart of emergent romance: her reply was generated WITH her bands as
     // instruction. If she still played warmer (or colder) than her band allows,
@@ -5335,6 +5365,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"buy_item","name":"..."}   buy from a PRESENT merchant. The engine charges the price — do NOT also emit adjust_gold.
   {"type":"use_item","name":"..."}   consume/use an item the player HOLDS (drink a potion, crush a soul crystal, etc.). SOUL CRYSTALS: the inert gems born under the Crystal Curse are collectible spell-fuel — when the player GATHERS/pockets them emit add_item "soul crystal" (one per crystal); when he CRUSHES/channels/uses one emit use_item "soul crystal" (the engine restores 1 Mana and consumes it).
   {"type":"adjust_gold","amount":N}  ONLY for ad-hoc gold NOT covered above (finding coins, a bribe, gambling).
+  {"type":"whereabouts"}  the player asks a present NPC where somebody is, how to find them, whether they've seen someone, or when somebody would be somewhere → emit this and the engine hands the addressed NPC honest local knowledge of where everyone is right now (daily routines are common knowledge in a small community). NEVER invent someone's location yourself — emit this and let her answer from what the engine provides.
   {"type":"add_item","name":"..."} / {"type":"remove_item","name":"..."}
   {"type":"adjust_affection","npc":"...","amount":N}  ONLY for an external/mechanical cause acting on her feelings: a charm potion, a love or hate spell, a curse, a magical aura. NEVER for conversation, kindness, flirting, seduction, gifts, or check outcomes — the engine reads her own reactions and moves affection itself.
   {"type":"adjust_arousal","npc":"...","amount":N}  ONLY for an external/physical-mechanical cause: an aphrodisiac, a lust spell, an alchemical heat. NEVER for flirtation, teasing, or foreplay in the scene — the engine reads her reactions and moves arousal itself.
@@ -5541,6 +5572,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     break;
                 }
                 case 'adjust_gold': addGold(eff.amount || 0); break;
+                case 'whereabouts': pendingWhereaboutsNote = buildWhereaboutsNote(); break;
                 case 'adjust_affection': adjustNpcAffection(eff.npc, eff.amount || 0); break;
                 case 'buy_item': buyItemByName(eff.name); break;
                 case 'use_item': useItemByName(eff.name); break;
@@ -5685,7 +5717,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
 
     function effectsSummary(effects) {
         // These emit their own rich ghost messages — don't also echo them here.
-        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item']);
+        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
         return (effects || []).filter(e => !SELF_NARRATING.has(e.type)).map(e => {
             if (e.type === 'add_item') return `+${e.name}`;
             if (e.type === 'remove_item') return `-${e.name}`;
@@ -5750,6 +5782,9 @@ Narrate the result briefly, grounded in this location and the story's current be
         // interpretation — how she read his words — as a one-shot note.
         const charmNote = pendingCharmNote; pendingCharmNote = null;
         if (charmNote) context.setExtensionPrompt(CHARM_PROMPT_KEY, charmNote, 1, 0);
+        // Whereabouts knowledge, when the Custodian judged the ask warrants it
+        const whereNote = pendingWhereaboutsNote; pendingWhereaboutsNote = null;
+        if (whereNote) context.setExtensionPrompt(WHEREABOUTS_PROMPT_KEY, whereNote, 1, 0);
         const preReplyLen = (getCtx().chat || []).length;
         try {
             await context.executeSlashCommandsWithOptions(`/trigger await=true ${npcName}`, { source: 'rpg-custodian' });
@@ -5757,6 +5792,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         finally {
             if (reunion) context.setExtensionPrompt(REUNION_PROMPT_KEY, '', 1, 0);     // one-shot: clear after this reply
             if (charmNote) context.setExtensionPrompt(CHARM_PROMPT_KEY, '', 1, 0);
+            if (whereNote) context.setExtensionPrompt(WHEREABOUTS_PROMPT_KEY, '', 1, 0);
             noteSeen(npcName);                                                         // she has now seen him this moment
             savePlayer();
         }
@@ -5782,6 +5818,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         currentGameState.rpgOrchestrating = true;
         pendingCharmNote = null;                       // never leak a stale charm read into a new turn
         travelIssueNote = null;                        // ditto for last turn's failed-travel note
+        pendingWhereaboutsNote = null;                 // ditto for whereabouts knowledge
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
         try {
             const intent = await analyzeIntent(playerText);
