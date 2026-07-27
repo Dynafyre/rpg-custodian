@@ -583,15 +583,83 @@ jQuery(async () => {
         });
     }
 
-    /** The Custodian designs an effect record from the player's words. */
-    async function forgeBespokeStatus(text) {
-        const sys = `You are the RPG CUSTODIAN. The player asks you to design a bespoke applied effect from a plain-language request. Output ONLY JSON:
-{"name":"short evocative name","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"one line of what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|stamina","amount":N}],"duration":N,"end_condition":"plain-English story event that ends it, or omit","expires_on_check":"a stat name for a ONE-USE pre-buff spent on the next trial of that stat, or omit"}
-Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for potent magic). duration is in time periods (4 per day) — always give lingering NEGATIVE effects a duration backstop even when they have an end_condition. Honor the SPIRIT of the request: a one-use "before my next fight" boost gets expires_on_check; a curse gets an end_condition worth roleplaying toward. Invent flavor freely; never refuse.`;
-        const prompt = `Player's request: "${text}"\nPlayer right now: ${statsContextForAnalyzer()}`;
+    /** The Custodian designs an effect record from the player's words.
+     *  target: 'player' or an NPC name. */
+    async function forgeBespokeStatus(text, target = 'player') {
+        const forNpc = target && target !== 'player';
+        const sys = `You are the RPG CUSTODIAN. Design a bespoke applied effect from a plain-language request. Output ONLY JSON:
+{"name":"short evocative name","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"one line of what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|stamina${forNpc ? '|fertility' : ''}","amount":N}],"duration":N,"end_condition":"plain-English story event that ends it, or omit","expires_on_check":"a stat name for a ONE-USE pre-buff spent on the next trial of that stat, or omit"}
+Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for potent magic).${forNpc ? ' FERTILITY is a percentage (0-100), so fertility mods are +10..+30.' : ''} duration is in time periods (4 per day) — always give lingering NEGATIVE effects a duration backstop even when they have an end_condition. Honor the SPIRIT of the request: a one-use "before my next fight" boost gets expires_on_check; a curse gets an end_condition worth roleplaying toward. Invent flavor freely; never refuse.`;
+        const prompt = forNpc
+            ? `The effect is applied to the NPC ${target}. Request: "${text}"`
+            : `Player's request: "${text}"\nPlayer right now: ${statsContextForAnalyzer()}`;
         const p = await generateJson({ prompt, systemPrompt: sys, budget: 300 });
         if (!p || !p.name) return null;
-        return addCustomStatus('player', p, true);   // quiet: the editor is meta, not story
+        return addCustomStatus(target, p, true);   // quiet: the editors are meta, not story
+    }
+
+    /** Live NPC effects panel — sandbox forge/remove on a cast member.
+     *  Statuses are per-save state, so this needs an active session that
+     *  actually contains her. */
+    function openNpcEffectsPanel(name) {
+        if (!currentGameState.isActive || !(currentGameState.npcRoster || []).some(n => n.name === name)) {
+            wmToast(`Live effects need an active game session with ${name} in its cast — start or continue one first.`, 'warning');
+            return;
+        }
+        $('#rpg-cast-overlay').remove();
+        const ov = $(`
+            <div id="rpg-cast-overlay">
+                <div class="rpg-form-panel">
+                    <div class="rpg-popup-title">✨ ${$('<i>').text(name).html()} — live effects</div>
+                    <div id="ne-effects"></div>
+                    <label>🪄 Request a bespoke effect from the Custodian
+                        <textarea id="ne-req" rows="3" placeholder="e.g. a fertility blessing from the spring rites · a jealous hex sapping her charm until forgiven · feverish and weak until nursed back to health"></textarea>
+                    </label>
+                    <button type="button" id="ne-forge" class="rpg-map-btn">🪄 Forge effect <span id="ne-throbber" style="display:none">⏳</span></button>
+                    <div id="ne-result"></div>
+                    <div class="mp-buttons"><button id="ne-close" class="rpg-map-btn">Close</button></div>
+                </div>
+            </div>`);
+        $('body').append(ov);
+        const renderFx = () => {
+            const list = $('#ne-effects').empty();
+            const fx = npcActiveEffects(name);
+            if (!fx.length) { list.append('<div class="pe-fx-title">No active effects.</div>'); return; }
+            list.append('<div class="pe-fx-title">Active effects:</div>');
+            for (const e of fx) {
+                const row = $('<div class="pe-fx-row"></div>');
+                row.append($('<span class="pe-fx-label"></span>').text(`${effectIcon(e)} ${e.name}${statusModString(e.mods)}`));
+                const del = $('<button type="button" class="rpg-map-btn pe-fx-del" title="Remove">✖</button>');
+                del.on('click', () => {
+                    const rel = getRelationship(name);
+                    rel.customEffects = (rel.customEffects || []).filter(x => x !== e && x.id !== e.id);
+                    savePlayer();
+                    wmToast(`${e.name} removed from ${name}.`, 'success');
+                    projectPlayerStatus();
+                    renderFx();
+                });
+                row.append(del);
+                list.append(row);
+            }
+        };
+        renderFx();
+        $('#ne-close').on('click', () => $('#rpg-cast-overlay').remove());
+        $('#ne-forge').on('click', async function () {
+            const text = String($('#ne-req').val() || '').trim();
+            if (!text) return;
+            const btn = $(this);
+            btn.prop('disabled', true); $('#ne-throbber').show();
+            try {
+                const rec = await forgeBespokeStatus(text, name);
+                $('#ne-result').html(rec
+                    ? `<div class="pe-forged">${effectIcon(rec)} <b></b>${statusModString(rec.mods)} — applied to ${$('<i>').text(name).html()}.</div>`
+                    : '<div class="pe-forged">The Custodian couldn\'t shape that one — try rewording.</div>');
+                if (rec) { $('#ne-result .pe-forged b').text(rec.name); $('#ne-req').val(''); projectPlayerStatus(); renderFx(); }
+            } catch (e) {
+                console.error('RPG Custodian: NPC forge failed', e);
+                $('#ne-result').text('The forge sputtered — check the console.');
+            } finally { btn.prop('disabled', false); $('#ne-throbber').hide(); }
+        });
     }
 
     // ========================================================================
@@ -642,6 +710,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
     function openCastMemberActions(worldId, name) {
         openActionPopup(`👤 ${name}`, [
             { icon: '✏️', label: 'Edit RPG details', action: () => openCastForm(worldId, name) },
+            { icon: '✨', label: 'Live effects', sub: 'forge or remove statuses on her in the running game', action: () => openNpcEffectsPanel(name) },
             { icon: '🗑️', label: 'Remove from cast', sub: 'the character itself stays installed', action: () => {
                 if (!confirm(`Remove ${name} from this world's cast?`)) return;
                 const world = authoredWorlds()[worldId];
@@ -757,6 +826,10 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                         <label>Fertility % <input id="cf-fert" type="number" min="0" max="100"></label>
                         <label>Ruggedness <input id="cf-rug" type="number" min="1" max="10"></label>
                     </div>
+                    <div class="cf-row">
+                        <label>Initial affection (0–10) <input id="cf-aff" type="number" min="0" max="10"></label>
+                        <label>Initial arousal (1–10) <input id="cf-aro" type="number" min="1" max="10"></label>
+                    </div>
                     <label>Home <select id="cf-home">${locOptions}</select></label>
                     <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
                     <button type="button" id="cf-secret" class="rpg-toggle">🕵️ Secret (unknown to other NPCs): <b>No</b></button>
@@ -774,6 +847,8 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-age').val(rc.age || '');
         $('#cf-fert').val(rc.fertility ?? 30);
         $('#cf-rug').val(rc.ruggedness ?? 2);
+        $('#cf-aff').val(rc.base_stats?.affection ?? 0);
+        $('#cf-aro').val(rc.base_stats?.arousal ?? 1);
         $('#cf-home').val(rc.home_location && world.locations[rc.home_location] ? rc.home_location : world.startingLocation);
         for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
@@ -803,7 +878,11 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 secret: getToggle($('#cf-secret')) || undefined,
                 shop: String($('#cf-shop').val() || '').trim() || undefined,
                 wrestle: wr ? { stat: 'ruggedness', difficulty: wr } : undefined,
-                base_stats: prev.base_stats || { affection: 0, arousal: 1, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 },
+                base_stats: {
+                    ...(prev.base_stats || { familiarity: 0, pregnancies: 0, pregnancy_progress: 0 }),
+                    affection: Math.max(0, Math.min(10, Number($('#cf-aff').val()) || 0)),
+                    arousal: Math.max(1, Math.min(10, Number($('#cf-aro').val()) || 1)),
+                },
                 card_version: ((parseFloat(prev.card_version || '1.0') || 1.0) + 0.1).toFixed(1),
             };
             if (!(world.cast || []).includes(name)) world.cast = [...(world.cast || []), name];
@@ -3016,6 +3095,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     ruggedness: rpgMeta.ruggedness,
                     race: rpgMeta.race,
                     age: rpgMeta.age,
+                    baseStats: rpgMeta.base_stats || null,   // world-authored initial affection/arousal
                 });
 
                 // Create if missing, or refresh in place if the on-disk card is
@@ -3757,7 +3837,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const rd = getPlayerRpgData();
         if (!rd) return { affection: 0, arousal: 1, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 };
         rd.relationships = rd.relationships || {};
-        rd.relationships[npcName] = rd.relationships[npcName] || { affection: 0, arousal: 1, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 };
+        if (!rd.relationships[npcName]) {
+            // First meeting: seed from the world-authored starting values on
+            // her card (base_stats), so authors can ship a warmer-by-default
+            // childhood friend or an already-smitten admirer.
+            const bs = (currentGameState.npcRoster || []).find(n => n.name === npcName)?.baseStats || {};
+            rd.relationships[npcName] = {
+                affection: Math.max(0, Math.min(10, Number(bs.affection) || 0)),
+                arousal: Math.max(1, Math.min(10, Number(bs.arousal) || 1)),
+                familiarity: 0, pregnancies: 0, pregnancy_progress: 0,
+            };
+        }
         return rd.relationships[npcName];
     }
     function getNpcAffection(name) { return getRelationship(name).affection || 0; }

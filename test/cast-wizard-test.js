@@ -65,7 +65,7 @@ try {
     await page.type('#cf-role', 'wandering alchemist');
     await page.type('#cf-race', 'tiefling');
     await page.type('#cf-age', 'mid 20s');
-    await page.evaluate(() => { document.getElementById('cf-fert').value = '40'; document.getElementById('cf-rug').value = '3'; });
+    await page.evaluate(() => { document.getElementById('cf-fert').value = '40'; document.getElementById('cf-rug').value = '3'; document.getElementById('cf-aff').value = '5'; document.getElementById('cf-aro').value = '2'; });
     await page.click('#cf-secret'); await wait(200);   // toggle secret ON (button, not checkbox)
     check('secret toggle flips on click', await page.evaluate(() => document.getElementById('cf-secret').getAttribute('data-on')) === '1');
     await page.click('#cf-secret'); await wait(200);   // and back off
@@ -77,6 +77,7 @@ try {
     const rc = (w.castData?.[castName]?.data || w.castData?.[castName])?.extensions?.rpg_custodian || {};
     console.log('rpg block:', JSON.stringify(rc).slice(0, 300));
     check('rpg_custodian block written', rc.role === 'wandering alchemist' && rc.fertility === 40 && rc.home_location === 'green-village' && rc.schedule?.Morning === 'green-village');
+    check('world-authored initial affection/arousal saved', rc.base_stats?.affection === 5 && rc.base_stats?.arousal === 2);
 
     // ---- the world plays with her ----
     await page.evaluate(() => window.rpgCustodianDebug.newGame('castlandia')); await wait(25000);
@@ -85,6 +86,27 @@ try {
     check('she is on the roster with her role', roster.some(r => /trizel/i.test(r) && /alchemist/.test(r)));
     const present = await page.evaluate(() => window.rpgCustodianDebug.state().party !== undefined && (SillyTavern.getContext().extensionPrompts?.['RPG_CUSTODIAN_STATUS']?.value || ''));
     check('she is projected to the scene (status block)', /trizel/i.test(present) && /alchemist/.test(present));
+    const relT = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal }; }, castName);
+    check('relationship seeded from world-authored values (Fond 5, aroused 2)', relT.aff === 5 && relT.aro === 2, JSON.stringify(relT));
+
+    // ---- live NPC effects: forge + remove ----
+    await openMenuItem('Worlds (play');
+    await clickPopupItem('Castlandia');
+    await clickPopupItem('👥 Cast'); await wait(400);
+    await clickPopupItem(castName); await wait(400);
+    await clickPopupItem('Live effects'); await wait(500);
+    check('live effects panel opens', await page.evaluate(() => !!document.getElementById('ne-forge')));
+    await page.type('#ne-req', 'A fertility blessing from the spring rites, raising her fertility for a few days.');
+    await page.click('#ne-forge');
+    for (let i = 0; i < 30; i++) { await wait(1000); const done = await page.evaluate(() => document.getElementById('ne-throbber')?.style.display === 'none'); if (done) break; }
+    let npcFx = await page.evaluate(n => (window.rpgCustodianDebug.rel(n).customEffects || []).map(e => ({ name: e.name, mods: e.mods })), castName);
+    console.log('npc effects:', JSON.stringify(npcFx).slice(0, 200));
+    check('forged effect applied to the NPC', npcFx.length >= 1);
+    await page.evaluate(() => { const rows = document.querySelectorAll('#ne-effects .pe-fx-row'); rows[rows.length - 1]?.querySelector('.pe-fx-del')?.click(); });
+    await wait(400);
+    npcFx = await page.evaluate(n => (window.rpgCustodianDebug.rel(n).customEffects || []).length, castName);
+    check('remove control clears it', npcFx === 0);
+    await page.evaluate(() => document.getElementById('ne-close')?.click());
 
     // ---- edit flow ----
     await openMenuItem('Worlds (play');
