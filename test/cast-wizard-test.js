@@ -138,10 +138,11 @@ try {
     await clickPopupItem('👥 Cast'); await wait(400);
     await clickPopupItem(castName); await wait(400);
     await clickPopupItem('Edit RPG details'); await wait(500);
-    await page.evaluate(() => { document.getElementById('cf-aff').value = '8'; document.getElementById('cf-aro').value = '4'; });
+    await page.evaluate(() => { document.getElementById('cf-aff').value = '8'; document.getElementById('cf-aro').value = '4'; document.getElementById('cf-stam').value = '1'; });
     await page.click('#cf-apply'); await wait(900);
-    const relApplied = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal }; }, castName);
+    const relApplied = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal, sta: r.npcStamina, ko: !!r.npcUnconscious }; }, castName);
     check('⚡ apply pushes authored values into the running game', relApplied.aff === 8 && relApplied.aro === 4, JSON.stringify(relApplied));
+    check('⚡ apply sets current stamina (live, clamped, no KO)', relApplied.sta === 1 && !relApplied.ko, JSON.stringify(relApplied));
     await page.evaluate(() => document.getElementById('rpg-action-popup')?.remove());
 
     // ---- remove flow ----

@@ -873,6 +873,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                         <label>Initial affection (0–10) <input id="cf-aff" type="number" min="0" max="10"></label>
                         <label>Initial arousal (1–10) <input id="cf-aro" type="number" min="1" max="10"></label>
                     </div>
+                    <label>Current stamina — live game only, applied by ⚡ <input id="cf-stam" type="number" min="0" max="99"></label>
                     <label>Home <select id="cf-home">${locOptions}</select></label>
                     <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
                     <button type="button" id="cf-secret" class="rpg-toggle">🕵️ Secret (unknown to other NPCs): <b>No</b></button>
@@ -892,6 +893,14 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-rug').val(rc.ruggedness ?? 2);
         $('#cf-aff').val(rc.base_stats?.affection ?? 0);
         $('#cf-aro').val(rc.base_stats?.arousal ?? 1);
+        // Current stamina is per-save state: only meaningful with a running
+        // session in this world that has her on stage.
+        {
+            const live = currentGameState.isActive && currentGameState.worldData?.worldId === worldId
+                && (currentGameState.npcRoster || []).some(n => n.name === name);
+            if (live) $('#cf-stam').val(getRelationship(name).npcStamina ?? npcMaxStamina(name)).attr('max', npcMaxStamina(name));
+            else $('#cf-stam').prop('disabled', true).attr('placeholder', 'no running game');
+        }
         $('#cf-home').val(rc.home_location && world.locations[rc.home_location] ? rc.home_location : world.startingLocation);
         for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
@@ -945,12 +954,22 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
                     if (npc) {
                         Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats });
+                        // Current stamina (after the roster update so the new
+                        // ruggedness sets the cap). Direct set — KO/wake flags
+                        // follow, no post-coital valve.
+                        const stamRaw = $('#cf-stam').val();
+                        if (stamRaw !== '' && !$('#cf-stam').prop('disabled')) {
+                            const maxSta = npcMaxStamina(name);
+                            rel.npcStamina = Math.max(0, Math.min(maxSta, Number(stamRaw) || 0));
+                            if (rel.npcStamina > 0) { rel.npcUnconscious = false; rel.stashedAt = null; rel.koStep = null; }
+                            else { rel.npcUnconscious = true; rel.koStep = currentGameState.timeStep || 0; }
+                        }
                     } else {
                         wmToast(`${name} is new to this cast — she takes the stage fully on the next Continue.`, 'info');
                     }
                     savePlayer(); saveCurrentState();
                     syncPresence(); projectPlayerStatus();
-                    wmToast(`${name}'s current-game state updated (affection ${rel.affection}, arousal ${rel.arousal}).`, 'success');
+                    wmToast(`${name}'s current-game state updated (affection ${rel.affection}, arousal ${rel.arousal}${rel.npcStamina != null ? `, stamina ${rel.npcStamina}/${npcMaxStamina(name)}` : ''}).`, 'success');
                 }
             }
 
