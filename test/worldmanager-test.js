@@ -33,7 +33,7 @@ try {
     await openMenuItem('Create Character'); await wait(5000);
 
     // ---- Worlds popup lists shipped world ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     let items = await popupItems();
     console.log('worlds popup:', JSON.stringify(items).slice(0, 220));
     check('Worlds popup opens with Create + shipped world', items.some(i => /Create a new world/.test(i)) && items.some(i => /shipped/.test(i)));
@@ -45,25 +45,28 @@ try {
     check('authored world created in settings', worlds.includes('testrealm-alpha'), worlds.join(','));
 
     // ---- Conflict: same name again exits without creating a duplicate ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     dialogQueue = ['Testrealm Alpha'];   // conflict → re-prompt gets '' → abort
     await clickPopupItem('Create a new world'); await wait(800);
     worlds = await page.evaluate(() => Object.keys(SillyTavern.getContext().extensionSettings['rpg-custodian']?.authoredWorlds || {}));
     check('name conflict does not create a duplicate', worlds.filter(w => w.startsWith('testrealm')).length === 1);
 
     // ---- Authored world in the manager list + playable ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     items = await popupItems();
     check('authored world listed', items.some(i => /Testrealm Alpha/.test(i) && /authored/.test(i)));
     await page.keyboard.press('Escape'); await page.evaluate(() => document.getElementById('rpg-action-popup')?.remove());
-    await openMenuItem('New Game: Testrealm Alpha'); await wait(15000);
+    await openMenuItem('Worlds (play');
+    await clickPopupItem('Testrealm Alpha');
+    await clickPopupItem('🎲');   // New Game via the Worlds flow
+    await wait(15000);
     const state = await page.evaluate(() => { const s = window.rpgCustodianDebug.state(); return { active: s.isActive, loc: s.currentLocation, world: s.worldData?.name }; });
     check('authored world playable (New Game)', state.active && state.loc === 'windmill-hill' && state.world === 'Testrealm Alpha', JSON.stringify(state));
     const intro = await page.evaluate(() => [...SillyTavern.getContext().chat].reverse().find(m => (m.mes || '').includes('New Game Started'))?.mes || '');
     check('intro message in fresh chat', /Testrealm Alpha/.test(intro));
 
     // ---- Delete authored world ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     await clickPopupItem('Testrealm Alpha');
     dialogQueue = ['confirm'];
     await clickPopupItem('Delete world'); await wait(800);
@@ -78,7 +81,7 @@ try {
     await page2.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     await wait(2000);
     await page2.tap('#rpg-menu-button'); await wait(500);
-    await page2.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Worlds (create'))?.click());
+    await page2.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Worlds (play'))?.click());
     await wait(700);
     const rect = await page2.evaluate(() => { const p = document.getElementById('rpg-action-popup'); if (!p) return null; const r = p.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, vw: window.innerWidth, vh: window.innerHeight }; });
     console.log('mobile popup rect:', JSON.stringify(rect));

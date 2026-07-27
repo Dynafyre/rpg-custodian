@@ -20,7 +20,7 @@ const chatMsgs = () => page.evaluate(() =>
     })));
 const newGame = async () => {
     await page.click('#rpg-menu-button'); await wait(400);
-    await page.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('New Game'))?.click());
+    await page.evaluate(() => window.rpgCustodianDebug.newGame('prototype-town'));
     await wait(20000);
 };
 

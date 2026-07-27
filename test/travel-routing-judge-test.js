@@ -30,7 +30,7 @@ try {
     await page.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Create Character'))?.click());
     await wait(6000);
     await page.click('#rpg-menu-button'); await wait(400);
-    await page.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('New Game'))?.click());
+    await page.evaluate(() => window.rpgCustodianDebug.newGame('prototype-town'));
     await wait(20000);
 
     // ---- 1) Multi-hop routing (Dyna's exact case: outskirts → General Store) ----

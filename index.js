@@ -1113,10 +1113,8 @@ jQuery(async () => {
         if (save) {
             items.push({ icon: '▶️', label: `Continue (${save.world}, Day ${save.day ?? 1})`, action: continueGame });
         }
-        for (const world of availableWorldsCache) {
-            items.push({ icon: '🎲', label: `New Game: ${world.displayName || world.name}`, action: () => newGame(world.name) });
-        }
-        items.push({ icon: '🌍', label: 'Worlds (create, edit, manage)', action: () => openWorldManager() });
+        // New games start from the Worlds manager (world → 🎲 New Game).
+        items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
         items.push({ icon: '✨', label: 'Create Character', action: () => createRPGCharacterCommand() });
         items.push({ icon: '👤', label: 'Character Sheet', action: () => showRPGCharacterInfoCommand({}, '') });
         if (currentGameState.isActive) {

@@ -38,10 +38,10 @@ try {
     await openMenuItem('Create Character'); await wait(5000);
 
     // ---- create world + open the editor ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     dialogQueue = ['Cartographia', 'A map-testing realm.', 'Harbor'];
     await clickPopupItem('Create a new world'); await wait(800);
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     await clickPopupItem('Cartographia');
     await clickPopupItem('Edit world'); await wait(800);
     check('editor opens', await page.evaluate(() => !!document.getElementById('rpg-map-editor')));
@@ -97,7 +97,7 @@ try {
     // ---- close saves; world is playable with edits ----
     await mapBtn('close'); await wait(600);
     check('editor closed', await page.evaluate(() => !document.getElementById('rpg-map-editor')));
-    await openMenuItem('New Game: Cartographia'); await wait(15000);
+    await page.evaluate(() => window.rpgCustodianDebug.newGame('cartographia')); await wait(15000);
     const state = await page.evaluate(() => { const s = window.rpgCustodianDebug.state(); return { active: s.isActive, loc: s.currentLocation, secretKnown: !!s.worldData.locations && Object.values(s.worldData.locations).some(l => l.secret === 2) }; });
     check('edited world playable, secret node intact', state.active && state.secretKnown, JSON.stringify(state));
 
@@ -110,7 +110,7 @@ try {
     await page2.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     await wait(2000);
     await page2.tap('#rpg-menu-button'); await wait(500);
-    await page2.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Worlds (create'))?.click()); await wait(600);
+    await page2.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Worlds (play'))?.click()); await wait(600);
     await page2.evaluate(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].find(e => e.textContent.includes('Cartographia'))?.click()); await wait(600);
     await page2.evaluate(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].find(e => e.textContent.includes('Edit world'))?.click()); await wait(900);
     check('mobile: editor opens', await page2.evaluate(() => !!document.getElementById('rpg-map-editor')));

@@ -42,12 +42,12 @@ try {
     await openMenuItem('Create Character'); await wait(5000);
 
     // ---- world to cast into ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     dialogQueue = ['Castlandia', 'A casting-couch of a realm.', 'Green Village'];
     await clickPopupItem('Create a new world'); await wait(800);
 
     // ---- import Trizel's card file through the wizard ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     await clickPopupItem('Castlandia');
     await clickPopupItem('👥 Cast'); await wait(500);
     const [chooser] = await Promise.all([
@@ -76,7 +76,7 @@ try {
     check('rpg_custodian block written', rc.role === 'wandering alchemist' && rc.fertility === 40 && rc.home_location === 'green-village' && rc.schedule?.Morning === 'green-village');
 
     // ---- the world plays with her ----
-    await openMenuItem('New Game: Castlandia'); await wait(25000);
+    await page.evaluate(() => window.rpgCustodianDebug.newGame('castlandia')); await wait(25000);
     const roster = await page.evaluate(() => (window.rpgCustodianDebug.state().npcRoster || []).map(n => `${n.name}:${n.role}`));
     console.log('roster:', JSON.stringify(roster));
     check('she is on the roster with her role', roster.some(r => /trizel/i.test(r) && /alchemist/.test(r)));
@@ -84,7 +84,7 @@ try {
     check('she is projected to the scene (status block)', /trizel/i.test(present) && /alchemist/.test(present));
 
     // ---- edit flow ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     await clickPopupItem('Castlandia');
     await clickPopupItem('👥 Cast'); await wait(400);
     await clickPopupItem(castName); await wait(400);
@@ -97,7 +97,7 @@ try {
     check('edit saves + bumps card_version', rc2.role === 'master alchemist' && parseFloat(rc2.card_version) > parseFloat(rc.card_version), `${rc.card_version} → ${rc2.card_version}`);
 
     // ---- remove flow ----
-    await openMenuItem('Worlds (create');
+    await openMenuItem('Worlds (play');
     await clickPopupItem('Castlandia');
     await clickPopupItem('👥 Cast'); await wait(400);
     await clickPopupItem(castName); await wait(400);
@@ -115,7 +115,7 @@ try {
     await page2.evaluate(() => document.querySelectorAll('dialog[open]').forEach(d => d.close()));
     await wait(2000);
     await page2.tap('#rpg-menu-button'); await wait(500);
-    await page2.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Worlds (create'))?.click()); await wait(500);
+    await page2.evaluate(() => [...document.querySelectorAll('.rpg-menu-item')].find(e => e.textContent.includes('Worlds (play'))?.click()); await wait(500);
     await page2.evaluate(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].find(e => e.textContent.includes('Castlandia'))?.click()); await wait(500);
     await page2.evaluate(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].find(e => e.textContent.includes('👥 Cast'))?.click()); await wait(500);
     await page2.evaluate(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].find(e => e.textContent.includes('Add from installed'))?.click()); await wait(700);
