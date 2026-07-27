@@ -1251,6 +1251,45 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         mapRenderAll(); mapRefreshTopbar();
     }
 
+    // ---- background picker: scrolling thumbnail grid over ST's backgrounds ----
+    async function openBgPicker(current, onPick) {
+        $('#rpg-bg-picker').remove();
+        let images = [];
+        try {
+            const r = await fetch('/api/backgrounds/all', { method: 'POST', headers: context.getRequestHeaders(), body: '{}' });
+            images = (await r.json()).images || [];
+        } catch (e) { console.error('RPG Custodian: backgrounds list failed', e); wmToast('Could not load backgrounds.', 'error'); return; }
+        const ov = $(`
+            <div id="rpg-bg-picker">
+                <div class="rpg-form-panel">
+                    <div class="rpg-popup-title">🖼️ Scene background</div>
+                    <input id="bgp-filter" type="text" placeholder="filter backgrounds…">
+                    <div id="bgp-grid"></div>
+                    <div class="mp-buttons">
+                        <button type="button" id="bgp-none" class="rpg-map-btn">🚫 None</button>
+                        <button type="button" id="bgp-cancel" class="rpg-map-btn">Cancel</button>
+                    </div>
+                </div>
+            </div>`);
+        $('body').append(ov);
+        const render = () => {
+            const q = String($('#bgp-filter').val() || '').toLowerCase();
+            const grid = $('#bgp-grid').empty();
+            for (const f of images.filter(f => f.toLowerCase().includes(q))) {
+                const cell = $(`<div class="bgp-cell${f === current ? ' bgp-current' : ''}"></div>`);
+                cell.append($(`<img loading="lazy" src="/thumbnail?type=bg&file=${encodeURIComponent(f)}">`));
+                cell.append($('<div class="bgp-name"></div>').text(f.replace(/\.[^.]+$/, '')));
+                cell.on('click', (e) => { e.stopPropagation(); $('#rpg-bg-picker').remove(); onPick(f); });
+                grid.append(cell);
+            }
+            if (!grid.children().length) grid.append('<div class="pe-fx-title">No matches.</div>');
+        };
+        $('#bgp-filter').on('input', render);
+        $('#bgp-none').on('click', (e) => { e.stopPropagation(); $('#rpg-bg-picker').remove(); onPick(''); });
+        $('#bgp-cancel').on('click', (e) => { e.stopPropagation(); $('#rpg-bg-picker').remove(); });
+        render();
+    }
+
     // ---- the Edit Location panel ----
     function openMapNodePanel(id) {
         const loc = mapEd.world.locations[id];
@@ -1263,7 +1302,9 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 <label>Alternate names <input id="mp-alt" type="text" placeholder="comma, separated, aliases"></label>
                 <label>Description <textarea id="mp-desc" rows="4"></textarea></label>
                 <label>Tags <input id="mp-tags" type="text" placeholder="danger:low, shop:alchemist, …"></label>
-                <label>Scene background (ST backgrounds filename) <input id="mp-bg" type="text"></label>
+                <label>Scene background
+                    <button type="button" id="mp-bg-btn" class="rpg-toggle"><img id="mp-bg-thumb" style="display:none"> <span id="mp-bg-name">None</span></button>
+                </label>
                 <label>Secrecy <select id="mp-secret">
                     <option value="0">0 — public (all NPCs know it)</option>
                     <option value="1">1 — unknown (NPCs don't know; on your menus)</option>
@@ -1284,7 +1325,15 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#mp-alt').val((loc.alternate_names || []).join(', '));
         $('#mp-desc').val(loc.description || '');
         $('#mp-tags').val((loc.tags || []).join(', '));
-        $('#mp-bg').val(loc.background || '');
+        let pickedBg = loc.background || '';
+        const showBg = () => {
+            $('#mp-bg-name').text(pickedBg || 'None — tap to choose');
+            const img = document.getElementById('mp-bg-thumb');
+            if (pickedBg) { img.src = `/thumbnail?type=bg&file=${encodeURIComponent(pickedBg)}`; img.style.display = ''; }
+            else img.style.display = 'none';
+        };
+        showBg();
+        $('#mp-bg-btn').on('click', (e) => { e.stopPropagation(); openBgPicker(pickedBg, (f) => { pickedBg = f; showBg(); }); });
         $('#mp-secret').val(String(Number(loc.secret) || 0));
         setToggle($('#mp-start'), mapEd.world.startingLocation === id);
         $('#mp-cancel').on('click', () => $('#rpg-map-panel').remove());
@@ -1293,7 +1342,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             loc.alternate_names = String($('#mp-alt').val() || '').split(',').map(s => s.trim()).filter(Boolean);
             loc.description = String($('#mp-desc').val() || '').trim();
             loc.tags = String($('#mp-tags').val() || '').split(',').map(s => s.trim()).filter(Boolean);
-            loc.background = String($('#mp-bg').val() || '').trim();
+            loc.background = pickedBg;
             const sec = Number($('#mp-secret').val()) || 0;
             if (sec) loc.secret = sec; else delete loc.secret;
             if (getToggle($('#mp-start'))) mapEd.world.startingLocation = id;

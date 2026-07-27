@@ -51,7 +51,16 @@ try {
     await page.evaluate(() => { document.getElementById('mp-name').value = ''; });
     await page.type('#mp-name', 'Old Lighthouse');
     await page.evaluate(() => document.getElementById('mp-secret').value = '2');
+    // background picker: thumbnail grid, pick the first background
+    await page.click('#mp-bg-btn'); await wait(1200);
+    const cells = await page.evaluate(() => document.querySelectorAll('#bgp-grid .bgp-cell').length);
+    check('bg picker opens with thumbnails', cells > 0, `cells=${cells}`);
+    await page.screenshot({ path: 'screenshots/bg-picker.png' });
+    const pickedName = await page.evaluate(() => { const c = document.querySelector('#bgp-grid .bgp-cell'); const n = c?.querySelector('img')?.src || ''; c?.click(); return decodeURIComponent(n.split('file=')[1] || ''); });
+    await wait(400);
+    check('picked bg shows on the button', await page.evaluate(() => document.getElementById('mp-bg-name')?.textContent) === pickedName);
     await page.click('#mp-save'); await wait(400);
+    check('picked bg saved to the location', (await world()).locations && Object.values((await world()).locations).some(l => l.name === 'Old Lighthouse' && l.background === pickedName), pickedName);
     await page.evaluate(() => { const m = window; }); // noop spacing
     await mapBtn('add');
     await page.evaluate(() => { document.getElementById('mp-name').value = ''; });
