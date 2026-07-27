@@ -400,7 +400,7 @@ jQuery(async () => {
     function openWorldManager() {
         const items = [
             { icon: '➕', label: 'Create a new world', sub: 'name, description & first location — build it out in the map editor later', action: () => createWorldMinimal() },
-            { icon: '📥', label: 'Import world bundle', sub: 'coming with the bundle system', action: () => wmToast('World import arrives with the export/import bundle phase.') },
+            { icon: '📥', label: 'Import world bundle', sub: 'a .rpgworld file exported from any RPG Custodian', action: () => { $('#rpg-world-file').remove(); const inp = $('<input id="rpg-world-file" type="file" accept=".rpgworld,.zip,application/zip" style="display:none">'); $('body').append(inp); inp.on('change', function () { importWorldBundle(this.files?.[0]); }); inp.trigger('click'); } },
         ];
         for (const w of availableWorldsCache) {
             items.push({
@@ -420,7 +420,7 @@ jQuery(async () => {
             { icon: '🎲', label: 'New Game', sub: `start fresh in ${w.displayName || w.name}`, action: () => newGame(w.name) },
             { icon: '✏️', label: 'Edit world', sub: w.authored ? 'open the map builder' : 'creates an editable copy that overrides the shipped files', action: () => openMapEditor(w.name) },
             { icon: '👥', label: 'Cast', sub: w.authored ? 'add, edit, or remove world characters' : 'creates an editable copy that overrides the shipped files', action: () => openCastManager(w.name) },
-            { icon: '📤', label: 'Export bundle', sub: 'coming with the bundle system', action: () => wmToast('World export arrives with the export/import bundle phase.') },
+            { icon: '📤', label: 'Export bundle', sub: 'a shareable .rpgworld file (world + backgrounds)', action: () => exportWorldBundle(w.name) },
         ];
         if (w.authored) {
             items.push({ icon: '🗑️', label: 'Delete world', sub: 'removes it permanently (saves referencing it will not load)', action: () => deleteAuthoredWorld(w.name) });
@@ -704,6 +704,114 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 $('#ne-result').text('The forge sputtered — check the console.');
             } finally { btn.prop('disabled', false); $('#ne-throbber').hide(); }
         });
+    }
+
+    // ========================================================================
+    // WORLD BUNDLES — export/import (world-management §6, phase 6)
+    // ========================================================================
+    // A .rpgworld bundle is a zip: world.json (the full authored world,
+    // castData included) + the background images its locations reference.
+    // Import validates, walks name conflicts with rename prompts, uploads
+    // missing backgrounds, and installs as an authored world. Cast characters
+    // materialize from castData on first play (ensureCastExists), so no
+    // character files travel in the bundle.
+
+    async function ensureJSZip() {
+        if (window.JSZip) return window.JSZip;
+        await new Promise((res, rej) => {
+            const sc = document.createElement('script');
+            sc.src = '/lib/jszip.min.js';
+            sc.onload = res; sc.onerror = () => rej(new Error('jszip load failed'));
+            document.head.appendChild(sc);
+        });
+        return window.JSZip;
+    }
+
+    async function exportWorldBundle(worldId) {
+        let world = authoredWorlds()[worldId];
+        if (!world) world = await materializeShippedWorld(worldId);
+        if (!world) { wmToast(`World "${worldId}" could not be loaded.`, 'error'); return; }
+        wmToast('Building bundle…', 'info');
+        try {
+            const JSZip = await ensureJSZip();
+            const zip = new JSZip();
+            zip.file('world.json', JSON.stringify({ format: 'rpg-custodian-world', version: 1, world }, null, 1));
+            // Backgrounds the world references (map image + per-location scenes)
+            const bgs = new Set([world.mapImage, ...Object.values(world.locations || {}).map(l => l.background)].filter(Boolean));
+            for (const bg of bgs) {
+                try {
+                    const r = await fetch(`backgrounds/${encodeURIComponent(bg)}`);
+                    if (r.ok) zip.file(`backgrounds/${bg}`, await r.blob());
+                } catch { /* missing background file — bundle without it */ }
+            }
+            const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = `${world.worldId || worldId}.rpgworld`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+            wmToast(`Exported ${a.download} (${bgs.size} background${bgs.size === 1 ? '' : 's'} bundled).`, 'success');
+        } catch (e) { console.error('RPG Custodian: export failed', e); wmToast('Export failed — check the console.', 'error'); }
+    }
+
+    async function importWorldBundle(file) {
+        if (!file) { $('#rpg-world-file').remove(); return; }
+        try {
+            const JSZip = await ensureJSZip();
+            const zip = await JSZip.loadAsync(await file.arrayBuffer());
+            const manifestFile = zip.file('world.json');
+            if (!manifestFile) { wmToast('Not a world bundle — no world.json inside.', 'error'); return; }
+            const manifest = JSON.parse(await manifestFile.async('string'));
+            if (manifest.format !== 'rpg-custodian-world' || !manifest.world?.locations) {
+                wmToast('Not a valid RPG Custodian world bundle.', 'error'); return;
+            }
+            const world = manifest.world;
+
+            // World name conflict → rename prompt (no silent overwrites)
+            const taken = (id, nm) => availableWorldsCache.some(x => x.name === id || (x.displayName || '').toLowerCase() === nm.toLowerCase()) || !!authoredWorlds()[id];
+            while (taken(slugify(world.name || world.worldId), String(world.name || world.worldId))) {
+                const nn = (prompt(`A world named "${world.name}" already exists. New name for the imported world?`) || '').trim();
+                if (!nn) { wmToast('Import cancelled.', 'info'); return; }
+                world.name = nn;
+            }
+            world.worldId = slugify(world.name || world.worldId);
+
+            // Cast name conflicts (RPGC copy or another world's cast) → rename
+            world.castData = world.castData || {};
+            for (const name of [...(world.cast || [])]) {
+                const clash = getCtx().characters.some(c => c.avatar === `RPGC_${name}.png`)
+                    || Object.values(authoredWorlds()).some(w2 => w2 !== world && (w2.cast || []).includes(name));
+                if (!clash) continue;
+                const nn = (prompt(`Cast member "${name}" conflicts with an existing character. New name for her in this world?`) || '').trim();
+                if (!nn || nn === name) continue;   // keep — shared-name caveat applies
+                world.cast = world.cast.map(n => (n === name ? nn : n));
+                if (world.castData[name]) {
+                    world.castData[nn] = world.castData[name];
+                    delete world.castData[name];
+                    (world.castData[nn].data || world.castData[nn]).name = nn;
+                    world.castData[nn].name = nn;
+                }
+            }
+
+            // Upload bundled backgrounds that aren't installed yet
+            let bgUp = 0;
+            const existing = new Set(((await (await fetch('/api/backgrounds/all', { method: 'POST', headers: context.getRequestHeaders(), body: '{}' })).json()).images) || []);
+            for (const [path, entry] of Object.entries(zip.files)) {
+                if (entry.dir || !path.startsWith('backgrounds/')) continue;
+                const bgName = path.slice('backgrounds/'.length);
+                if (!bgName || existing.has(bgName)) continue;
+                const fd = new FormData();
+                fd.append('avatar', new File([await entry.async('blob')], bgName));
+                const r = await fetch('/api/backgrounds/upload', { method: 'POST', headers: context.getRequestHeaders({ omitContentType: true }), body: fd });
+                if (r.ok) bgUp++;
+            }
+
+            authoredWorlds()[world.worldId] = world;
+            context.saveSettingsDebounced();
+            await loadRegisteredWorlds();
+            wmToast(`World "${world.name}" imported (${Object.keys(world.locations).length} locations, ${(world.cast || []).length} cast, ${bgUp} background${bgUp === 1 ? '' : 's'} added).`, 'success');
+        } catch (e) { console.error('RPG Custodian: import failed', e); wmToast('Import failed — check the console.', 'error'); }
+        finally { $('#rpg-world-file').remove(); }
     }
 
     // ========================================================================
