@@ -1736,6 +1736,15 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         projectPlayerStatus();
         updateTimeDisplay();
 
+        // Presence cooperation: history from before witness-stamping becomes
+        // universal, so enabling the Presence extension doesn't blind the
+        // cast to everything that already happened.
+        {
+            let stamped = 0;
+            for (const m of (getCtx().chat || [])) if (!m.present) { m.present = ['presence_universal_tracker']; stamped++; }
+            if (stamped) { try { await getCtx().saveChat(); } catch (e) { console.warn('RPG Custodian: presence backfill save failed', e); } }
+        }
+
         const location = worldData.locations[currentGameState.currentLocation];
         await setBackground(location.background);
 
@@ -2899,6 +2908,17 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     /**
      * Send a ghost message (hidden from AI context)
      */
+    // === Presence-extension cooperation ===
+    // The SillyTavern-Presence extension hides messages from group members who
+    // weren't stamped as witnesses (mes.present, by avatar; it already honors
+    // our disabled_members muting). Engine-pushed messages bypass the events
+    // it stamps on, so we stamp them ourselves: witnessed by the scene's
+    // present cast plus the GM (who sees everything).
+    function stampPresence(message) {
+        const present = getNpcsAt(currentGameState.currentLocation || '').map(n => castCharFor(n.name)?.avatar || `${n.name}.png`);
+        message.present = [...present, 'Game Master.png'];
+    }
+
     function sendGhostMessage(text) {
         const message = {
             name: 'RPG Custodian',
@@ -2910,7 +2930,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 isSmallSys: true
             }
         };
-
+        stampPresence(message);
         const ctx = getCtx();
         ctx.chat.push(message);
         ctx.addOneMessage(message);
@@ -2926,7 +2946,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             send_date: getMessageTimeStamp(),
             mes: text
         };
-
+        stampPresence(message);
         const ctx = getCtx();
         ctx.chat.push(message);
         ctx.addOneMessage(message);
