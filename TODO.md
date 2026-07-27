@@ -188,6 +188,18 @@ name-conflict handling.
 - [ ] Phase 5: creation wizard shell
 - [ ] Phase 6: export/import bundles + conflict rename
 
+## 6.9 Multi-world persona hygiene 🧹
+
+Relationships and `world_state` live on the PERSONA, keyed by NPC name and
+shared across all worlds. Works fine while casts don't share names, but:
+- [ ] **Name collisions** — two worlds with an NPC of the same name would
+      share one relationship record. Consider per-world scoping
+      (`relationships[worldId][name]`) with a migration.
+- [ ] **world_state cross-pollination** — `visited_locations` mixes location
+      ids from every world played (cosmetic today).
+- [x] Single-save-slot loss on world switch ✅ fixed 2026-07-27 (per-world
+      saves; Dyna's prototype-town save reconstructed from chat forensics).
+
 ## 7. Spellcasting system ✨
 
 **Goal:** Build the real spell system on the existing seed layer.
