@@ -177,7 +177,10 @@ name-conflict handling.
       (authored worlds in extensionSettings w/ embedded castData; unified
       loadWorldData; minimal create wizard w/ conflict re-prompt;
       worldmanager-test.js 8/8 incl. mobile)
-- [ ] Phase 3: map builder (view/edit prototype-town first)
+- [x] Phase 3: graphical map builder ✅ 2026-07-26 (touch node editor:
+      drag/select/join/edit panel/secrecy/star, pinch+wheel zoom, bg image
+      upload, shipped-world clone-to-edit, active-world hot-reload;
+      mapbuilder-test.js 12/12 incl. mobile bottom-sheet pass)
 - [ ] Phase 4: cast onboarding wizard
 - [ ] Phase 5: creation wizard shell
 - [ ] Phase 6: export/import bundles + conflict rename
