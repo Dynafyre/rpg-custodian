@@ -718,6 +718,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 if (world.castData) delete world.castData[name];
                 context.saveSettingsDebounced();
                 wmToast(`${name} removed from the cast.`, 'success');
+                openCastManager(worldId);
             } },
         ]);
     }
@@ -747,7 +748,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             }
         };
         $('#cast-filter').on('input', renderList);
-        $('#cast-pick-cancel').on('click', () => $('#rpg-cast-overlay').remove());
+        $('#cast-pick-cancel').on('click', () => { $('#rpg-cast-overlay').remove(); openCastManager(worldId); });
         renderList();
     }
 
@@ -834,7 +835,6 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
                     <button type="button" id="cf-secret" class="rpg-toggle">🕵️ Secret (unknown to other NPCs): <b>No</b></button>
                     <label>Shop category (if merchant) <input id="cf-shop" type="text" placeholder="alchemist, smith, general…"></label>
-                    <label>Wrestle/contest DC (blank = none) <input id="cf-wrestle" type="number" min="6" max="18"></label>
                     <div class="mp-buttons">
                         <button id="cf-save" class="rpg-map-btn">💾 Save</button>
                         <button id="cf-cancel" class="rpg-map-btn">Cancel</button>
@@ -854,15 +854,14 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
         setToggle($('#cf-secret'), !!rc.secret);
         $('#cf-shop').val(rc.shop || '');
-        $('#cf-wrestle').val(rc.wrestle?.difficulty ?? '');
         $('#cf-cancel').on('click', () => {
             $('#rpg-cast-overlay').remove();
             if (opts.adopting) delete world.castData[name];   // adoption not completed
+            openCastManager(worldId);   // flow back to the cast list
         });
         $('#cf-save').on('click', () => {
             const schedule = {};
             for (const p of periods) schedule[p] = $(`.cf-period[data-p="${p}"]`).val();
-            const wr = Number($('#cf-wrestle').val());
             card.extensions = card.extensions || {};
             const prev = card.extensions.rpg_custodian || {};
             card.extensions.rpg_custodian = {
@@ -877,7 +876,6 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 schedule,
                 secret: getToggle($('#cf-secret')) || undefined,
                 shop: String($('#cf-shop').val() || '').trim() || undefined,
-                wrestle: wr ? { stat: 'ruggedness', difficulty: wr } : undefined,
                 base_stats: {
                     ...(prev.base_stats || { familiarity: 0, pregnancies: 0, pregnancy_progress: 0 }),
                     affection: Math.max(0, Math.min(10, Number($('#cf-aff').val()) || 0)),
@@ -889,6 +887,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             context.saveSettingsDebounced();
             $('#rpg-cast-overlay').remove();
             wmToast(`${name} ${opts.adopting ? 'joined the cast of' : 'updated in'} ${world.name || worldId}.`, 'success');
+            openCastManager(worldId);   // flow back to the cast list for the next edit
         });
     }
 
