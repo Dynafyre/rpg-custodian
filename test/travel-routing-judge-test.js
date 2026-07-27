@@ -68,6 +68,17 @@ try {
     r = await rel('Wren');
     check('confide + deliberate closeness + kindness at Wary → affection rises', r.aff >= 1, `aff=${r.aff}`);
 
+    // 3b2. Condition scoping: a distant NPC's status must NOT be judgeable —
+    // 'Trizel' isn't in prototype-town's cast (persona-global relationships),
+    // so a blatant on-screen "cure" must not end her condition.
+    await page.evaluate(() => window.rpgCustodianDebug.addStatus('Trizel', { name: 'Distant Fever', kind: 'disease', desc: 'test', end_condition: 'when her fever breaks and she is cured', duration: 20 }));
+    p = await pushReply('Wren', 'The fever breaks at last — she sits up, cured, healthy and beaming, the sickness fully gone from her body.');
+    await page.evaluate(() => window.rpgCustodianDebug.checkConditions()); await wait(500);   // clears justCreated
+    await page.evaluate(() => window.rpgCustodianDebug.checkConditions()); await wait(3500);  // real judge pass
+    const distantFx = await page.evaluate(() => (window.rpgCustodianDebug.rel('Trizel').customEffects || []).map(e => e.name));
+    check('distant NPC status survives an off-scene "cure"', distantFx.includes('Distant Fever'), distantFx.join(','));
+    await page.evaluate(() => { const r = window.rpgCustodianDebug.rel('Trizel'); r.customEffects = []; });   // cleanup
+
     // 3c. Regression: in-band curt reply still scores 0
     await page.evaluate(() => window.rpgCustodianDebug.setAffection('Bryony', 0));
     p = await page.evaluate(() => SillyTavern.getContext().chat.length);

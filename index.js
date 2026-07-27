@@ -414,7 +414,9 @@ jQuery(async () => {
     }
 
     function openWorldActions(w) {
+        const save = getSaveFor(w.name);
         const items = [
+            ...(save ? [{ icon: '▶️', label: 'Continue', sub: `Day ${save.day ?? 1}, ${['Morning', 'Day', 'Evening', 'Night'][save.time ?? 0] || ''}`, action: () => continueGame(w.name) }] : []),
             { icon: '🎲', label: 'New Game', sub: `start fresh in ${w.displayName || w.name}`, action: () => newGame(w.name) },
             { icon: '✏️', label: 'Edit world', sub: w.authored ? 'open the map builder' : 'creates an editable copy that overrides the shipped files', action: () => openMapEditor(w.name) },
             { icon: '👥', label: 'Cast', sub: w.authored ? 'add, edit, or remove world characters' : 'creates an editable copy that overrides the shipped files', action: () => openCastManager(w.name) },
@@ -1691,12 +1693,14 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
     /**
      * Resume the last saved game (menu action).
      */
-    async function continueGame() {
-        const save = getCurrentSave();
+    async function continueGame(worldId = null) {
+        const save = worldId ? getSaveFor(worldId) : getCurrentSave();
         if (!save) {
-            sendGhostMessage('❌ No save found. Start a New Game from the RPG menu.');
+            wmToast('No save found for that world — start a New Game.', 'warning');
             return;
         }
+        // Continuing a world makes it the most-recently-played one.
+        context.extensionSettings[extensionName].currentSave = save;
 
         const currentBackground = background_settings.name;
         if (currentBackground && currentBackground !== '__transparent.png' && !currentGameState.isActive) {
@@ -1778,7 +1782,20 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             offspring: currentGameState.offspring || [],
             timestamp: new Date().toISOString(),
         };
+        // Per-world save slots: each world keeps its own save; currentSave
+        // remains the most-recently-played pointer for the quick Continue.
+        const s = context.extensionSettings[extensionName];
+        s.saves = s.saves || {};
+        s.saves[currentGameState.worldData.worldId] = s.currentSave;
         context.saveSettingsDebounced();
+    }
+
+    /** The save slot for a specific world (falls back to legacy currentSave). */
+    function getSaveFor(worldId) {
+        const s = context.extensionSettings[extensionName] || {};
+        if (s.saves?.[worldId]) return s.saves[worldId];
+        const cur = getCurrentSave();
+        return cur && cur.world === worldId ? cur : null;
     }
 
     // Extended Persona System for RPG Characters
@@ -4728,10 +4745,20 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // An effect is not eligible to end on the very turn it was applied (its own
         // arrival narration must not be mistaken for its resolution). Clear the flag
         // as we pass, so it becomes checkable from the NEXT turn on.
+        // SCOPE: an NPC's condition is only judgeable when SHE is in the
+        // current scene — the on-screen story is the only legitimate evidence
+        // of it completing. (A distant NPC — or one from another world
+        // entirely, since relationships are persona-global — must never have
+        // her statuses ended by scenes she isn't in. Timers remain the
+        // world-agnostic backstop.) Player conditions always judge.
+        const inScene = new Set(getNpcsAt(currentGameState.currentLocation).map(n => n.name));
+        for (const p of (currentGameState.party || [])) inScene.add(p);
         const regStatuses = (holder, target) => {
+            const eligible = target === 'player' || inScene.has(target);
             for (const e of (holder.customEffects || [])) {
                 if (e.active === false || !e.endCondition) continue;
                 if (e.justCreated) { e.justCreated = false; continue; }
+                if (!eligible) continue;
                 pending.push({ kind: e.category === 'quest' ? 'quest' : 'status', id: e.id, text: e.endCondition, target, name: e.name, ref: e });
             }
         };
@@ -4739,6 +4766,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             const c = holder.crystalCurse;
             if (!c || !c.active || !c.breakCondition) return;
             if (c.justCreated) { c.justCreated = false; return; }
+            if (target !== 'player' && !inScene.has(target)) return;
             pending.push({ kind: 'curse', id: `curse-${target}`, text: c.breakCondition, target });
         };
         regStatuses(rd, 'player'); regCurse(rd, 'player');
@@ -5770,6 +5798,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
         nlMove: (d) => doNlMove(d),
         refreshWorlds: () => loadRegisteredWorlds(),
+        checkConditions: () => checkPendingConditions(),
         travelIssue: () => travelIssueNote,
         clearLegacyQuests: () => { const rd = getPlayerRpgData(); if (rd && rd.quests) { delete rd.quests; savePlayer(); return 'legacy card-quest state removed'; } return 'nothing to clear'; },
         charmNote: (tier) => buildCharmInterpretationNote(tier ? { tier, success: tier === 'success' || tier === 'critical' } : null),

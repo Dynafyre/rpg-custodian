@@ -65,6 +65,19 @@ try {
     const intro = await page.evaluate(() => [...SillyTavern.getContext().chat].reverse().find(m => (m.mes || '').includes('New Game Started'))?.mes || '');
     check('intro message in fresh chat', /Testrealm Alpha/.test(intro));
 
+    // ---- Per-world Continue: switch away, then continue Testrealm's save ----
+    await page.evaluate(() => window.rpgCustodianDebug.tick(3));   // advance Testrealm to distinguish its save
+    const dayBefore = await page.evaluate(() => window.rpgCustodianDebug.state().dayCount);
+    await page.evaluate(() => window.rpgCustodianDebug.newGame('prototype-town')); await wait(15000);
+    check('switched to another world', await page.evaluate(() => window.rpgCustodianDebug.state().worldData?.worldId) === 'prototype-town');
+    await openMenuItem('Worlds (play');
+    await clickPopupItem('Testrealm Alpha');
+    items = await popupItems();
+    check('Continue offered for the non-active world', items.some(i => /▶️ Continue/.test(i)));
+    await clickPopupItem('▶️ Continue'); await wait(12000);
+    const contState = await page.evaluate(() => { const s = window.rpgCustodianDebug.state(); return { world: s.worldData?.worldId, day: s.dayCount, time: s.currentTime }; });
+    check('continued the other world with its save intact', contState.world === 'testrealm-alpha' && contState.day === dayBefore, JSON.stringify(contState) + ` (expected day ${dayBefore})`);
+
     // ---- Delete authored world ----
     await openMenuItem('Worlds (play');
     await clickPopupItem('Testrealm Alpha');
