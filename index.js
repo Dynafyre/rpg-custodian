@@ -3592,6 +3592,10 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             // she fell / was left until she wakes (see stashedAt).
             const rel = rels[npc.name];
             if (rel?.npcUnconscious && rel.stashedAt) return locationId === rel.stashedAt;
+            // Likewise an NPC under an immobilizing status (bound, paralyzed,
+            // ensnared…) is pinned where it took hold until the status ends.
+            const pin = (rel?.customEffects || []).find(e => e.active !== false && e.immobilizes && e.pinnedAt);
+            if (pin) return locationId === pin.pinnedAt;
             return (npc.schedule?.[period] ?? npc.homeLocation) === locationId;
         });
     }
@@ -3637,8 +3641,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
         // 1) Mechanical readout
         const parts = [];
-        parts.push(`💗 Disposition: **${affectionTier(rel.affection).label}** (affection ${rel.affection}/10)`);
-        parts.push(`🔥 Arousal: **${arousalTier(rel.arousal).label}** (${rel.arousal || 1}/10)`);
+        parts.push(`💗 Disposition: **${affectionTier(getNpcAffection(npcName)).label}** (affection ${getNpcAffection(npcName)}/10)`);
+        parts.push(`🔥 Arousal: **${arousalTier(getNpcArousal(npcName)).label}** (${getNpcArousal(npcName)}/10)`);
         parts.push(`❤️ Stamina: ${rel.npcStamina ?? npcMaxStamina(npcName)}/${npcMaxStamina(npcName)}${rel.npcUnconscious ? ' — UNCONSCIOUS' : ''}`);
         if (npc?.fertility != null) parts.push(`🌱 Fertility: ${fertilityPercent(npcName)}%`);
         if (npc?.wrestle) parts.push(`🤼 Contest DC: ${npc.wrestle.difficulty}`);
@@ -3654,14 +3658,14 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         // thinking (headroom + strip), prefill only as rescue.
         const flavor = [];
         if (rel.npcUnconscious) flavor.push('unconscious, limp and unresponsive');
-        else if ((rel.arousal || 1) >= 3) flavor.push(arousalTier(rel.arousal).band);
+        else if (getNpcArousal(npcName) >= 3) flavor.push(arousalTier(getNpcArousal(npcName)).band);
         const stamNow = rel.npcStamina ?? npcMaxStamina(npcName);
         if (!rel.npcUnconscious && stamNow < npcMaxStamina(npcName)) {
             flavor.push(stamNow <= npcMaxStamina(npcName) / 3 ? 'utterly spent, barely upright' : 'worn and tired');
         }
         if ((rel.pregnancies || 0) > 0) flavor.push(`${pregnancyStage(rel.pregnancy_progress)} pregnant, carrying ${rel.pregnancies}`);
         for (const e of npcActiveEffects(npcName)) flavor.push(e.selfNote ? `under the effect of ${e.name}: ${e.selfNote}` : `under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
-        const t = affectionTier(rel.affection);
+        const t = affectionTier(getNpcAffection(npcName));
         // Positive framing beats negation: telling the model to "ignore her
         // usual spot" made it describe her BY CONTRAST to it. Instead we state
         // her present life as fact (road tenure) and never mention the old one.
@@ -4026,7 +4030,10 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             if (npc.secret) continue;
             const rel = getRelationship(npc.name);
             let where;
+            const pin = (rel.customEffects || []).find(e => e.active !== false && e.immobilizes && e.pinnedAt);
             if (rel.npcUnconscious && rel.stashedAt) where = `laid up at ${locName(rel.stashedAt)}`;
+            else if (pin && locSecret(pin.pinnedAt) === 0) where = `at ${locName(pin.pinnedAt)} — held there by her condition (${pin.name})`;
+            else if (pin) where = 'nobody is quite sure where she gets to at this hour';
             else if (isInParty(npc.name)) where = `off with ${player} — they were seen leaving together`;
             else {
                 const locId = scheduledLocationFor(npc.name);
@@ -4056,8 +4063,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             if (!replyText) return;
             const playerMsg = [...chat.slice(0, preReplyLen)].reverse().find(m => m.is_user);
             const rel = getRelationship(npcName);
-            const t = affectionTier(rel.affection || 0);
-            const a = arousalTier(rel.arousal || 1);
+            const t = affectionTier(getNpcAffection(npcName));    // effective: status deltas/caps included
+            const a = arousalTier(getNpcArousal(npcName));
 
             const sys = `You are the RPG relationship JUDGE. An NPC replied to the player. She was INSTRUCTED to play a stated disposition band (what she gives freely, and what she would NOT yet do) and a stated physical band. Decide whether her reply stepped OUTSIDE those bands. Acting outside her band is exactly HOW affection is built in this game — your job is to RECOGNIZE it consistently, every time it happens. Judge in two parts:
 1. TONE: pleasant, teasing, flirty, sharp, or grumpy TONE consistent with her band scores ZERO. Never reward mere friendliness or banter.
@@ -4070,8 +4077,8 @@ AROUSAL — answer this checklist IN ORDER:
 (d) None of the above: 0. (Merely refusing or deflecting an advance HE made is 0.)
 Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "why": "<ten words max>"}`;
             const prompt = `NPC: ${npcName}
-Her disposition band she was told to play (${t.label}, affection ${rel.affection || 0}/10): she ${t.band}
-Her physical band (${a.label}, arousal ${rel.arousal || 1}/10): ${a.band}
+Her disposition band she was told to play (${t.label}, affection ${getNpcAffection(npcName)}/10): she ${t.band}
+Her physical band (${a.label}, arousal ${getNpcArousal(npcName)}/10): ${a.band}
 Scene context (for reading her reply — but score ONLY the reply itself):
 ${recentSceneForAnalyzer().split('\n').slice(-6).join('\n')}
 Player's message: "${String(playerMsg?.mes || '').replace(/\s+/g, ' ').slice(0, 600)}"
@@ -4095,17 +4102,18 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 dAff = Math.min(dAff, allowance);
                 if (dAff > 0) { rel.affJudgeStep = step; rel.affGainedThisStep = gained + dAff; }
             }
-            const beforeTier = affectionTier(rel.affection || 0).label;
+            const beforeTier = affectionTier(getNpcAffection(npcName)).label;
             if (dAff) rel.affection = Math.max(0, Math.min(10, (rel.affection || 0) + dAff));
-            if (dAro) rel.arousal = Math.max(1, Math.min(10, (rel.arousal || 1) + dAro));
+            if (dAro) setNpcArousalRaw(npcName, (rel.arousal || 1) + dAro);
             savePlayer();
 
             // Every increment is shown to the player (Dyna's call) — with a
-            // flourish line added when a tier boundary is crossed.
+            // flourish line added when a tier boundary is crossed. Displays are
+            // EFFECTIVE values (status deltas/caps folded in) — what she plays.
             const bits = [];
-            if (dAff) bits.push(`💗 affection ${dAff > 0 ? '+' : ''}${dAff} → ${rel.affection}/10 (${affectionTier(rel.affection).label})`);
-            if (dAro) bits.push(`🔥 arousal ${dAro > 0 ? '+' : ''}${dAro} → ${rel.arousal}/10 (${arousalTier(rel.arousal).label})`);
-            const afterTier = affectionTier(rel.affection || 0).label;
+            if (dAff) bits.push(`💗 affection ${dAff > 0 ? '+' : ''}${dAff} → ${getNpcAffection(npcName)}/10 (${affectionTier(getNpcAffection(npcName)).label})`);
+            if (dAro) bits.push(`🔥 arousal ${dAro > 0 ? '+' : ''}${dAro} → ${getNpcArousal(npcName)}/10 (${arousalTier(getNpcArousal(npcName)).label})`);
+            const afterTier = affectionTier(getNpcAffection(npcName)).label;
             const shift = afterTier !== beforeTier
                 ? `\n${dAff > 0 ? `💗 Something shifts in ${npcName} — **${beforeTier} → ${afterTier}**.` : `💔 ${npcName} pulls back — **${beforeTier} → ${afterTier}**.`}`
                 : '';
@@ -4120,7 +4128,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (elapsed < 1) return null;                                      // seen just now / together
         const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName);
         const player = context.powerUserSettings.personas?.[playerAvatar()] || 'the adventurer';
-        const t = affectionTier(rel.affection);
+        const t = affectionTier(getNpcAffection(npcName));
         const dur = elapsedPhrase(elapsed);
         const role = npc?.role ? ` (${aOrAn(npc.role)})` : '';
         const preg = rel.pregnancies > 0
@@ -4182,13 +4190,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (rel.npcUnconscious) {
                 return `‼️ ${npc.name} is UNCONSCIOUS — she has collapsed from exhaustion (Stamina 0) and is completely limp and unresponsive. She CANNOT speak, move, think, or react in any way. If ${npc.name} would respond, instead she simply lies there, out cold. Do NOT write dialogue or deliberate action for her until she is revived or wakes from rest.`;
             }
-            const t = affectionTier(rel.affection);
-            const a = arousalTier(rel.arousal || 1);
+            const t = affectionTier(getNpcAffection(npc.name));
+            const a = arousalTier(getNpcArousal(npc.name));
             let d = `${npc.name} (${t.label}${isInParty(npc.name) ? ', travelling with you' : ''}): ${npc.name} ${t.band}`;
-            if ((rel.arousal || 1) >= 3) d += ` Physically (${a.label}): ${a.band}`;
+            if (getNpcArousal(npc.name) >= 3) d += ` Physically (${a.label}): ${a.band}`;
             if (rel.pregnancies > 0) d += ` She is carrying ${rel.pregnancies} of your ${rel.pregnancies === 1 ? 'child' : 'children'} — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} stage, ${rel.pregnancy_progress || 0}% developed.`;
             const npcFx = npcActiveEffects(npc.name);
-            if (npcFx.length) d += ` Under effects (she KNOWS her own condition): ${npcFx.map(e => e.selfNote ? `${e.name} — ${e.selfNote}` : effectDetailLine(e)).join(' | ')}`;
+            if (npcFx.length) d += ` Under effects (she KNOWS her own condition, and any physical, magical, or social constraint stated in them BINDS what she can actually do and say — a bound woman cannot walk, a silenced one cannot speak, a promise made weighs on her): ${npcFx.map(e => e.selfNote ? `${e.name} — ${e.selfNote}` : effectDetailLine(e)).join(' | ')}`;
             if (isCrystalCursed(npc.name)) d += ` She bears the CRYSTAL CURSE — any child she births comes as an inert soulgem (until broken by magic).`;
             return d;
         });
@@ -4382,11 +4390,34 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }
         return rd.relationships[npcName];
     }
-    function getNpcAffection(name) { return getRelationship(name).affection || 0; }
+    // EFFECTIVE affection/arousal: the raw score shifted by any active status
+    // deltas (heartbreak −5 "until he makes it up to her") and ceiling'd by any
+    // active caps (numbing, frigidity). Raw rel.affection/arousal stay the
+    // durable truth the judge moves; every band, display, and DC reads THESE.
+    function getNpcAffection(name) {
+        const rel = getRelationship(name);
+        const v = Math.max(0, Math.min(10, (rel.affection || 0) + npcStatMod(name, 'affection')));
+        const cap = npcStatCap(name, 'affection');
+        return cap != null ? Math.min(v, Math.max(0, cap)) : v;
+    }
+    function getNpcArousal(name) {
+        const rel = getRelationship(name);
+        const v = Math.max(1, Math.min(10, (rel.arousal || 1) + npcStatMod(name, 'arousal')));
+        const cap = npcStatCap(name, 'arousal');
+        return cap != null ? Math.min(v, Math.max(1, cap)) : v;
+    }
+    // Canonical raw-arousal write: clamps 1–10 AND to any active cap, so a
+    // capped woman doesn't silently bank arousal that springs back later.
+    function setNpcArousalRaw(name, v) {
+        const rel = getRelationship(name);
+        const cap = npcStatCap(name, 'arousal');
+        rel.arousal = Math.max(1, Math.min(10, cap != null ? Math.min(v, Math.max(1, cap)) : v));
+        return rel.arousal;
+    }
     function adjustNpcAffection(name, delta) {
         const rel = getRelationship(name);
         rel.affection = Math.max(0, Math.min(10, (rel.affection || 0) + delta));  // clamp 0–10
-        if (delta) sendGhostMessage(`${name}: 💗 affection ${delta > 0 ? '+' : ''}${delta} → ${rel.affection}/10 (${affectionTier(rel.affection).label})`);
+        if (delta) sendGhostMessage(`${name}: 💗 affection ${delta > 0 ? '+' : ''}${delta} → ${getNpcAffection(name)}/10 (${affectionTier(getNpcAffection(name)).label})`);
         savePlayer();
     }
 
@@ -4427,7 +4458,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
 
     // === Stamina: the unified HP pool for combat AND sex (core-mechanics §5b) ===
     // Max = Ruggedness, plus any timed 'stamina' buff (a stamina potion).
-    function maxStamina() { return Math.max(1, effectiveStat('ruggedness') + customStatMod('stamina')); }
+    function maxStamina() {
+        const cap = customStatCap('stamina');
+        const base = Math.max(1, effectiveStat('ruggedness') + customStatMod('stamina'));
+        return cap != null ? Math.max(1, Math.min(base, cap)) : base;
+    }
     function getStamina() {
         const rd = getPlayerRpgData(); if (!rd) return 0;
         if (rd.stats.stamina == null) rd.stats.stamina = maxStamina();
@@ -4493,7 +4528,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // NPC combat/sex stamina, tracked on the relationship record.
     function npcMaxStamina(npcName) {
         const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName);
-        return Math.max(1, (npc?.ruggedness ?? 3) + npcStatMod(npcName, 'ruggedness') + npcStatMod(npcName, 'stamina'));
+        const cap = npcStatCap(npcName, 'stamina');
+        const base = Math.max(1, (npc?.ruggedness ?? 3) + npcStatMod(npcName, 'ruggedness') + npcStatMod(npcName, 'stamina'));
+        return cap != null ? Math.max(1, Math.min(base, cap)) : base;
     }
     // How many time periods a knocked-out NPC sleeps before waking on her own.
     const KO_RECOVER_PERIODS = 2;
@@ -4507,10 +4544,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // so exhaustion IS the sated state. 1 left → running out of steam
         // (arousal caps at 5); 0 → satisfied and spent (arousal drops to 2).
         const aroBefore = rel.arousal || 1;
-        if (rel.npcStamina <= 0) rel.arousal = Math.min(aroBefore, 2);
-        else if (rel.npcStamina === 1) rel.arousal = Math.min(aroBefore, 5);
+        if (rel.npcStamina <= 0) setNpcArousalRaw(npcName, Math.min(aroBefore, 2));
+        else if (rel.npcStamina === 1) setNpcArousalRaw(npcName, Math.min(aroBefore, 5));
         if ((rel.arousal || 1) < aroBefore) {
-            sendGhostMessage(`${npcName}: 😮‍💨 ${rel.npcStamina <= 0 ? 'utterly satisfied' : 'running out of steam'} — 🔥 arousal settles to ${rel.arousal}/10 (${arousalTier(rel.arousal).label})`);
+            sendGhostMessage(`${npcName}: 😮‍💨 ${rel.npcStamina <= 0 ? 'utterly satisfied' : 'running out of steam'} — 🔥 arousal settles to ${getNpcArousal(npcName)}/10 (${arousalTier(getNpcArousal(npcName)).label})`);
         }
         // On the moment she drops: note WHEN (for autonomous waking) and WHERE she
         // is right now (party → with you; otherwise her scheduled spot), so an
@@ -4897,6 +4934,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             sum + (e.mods || []).filter(m => m.stat === stat).reduce((a, m) => a + (Number(m.amount) || 0), 0), 0);
     }
     function customStatMod(stat) { return effectStatMod(getPlayerRpgData()?.customEffects, stat); }
+    // A mod may be a CAP instead of a delta: {stat, cap} — the stat cannot rise
+    // above cap while the effect is active (numbing, exhaustion, a ward). The
+    // lowest active cap wins; null = uncapped.
+    function effectStatCap(effects, stat) {
+        const caps = (effects || []).filter(e => e.active !== false)
+            .flatMap(e => (e.mods || []).filter(m => m.stat === stat && m.cap != null).map(m => Number(m.cap)))
+            .filter(c => !isNaN(c));
+        return caps.length ? Math.min(...caps) : null;
+    }
+    function customStatCap(stat) { return effectStatCap(getPlayerRpgData()?.customEffects, stat); }
+    function npcStatCap(npcName, stat) { return effectStatCap(getRelationship(npcName).customEffects, stat); }
     // NPC-side equivalent — folds an NPC's own bespoke effects into her real
     // numbers (fertility, stamina, ruggedness, resist DC…). Replaces npcBuffFor.
     function npcStatMod(npcName, stat) { return effectStatMod(getRelationship(npcName).customEffects, stat); }
@@ -4913,7 +4961,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     const KIND_ICON = { buff: '🌟', blessing: '🌟', boon: '🌟', debuff: '☠️', disease: '🤢', poison: '🧪', curse: '💠', hex: '💠', pact: '🤝', vow: '🤝', oath: '🤝', deal: '🤝', quest: '📜', task: '📜', errand: '📜', status: '✨' };
     function effectIcon(e) { return KIND_ICON[String(e?.kind || '').toLowerCase()] || statusIcon(e?.polarity); }
     function statusModString(mods) {
-        return (mods || []).length ? ` [${mods.map(m => `${(Number(m.amount) || 0) >= 0 ? '+' : ''}${m.amount} ${m.stat}${m.condition ? ` (${m.condition})` : ''}`).join(', ')}]` : '';
+        return (mods || []).length ? ` [${mods.map(m => m.cap != null
+            ? `${m.stat} capped at ${m.cap}`
+            : `${(Number(m.amount) || 0) >= 0 ? '+' : ''}${m.amount} ${m.stat}${m.condition ? ` (${m.condition})` : ''}`).join(', ')}]` : '';
     }
     function statusEndsLabel(e) {
         const bits = [];
@@ -4960,6 +5010,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             justCreated: true,   // immune to its own end-check on the turn it's applied
         };
         const isPlayer = (!target || target === 'player');
+        // An immobilizing state pins an NPC where it takes hold — her schedule
+        // stops walking her around until the status ends (pin dies with it).
+        if (spec.immobilizes && !isPlayer) {
+            rec.immobilizes = true;
+            const present = getNpcsAt(currentGameState.currentLocation).some(n => n.name === target);
+            rec.pinnedAt = present ? currentGameState.currentLocation : scheduledLocationFor(target);
+        }
         const holder = isPlayer ? getPlayerRpgData() : getRelationship(target);
         if (!holder) return null;
         holder.customEffects = holder.customEffects || [];
@@ -4976,6 +5033,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 holder.npcStamina = Math.min(npcMaxStamina(target), (holder.npcStamina ?? npcMaxStamina(target)) + staMod);
                 if (holder.npcStamina > 0) holder.npcUnconscious = false;
             }
+        }
+        // A stamina CAP bites immediately — current can't sit above the new max
+        // (lethargy drains her NOW; when it lifts, she stays drained until rest).
+        if (rec.mods.some(m => m.stat === 'stamina' && m.cap != null)) {
+            if (isPlayer) holder.stats.stamina = Math.min(holder.stats.stamina ?? maxStamina(), maxStamina());
+            else if (holder.npcStamina != null) holder.npcStamina = Math.min(holder.npcStamina, npcMaxStamina(target));
         }
         savePlayer();
         const ends = [rec.expiresOnCheck ? `your next ${rec.expiresOnCheck} trial` : null, dur ? `${dur} time period${dur > 1 ? 's' : ''} pass` : null, rec.endCondition].filter(Boolean).join(', or ');
@@ -5333,10 +5396,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (!present.length) return 'none';
         return present.map(n => {
             const t = affectionTier(getNpcAffection(n.name));
-            const ar = getRelationship(n.name).arousal || 1;
+            const ar = getNpcArousal(n.name);
             let s = `${n.name} (${n.role || 'townsperson'}) [disposition toward player: ${t.label}, affection ${getNpcAffection(n.name)}; arousal ${arousalTier(ar).label} ${ar}/10 — warmer disposition AND higher arousal both lower the DC of charming/persuading her; a Wary, Calm NPC resists hardest]`;
             if (n.wrestle) s += ` [a physical contest/wrestle against her is a ${n.wrestle.stat} check, difficulty ${n.wrestle.difficulty}]`;
             if (n.shopInventory) s += ` [MERCHANT, sells: ${n.shopInventory.map(i => `"${i.name}" ${i.price}g`).join(', ')}]`;
+            const fx = npcActiveEffects(n.name);
+            if (fx.length) s += ` [ALREADY under effects (don't re-apply these; honor any constraint they state when judging what she/the scene can do): ${fx.map(e => `"${e.name}"${statusModString(e.mods)}${e.desc ? ` — ${e.desc}` : ''}`).join('; ')}]`;
             return s;
         }).join('; ');
     }
@@ -5442,7 +5507,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"rest"}  the player rests/naps/sleeps/camps — restores EVERYONE'S Stamina to full and passes exactly ONE time period. Emit this whenever the player sleeps, naps, camps, or takes a proper rest.
   {"type":"apply_curse","curse":"crystal","target":"player"|"HerName","caster":"player"|"HerName"?,"power":N?,"duration":N?,"contest":true}  the CRYSTAL CURSE (soulgem hex) is cast on someone. target = victim ("player" the man, or a female NPC). The engine runs a RESIST CONTEST — the caster's power vs the victim's Ruggedness — so specify who/what is casting: for the PLAYER casting, omit caster/power (his Craftiness is used); for an NPC/enemy caster set "caster":"HerName"; for a TRAP or CURSED ITEM set "power":N as its magic strength (proxy for a caster, ~2 weak, 4 average, 7 potent). PERMANENT by default (omit duration); give duration (time periods) only for a temporary casting. Set "contest":false ONLY for an unavoidable, story-forced curse (no roll). While cursed, any child that person sires/bears is born an inert soulgem. Emit when such a curse is cast in the narrative.
   {"type":"lift_curse","curse":"crystal","target":"player"|"HerName"}  the Crystal Curse is BROKEN by magic — a cleansing rite, holy light, a counter-hex, a wish, a cure. Emit when the curse is lifted/dispelled/broken in the narrative. (apply_curse also accepts "break_condition":"<plain-English condition that will break it>", e.g. "broken by a loving kiss" — the engine watches the story and lifts it automatically when that happens.)
-  {"type":"add_status","target":"player"|"HerName","name":"...","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|fertility|stamina","amount":N}],"duration":N,"expires_on_check":"ruggedness|charm|craftiness|virility","end_condition":"plain-English condition that ends it"}  INVENT a bespoke applied effect. A buff, debuff, blessing, curse, hex, pact, vow, oath, disease, poison, inspiration, drunkenness, a potion's effect — these are ALL the same thing: something APPLIED to a character that later ENDS. Works on the player OR any NPC (target her name). Set "kind" to the fitting label (it picks the icon/framing). HOW IT ENDS — give any of: "duration" (time periods), "end_condition" (a story event), or "expires_on_check" (a stat name) for a SINGLE-USE PRE-BUFF that is spent the very next time the character attempts a trial of that stat — a combat-prep draught ("+3 ruggedness, gone after your next fight"), a courage tonic before one daring roll, a focus charm for the next lore check. Watch for these one-shot "before I try this, I…" boosts and give them expires_on_check on the matching stat. Combine ends freely (whichever fires first). See STAT MODS & SCALE below for amounts. (A pact/vow that also has a GOAL to fulfil for a reward → use add_objective instead.)
+  {"type":"add_status","target":"player"|"HerName","name":"...","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|fertility|stamina|affection|arousal","amount":N} or {"stat":"...","cap":N}],"duration":N,"expires_on_check":"ruggedness|charm|craftiness|virility","end_condition":"plain-English condition that ends it"}  INVENT a bespoke applied effect. A buff, debuff, blessing, curse, hex, pact, vow, oath, disease, poison, inspiration, drunkenness, a potion's effect — these are ALL the same thing: something APPLIED to a character that later ENDS. Works on the player OR any NPC (target her name). Set "kind" to the fitting label (it picks the icon/framing). HOW IT ENDS — give any of: "duration" (time periods), "end_condition" (a story event), or "expires_on_check" (a stat name) for a SINGLE-USE PRE-BUFF that is spent the very next time the character attempts a trial of that stat — a combat-prep draught ("+3 ruggedness, gone after your next fight"), a courage tonic before one daring roll, a focus charm for the next lore check. Watch for these one-shot "before I try this, I…" boosts and give them expires_on_check on the matching stat. Combine ends freely (whichever fires first). See STAT MODS & SCALE below for amounts. (A pact/vow that also has a GOAL to fulfil for a reward → use add_objective instead.) NARRATIVE-ONLY EFFECTS — "mods" may be an EMPTY list []: whenever the story shows something DONE TO a character that meaningfully constrains, compels, transforms, or obliges her — physically, magically, or socially — apply a status even when no number changes: put the constraint BLUNTLY in "desc" (exactly what she now cannot do, or must do) and give it an end. Being done-to is the trigger; it needs no spell name, potion, or system word — restraints, bindings, vows extracted, magical compulsions, states imposed on a body or mind all qualify. Invent freely; do not wait for the player to name an effect.
     HOW IT ENDS — give it a "duration" in time periods AND/OR an "end_condition", and it ends when EITHER happens (whichever comes first). A "duration" is a deterministic timer (4 periods = one day) — invent a sensible lifespan so nothing lingers forever (a bad hangover ~4; a wolf-fever sickness ~12; a fleeting inspiration ~2; a grievous curse-like affliction longer or omit for indefinite). An "end_condition" is a narrative escape hatch judged by the engine ("when cured with medicine", "if you harm an innocent", "once the sun rises") — use it when a specific event should end it early. Most lingering afflictions want BOTH, e.g. duration 12 AND end_condition "when treated with a cure" → "12 periods pass, or when cured". Omit both only for something truly permanent. CRUCIAL — do this WHENEVER the story inflicts or bestows something that LINGERS past this single moment, not just a blessing or hex: an illness/disease/infection, a poison or venom, a festering or draining wound, exhaustion, a fear or despair, an inspiration or resolve, an enchantment/charm, drunkenness, a mark or oath, etc. Do NOT let such a thing evaporate as mere flavor, and do NOT collapse a lingering affliction into one-off "damage" — if the narrative says a character is left weakened/sickened/poisoned/emboldened in an ONGOING way, that is a STATUS. Read the fiction and give it the FITTING mod: something that saps physical strength lowers ruggedness (negative amount), something dulling the mind lowers craftiness, something disfiguring lowers charm, a boon raises the apt stat (small, ±1–3). A mod applies for the WHOLE time the status is active — do NOT add any per-mod condition (the status being active IS the condition). A status may also be purely narrative with no mods. end_condition is a natural-language trigger the engine WATCHES and auto-ends the status when met — infer what would plausibly end THIS effect (e.g. a sickness ends when it is cured/treated by medicine; drunkenness when slept off; a fear when the threat is gone). Omit only if truly indefinite. This is the main tool for the world to leave a lasting mark on a character — reach for it.
   {"type":"add_objective","name":"short title","objective":"plain-English condition that COMPLETES it","reward":{"gold":N,"xp":N,"tokens":N,"item":"name"},"duration":N,"mods":[{"stat":"...","amount":N}]}  the player TAKES ON a task, quest, errand, promise, oath, deal, or PACT — a villager's request, a fey bargain, a personal vow ("I'll find the lost locket", "I swear to guard her", "I accept your pact, fair one"). This is a tracked objective — a "silent status" the engine WATCHES; when its objective is met in the story it AUTO-COMPLETES and grants the reward. reward is optional (any of gold/xp/power tokens/an item). duration is optional (a time-limited task fails if not done in time). mods are optional stat changes that hold WHILE a pact/oath is in force (a fey pact granting +2 craftiness until it's fulfilled or broken) — omit for an ordinary errand. Emit whenever the player accepts or undertakes ANY goal, however small — INCLUDING when the acceptance is just one beat of a message that also travels, converses, or does other things ("Yeah, I'll take the job — lead the way" emits add_objective AND the move; the job is NEVER dropped in favor of the other effects).
   {"type":"remove_status","target":"player"|"HerName","name":"...","reason":"why"}  end a named status effect or abandon an objective now (dispelled, cured, willed away, given up).
@@ -5452,8 +5517,9 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"examine","npc":"HerName"}  the player looks over / examines / studies / sizes up / inspects / ADMIRES a PRESENT NPC — including looking her up and down, drinking in the sight of her, taking in her sleeping form, or appraising her appearance. The engine shows her stats and a status-flavored description. Emit whenever the player deliberately takes in or appraises a specific NPC's body/appearance/condition, EVEN when it is one beat inside a larger described action (e.g. "…stepping back, looking her up and down, admiring her sleeping form, before leaving" → emit examine for her). Do NOT skip it just because other things also happen in the same message. A deliberate visual appraisal ALWAYS emits examine no matter what else the message contains — action, travel, or DIALOGUE. Talking with her at the same time does not make the look incidental: "I ask about her wares while letting my eyes wander over her" → emit examine for her AND still let the conversation proceed (target_npc stays set; she replies as normal). (Skip only for an incidental glance with no appraisal.) Use npc:"self" when the player checks himself over / takes stock of his own condition / looks at his own stats, gear, or gold — the engine shows HIS readout.
 Empty array when nothing changes.
 
-STAT MODS & SCALE (for add_status/add_objective mods on ANY character, player OR npc): a mod applies the whole time the effect is active. The core stats — ruggedness, charm, craftiness, virility — run ~1–10, so mod them by a SMALL integer ±1 to ±3 (up to ±5 for potent magic). Two special NPC stats may also be modded: FERTILITY is a PERCENTAGE (0–100%), so a fertility mod must be big to matter, +10 to +30 (a strong fertility potion ≈ +20). STAMINA is the small combat/sex HP pool (~1–10), so a stamina mod is +1 to +3 (up to +5); a POSITIVE stamina mod also tops up current Stamina and revives the unconscious. Simple consumables are just a short-duration add_status: a strength draught → kind "buff", mods [{stat:"ruggedness",amount:2}], duration 4; a shared fertility potion → player kind "buff" mods [{stat:"virility",amount:2}] AND on her mods [{stat:"fertility",amount:20}]; a poison → kind "debuff"/"poison", negative mod.
+STAT MODS & SCALE (for add_status/add_objective mods on ANY character, player OR npc): a mod applies the whole time the effect is active. The core stats — ruggedness, charm, craftiness, virility — run ~1–10, so mod them by a SMALL integer ±1 to ±3 (up to ±5 for potent magic). Two special NPC stats may also be modded: FERTILITY is a PERCENTAGE (0–100%), so a fertility mod must be big to matter, +10 to +30 (a strong fertility potion ≈ +20). STAMINA is the small combat/sex HP pool (~1–10), so a stamina mod is +1 to +3 (up to +5); a POSITIVE stamina mod also tops up current Stamina and revives the unconscious. Simple consumables are just a short-duration add_status: a strength draught → kind "buff", mods [{stat:"ruggedness",amount:2}], duration 4; a shared fertility potion → player kind "buff" mods [{stat:"virility",amount:2}] AND on her mods [{stat:"fertility",amount:20}]; a poison → kind "debuff"/"poison", negative mod. Two more NPC-only moddable stats: AFFECTION and AROUSAL (each 0–10) — a status may shift them temporarily while it holds (an emotional wound she carries until amends are made, an enchantment of the heart, a draught that stirs or stills the blood); the shift reverses when the effect ends, unlike adjust_affection/adjust_arousal which move the real score. CAPS: any mod may be {"stat":...,"cap":N} INSTEAD of an amount — the stat cannot rise above N while the effect is active, however it is pushed. Caps fit effects that deaden, exhaust, or seal a capacity rather than subtract from it; they work on arousal, stamina, and affection.
 GRANTED BOONS (watch the scene): if an NPC OFFERED to grant power/strength/a blessing (naming a stat) in the RECENT SCENE and the player's action ACCEPTS it — kneeling to receive it, drinking a potion she handed over, submitting to a laying-on-of-hands — you MUST emit an add_status for that boon on the player, even though the granting WORDS came from the NPC. The player's acceptance is the trigger. Pick the stat from the offer; magnitude fits its power (a dragon's blessing of Ruggedness → +3 to +5). Do NOT let these slip through as pure talk.
+IMPOSED STATES (watch the scene): if an action LEAVES a character in a lasting imposed state — physically restrained so she cannot move freely, prevented from speaking, compelled or entranced, placed under a promise or obligation, or anything else DONE TO her that persists past this message — you MUST emit add_status for it (alongside any check or talk in the same intent), EVEN IF the imposition is playful, consensual, or completely mundane: ropes need no magic to count. The status is how the game REMEMBERS her state — without it she is inexplicably free again next turn. mods may be [] (state the constraint bluntly in desc) and the end_condition is whatever would release her. If the state stops her from taking herself elsewhere, add "immobilizes":true — the engine then pins her in place (her daily routine stops walking her around) until it ends. Emit remove_status the moment the story releases her. A promise, vow, or obligation an NPC HERSELF takes on (once she actually agrees in the scene — pure talk counts) is HER imposed state: add_status on HER, kind "vow", mods [], desc stating what she pledged, end_condition when it is fulfilled or released. (add_objective is ONLY for tasks the PLAYER takes on — never for hers.) Likewise a genuine BETRAYAL or cruelty she suffers at the player's hands — robbing her, humiliating her, breaking a promise, wrecking what she cares for IN FRONT OF HER — wounds her heart: add_status on her with a temporary negative affection mod (scale it to the wound), ending only when he truly makes it up to her. If the betraying act rides a check she WITNESSES, the attempt itself is the betrayal — the SAME wound status goes in BOTH effects_on_success AND effects_on_failure (being caught trying cuts as deep as succeeding). Worked example — snatching her purse in front of her: check craftiness for the grab; effects_on_success [adjust_gold, add_status wound on her]; effects_on_failure [add_status THE SAME wound on her] — whatever the dice say, she watched him try.
 
 STAMINA & SEX: Stamina is the shared HP pool (max = Ruggedness). Each orgasm and each combat hit costs Stamina; at 0 the character falls unconscious. When narrating intimacy, emit an "orgasm" effect for each climax as it occurs (mark internal true only for finishing inside during P-in-V). Do NOT invent fertilization results yourself — the engine rolls them; just emit the orgasm effect.
 
@@ -5650,7 +5716,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     if ((eff.target || 'player') === 'player') { spendStamina(eff.amount || 1); sendGhostMessage(`💢 You take ${eff.amount || 1} — Stamina ${getStamina()}/${maxStamina()}${getPlayerRpgData()?.stats.unconscious ? ' — you black out!' : ''}`); }
                     else if (eff.npc) { const rel = spendNpcStamina(eff.npc, eff.amount || 1); sendGhostMessage(`⚔️ ${eff.npc} takes ${eff.amount || 1} — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she goes down!' : ''}`); }
                     break;
-                case 'adjust_arousal': { const rel = getRelationship(eff.npc); rel.arousal = Math.max(1, Math.min(10, (rel.arousal || 1) + (eff.amount || 0))); if (eff.amount) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${rel.arousal}/10 (${arousalTier(rel.arousal).label})`); savePlayer(); break; }
+                case 'adjust_arousal': { const rel = getRelationship(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal || 1) + (eff.amount || 0)); if (eff.amount) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;
@@ -6153,7 +6219,9 @@ Narrate the result briefly, grounded in this location and the story's current be
         examineSelf: () => examineSelf(),
         examineNpc: (n) => examineNpc(n),
         setAffection: (n, v) => { const r = getRelationship(n); r.affection = Math.max(0, Math.min(10, v)); savePlayer(); return r.affection; },
-        setArousal: (n, v) => { const r = getRelationship(n); r.arousal = Math.max(1, Math.min(10, v)); savePlayer(); return r.arousal; },
+        setArousal: (n, v) => { const a = setNpcArousalRaw(n, v); savePlayer(); return a; },
+        npcEff: (n) => ({ aff: getNpcAffection(n), aro: getNpcArousal(n), staMax: npcMaxStamina(n), sta: getRelationship(n).npcStamina }),
+        analyzerNpcs: () => presentNpcContextForAnalyzer(),
         judgeReaction: (n, preLen) => judgeNpcReaction(n, preLen ?? Math.max(0, (getCtx().chat || []).length - 1)),
         spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
         nlMove: (d) => doNlMove(d),
