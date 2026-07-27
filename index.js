@@ -416,7 +416,7 @@ jQuery(async () => {
     function openWorldActions(w) {
         const items = [
             { icon: '🎲', label: 'New Game', sub: `start fresh in ${w.displayName || w.name}`, action: () => newGame(w.name) },
-            { icon: '✏️', label: 'Edit world', sub: 'map builder — coming next phase', action: () => wmToast('The graphical map builder is the next phase.') },
+            { icon: '✏️', label: 'Edit world', sub: w.authored ? 'open the map builder' : 'creates an editable copy that overrides the shipped files', action: () => openMapEditor(w.name) },
             { icon: '📤', label: 'Export bundle', sub: 'coming with the bundle system', action: () => wmToast('World export arrives with the export/import bundle phase.') },
         ];
         if (w.authored) {
@@ -472,6 +472,416 @@ jQuery(async () => {
         saveWorldRegistry(getWorldRegistry().filter(x => x !== id));
         await loadRegisteredWorlds();
         wmToast(`World "${id}" deregistered.`, 'success');
+    }
+
+    // ========================================================================
+    // GRAPHICAL MAP BUILDER (world-management §3, phase 3)
+    // ========================================================================
+    // Full-screen, touch-first node editor. Nodes = locations, anchored to a
+    // custom background image by RELATIVE coords (x,y ∈ 0..1) so they stay
+    // pinned at every zoom. Pointer Events throughout (mouse + touch unified);
+    // taps distinguish from drags by a movement threshold — never
+    // preventDefault a plain tap (kills the synthesized click on mobile).
+    let mapEd = null;   // live editor state while open
+
+    /** Editing a SHIPPED world materializes an editable authored copy under
+     *  the SAME id — loadWorldData prefers authored, so saves keep working.
+     *  Delete the copy to revert to the shipped version. */
+    async function materializeShippedWorld(id) {
+        const world = await loadWorldData(id);
+        if (!world) return null;
+        world.worldId = world.worldId || id;
+        world.castData = world.castData || {};
+        for (const castName of (world.cast || [])) {
+            if (world.castData[castName]) continue;
+            try {
+                const r = await fetch(`scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${id}/characters/${encodeURIComponent(castName)}.json`);
+                if (r.ok) world.castData[castName] = await r.json();
+            } catch { /* cast member stays file-backed if unreadable */ }
+        }
+        authoredWorlds()[id] = world;
+        context.saveSettingsDebounced();
+        wmToast(`Editable copy of "${world.name}" created — it now overrides the shipped files. Delete it in the World Manager to revert.`, 'info');
+        return world;
+    }
+
+    async function openMapEditor(worldId) {
+        let world = authoredWorlds()[worldId];
+        if (!world) world = await materializeShippedWorld(worldId);
+        if (!world) { wmToast(`World "${worldId}" could not be loaded.`, 'error'); return; }
+
+        // First open of a coordless world: lay nodes out on a circle.
+        const ids = Object.keys(world.locations || {});
+        const coordless = ids.filter(id => world.locations[id].x == null);
+        coordless.forEach((id, i) => {
+            const a = (2 * Math.PI * ids.indexOf(id)) / Math.max(1, ids.length);
+            world.locations[id].x = 0.5 + 0.33 * Math.cos(a);
+            world.locations[id].y = 0.5 + 0.33 * Math.sin(a);
+        });
+
+        mapEd = { worldId, world, sel: [], connectFrom: null, view: { tx: 0, ty: 0, scale: 1 }, stageW: 1600, stageH: 1200, pointers: new Map(), drag: null };
+
+        const ed = $(`
+            <div id="rpg-map-editor">
+                <div id="rpg-map-topbar">
+                    <button class="rpg-map-btn" data-act="close" title="Save & close">✖</button>
+                    <span id="rpg-map-title"></span>
+                    <span id="rpg-map-ctx"></span>
+                </div>
+                <div id="rpg-map-viewport">
+                    <div id="rpg-map-stage">
+                        <img id="rpg-map-bgimg" draggable="false" style="display:none">
+                        <svg id="rpg-map-lines"></svg>
+                    </div>
+                </div>
+                <div id="rpg-map-zoombar">
+                    <button class="rpg-map-btn" data-act="zoomout" title="Zoom out">−</button>
+                    <button class="rpg-map-btn" data-act="zoomin" title="Zoom in">＋</button>
+                    <input id="rpg-map-nodescale" type="range" min="0.4" max="2.5" step="0.05" title="Node size">
+                </div>
+                <input id="rpg-map-bgfile" type="file" accept="image/*" style="display:none">
+            </div>`);
+        $('body').append(ed);
+        $('#rpg-map-title').text(world.name || worldId);
+        $('#rpg-map-nodescale').val(world.nodeScale || 1);
+
+        // Background image (if any) sets the stage's natural size.
+        if (world.mapImage) {
+            const img = document.getElementById('rpg-map-bgimg');
+            img.onload = () => { mapEd.stageW = img.naturalWidth; mapEd.stageH = img.naturalHeight; mapRenderAll(); mapFitView(); };
+            img.src = `backgrounds/${encodeURIComponent(world.mapImage)}`;
+            img.style.display = '';
+        }
+
+        bindMapEditorEvents();
+        mapRenderAll();
+        mapFitView();
+        mapRefreshTopbar();
+    }
+
+    function closeMapEditor() {
+        if (!mapEd) return;
+        mapEd.world.nodeScale = Number($('#rpg-map-nodescale').val()) || 1;
+        context.saveSettingsDebounced();
+        const editedActive = currentGameState.isActive && currentGameState.worldData?.worldId === mapEd.worldId;
+        const worldId = mapEd.worldId;
+        $('#rpg-map-editor').remove();
+        $('#rpg-map-panel').remove();
+        mapEd = null;
+        loadRegisteredWorlds();
+        if (editedActive) {
+            // The live game keeps pace with the edit immediately.
+            currentGameState.worldData = structuredClone(authoredWorlds()[worldId]);
+            syncPresence(); renderActionBar(); projectPlayerStatus();
+        }
+        wmToast('World saved.', 'success');
+    }
+
+    // ---- rendering ----
+    function mapApplyView() {
+        const v = mapEd.view;
+        $('#rpg-map-stage').css('transform', `translate(${v.tx}px, ${v.ty}px) scale(${v.scale})`);
+    }
+    function mapFitView() {
+        const vp = document.getElementById('rpg-map-viewport');
+        if (!vp) return;
+        const s = Math.min(vp.clientWidth / mapEd.stageW, vp.clientHeight / mapEd.stageH) * 0.92;
+        mapEd.view.scale = Math.max(0.05, s);
+        mapEd.view.tx = (vp.clientWidth - mapEd.stageW * mapEd.view.scale) / 2;
+        mapEd.view.ty = (vp.clientHeight - mapEd.stageH * mapEd.view.scale) / 2;
+        mapApplyView();
+    }
+    function mapRenderAll() {
+        const stage = $('#rpg-map-stage');
+        stage.css({ width: `${mapEd.stageW}px`, height: `${mapEd.stageH}px` });
+        stage.find('.rpg-map-node').remove();
+        const scale = Number($('#rpg-map-nodescale').val()) || 1;
+        for (const [id, loc] of Object.entries(mapEd.world.locations || {})) {
+            const node = $(`<div class="rpg-map-node" data-id="${id}"></div>`);
+            node.text(loc.name || id);
+            if (id === mapEd.world.startingLocation) node.prepend('⭐ ');
+            if ((Number(loc.secret) || 0) > 0) node.prepend((Number(loc.secret) >= 2 ? '🕳️ ' : '🤫 '));
+            if (mapEd.sel.includes(id)) node.addClass('rpg-map-sel');
+            node.css({ left: `${(loc.x ?? 0.5) * mapEd.stageW}px`, top: `${(loc.y ?? 0.5) * mapEd.stageH}px`, fontSize: `${14 * scale}px`, padding: `${6 * scale}px ${10 * scale}px` });
+            stage.append(node);
+        }
+        mapRenderLines();
+    }
+    function mapRenderLines() {
+        const svg = document.getElementById('rpg-map-lines');
+        if (!svg) return;
+        svg.setAttribute('viewBox', `0 0 ${mapEd.stageW} ${mapEd.stageH}`);
+        svg.setAttribute('width', mapEd.stageW); svg.setAttribute('height', mapEd.stageH);
+        const seen = new Set(); let html = '';
+        for (const [id, loc] of Object.entries(mapEd.world.locations || {})) {
+            for (const c of (loc.connections || [])) {
+                const key = [id, c].sort().join('|');
+                if (seen.has(key) || !mapEd.world.locations[c]) continue;
+                seen.add(key);
+                const o = mapEd.world.locations[c];
+                const x1 = (loc.x ?? 0.5) * mapEd.stageW, y1 = (loc.y ?? 0.5) * mapEd.stageH;
+                const x2 = (o.x ?? 0.5) * mapEd.stageW, y2 = (o.y ?? 0.5) * mapEd.stageH;
+                html += `<line class="rpg-map-line" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"></line>` +
+                    `<line class="rpg-map-linehit" data-a="${id}" data-b="${c}" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"></line>`;
+            }
+        }
+        svg.innerHTML = html;
+    }
+    function mapRefreshTopbar() {
+        const n = mapEd.sel.length;
+        const ctx = $('#rpg-map-ctx').empty();
+        const btn = (act, label, title) => ctx.append($(`<button class="rpg-map-btn" data-act="${act}" title="${title}">${label}</button>`));
+        btn('add', '➕', 'Add a place');
+        btn('bg', '🖼️', 'Set map background image');
+        if (mapEd.connectFrom) btn('connect', '🔗✔', 'Tap nodes to link/unlink, then tap here to finish');
+        else if (n === 1) { btn('edit', '✏️', 'Edit this place'); btn('connect', '🔗', 'Connect: tap other nodes to link'); btn('del', '🗑️', 'Delete this place'); }
+        else if (n >= 2) { btn('join', '🔗', 'Join all selected'); btn('unjoin', '✂️', 'Unjoin selected'); btn('del', '🗑️', 'Delete selected'); }
+    }
+
+    // ---- map editor interactions ----
+    function bindMapEditorEvents() {
+        const vp = document.getElementById('rpg-map-viewport');
+
+        $('#rpg-map-editor').on('click', '.rpg-map-btn', async function (e) {
+            e.stopPropagation();
+            const act = $(this).data('act');
+            if (act === 'close') closeMapEditor();
+            else if (act === 'zoomin') mapZoom(1.3);
+            else if (act === 'zoomout') mapZoom(1 / 1.3);
+            else if (act === 'add') mapAddNode();
+            else if (act === 'bg') $('#rpg-map-bgfile').trigger('click');
+            else if (act === 'edit') openMapNodePanel(mapEd.sel[0]);
+            else if (act === 'del') mapDeleteSelected();
+            else if (act === 'join') { mapJoin(true); }
+            else if (act === 'unjoin') { mapJoin(false); }
+            else if (act === 'connect') { mapEd.connectFrom = mapEd.connectFrom ? null : mapEd.sel[0]; mapRefreshTopbar(); }
+        });
+
+        $('#rpg-map-nodescale').on('input', () => { mapEd.world.nodeScale = Number($('#rpg-map-nodescale').val()) || 1; mapRenderAll(); });
+
+        $('#rpg-map-bgfile').on('change', async function () {
+            const file = this.files?.[0];
+            if (!file) return;
+            try {
+                const fd = new FormData();
+                fd.append('avatar', file);
+                const r = await fetch('/api/backgrounds/upload', { method: 'POST', headers: context.getRequestHeaders({ omitContentType: true }), body: fd, cache: 'no-cache' });
+                if (!r.ok) throw new Error(String(r.status));
+                const bg = await r.text();
+                mapEd.world.mapImage = bg;
+                const img = document.getElementById('rpg-map-bgimg');
+                img.onload = () => { mapEd.stageW = img.naturalWidth; mapEd.stageH = img.naturalHeight; mapRenderAll(); mapFitView(); };
+                img.src = `backgrounds/${encodeURIComponent(bg)}`;
+                img.style.display = '';
+                context.saveSettingsDebounced();
+            } catch (err) { console.error('RPG Custodian: map bg upload failed', err); wmToast('Background upload failed.', 'error'); }
+        });
+
+        // Unified pointer handling: node-drag, pan, pinch, line-tap — tap =
+        // select. NOTE: setPointerCapture retargets the composed click away
+        // from stage children, so line taps MUST ride this pipeline; a
+        // delegated click handler on the SVG never fires.
+        const TAP_PX = 7;
+        vp.addEventListener('pointerdown', (e) => {
+            vp.setPointerCapture(e.pointerId);
+            const nodeEl = e.target.closest?.('.rpg-map-node');
+            const lineEl = e.target.closest?.('.rpg-map-linehit');
+            mapEd.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            if (mapEd.pointers.size === 2) {
+                // second finger → become a pinch, cancel any drag
+                const [p1, p2] = [...mapEd.pointers.values()];
+                mapEd.drag = { kind: 'pinch', dist: Math.hypot(p1.x - p2.x, p1.y - p2.y), scale0: mapEd.view.scale };
+            } else if (nodeEl) {
+                const id = nodeEl.dataset.id;
+                const loc = mapEd.world.locations[id];
+                mapEd.drag = { kind: 'node', id, sx: e.clientX, sy: e.clientY, x0: loc.x, y0: loc.y, moved: false };
+            } else if (lineEl) {
+                mapEd.drag = { kind: 'line', a: lineEl.dataset.a, b: lineEl.dataset.b, sx: e.clientX, sy: e.clientY, moved: false };
+            } else {
+                mapEd.drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, tx0: mapEd.view.tx, ty0: mapEd.view.ty, moved: false };
+            }
+        });
+        vp.addEventListener('pointermove', (e) => {
+            if (!mapEd?.drag || !mapEd.pointers.has(e.pointerId)) return;
+            mapEd.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+            const d = mapEd.drag;
+            if (d.kind === 'pinch' && mapEd.pointers.size >= 2) {
+                const [p1, p2] = [...mapEd.pointers.values()];
+                const dist = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+                if (d.dist > 0) mapSetScale(d.scale0 * (dist / d.dist), (p1.x + p2.x) / 2, (p1.y + p2.y) / 2);
+                return;
+            }
+            const dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+            if (!d.moved && Math.hypot(dx, dy) < TAP_PX) return;
+            d.moved = true;
+            if (d.kind === 'node') {
+                const loc = mapEd.world.locations[d.id];
+                loc.x = Math.min(1, Math.max(0, d.x0 + dx / (mapEd.stageW * mapEd.view.scale)));
+                loc.y = Math.min(1, Math.max(0, d.y0 + dy / (mapEd.stageH * mapEd.view.scale)));
+                const el = document.querySelector(`.rpg-map-node[data-id="${CSS.escape(d.id)}"]`);
+                if (el) { el.style.left = `${loc.x * mapEd.stageW}px`; el.style.top = `${loc.y * mapEd.stageH}px`; }
+                mapRenderLines();
+            } else if (d.kind === 'pan') {
+                mapEd.view.tx = d.tx0 + dx; mapEd.view.ty = d.ty0 + dy;
+                mapApplyView();
+            }
+        });
+        const endPointer = (e) => {
+            const d = mapEd?.drag;
+            mapEd?.pointers.delete(e.pointerId);
+            if (!d) return;
+            if (d.kind === 'pinch') { if (mapEd.pointers.size < 2) mapEd.drag = null; return; }
+            mapEd.drag = null;
+            if (d.moved) { context.saveSettingsDebounced(); return; }
+            // A TAP: select/deselect or connect
+            if (d.kind === 'node') {
+                if (mapEd.connectFrom && d.id !== mapEd.connectFrom) {
+                    const linked = (mapEd.world.locations[mapEd.connectFrom].connections || []).includes(d.id);
+                    mapConnect(mapEd.connectFrom, d.id, !linked);
+                    mapRenderLines();
+                } else if (mapEd.sel.includes(d.id)) {
+                    mapEd.sel = mapEd.sel.filter(x => x !== d.id);
+                    mapRenderAll(); mapRefreshTopbar();
+                } else {
+                    mapEd.sel.push(d.id);
+                    mapRenderAll(); mapRefreshTopbar();
+                }
+            } else if (d.kind === 'line') {
+                const an = mapEd.world.locations[d.a]?.name || d.a, bn = mapEd.world.locations[d.b]?.name || d.b;
+                if (confirm(`Remove the path between "${an}" and "${bn}"?`)) {
+                    mapConnect(d.a, d.b, false);
+                    mapRenderLines();
+                }
+            } else if (d.kind === 'pan') {
+                mapEd.sel = []; mapEd.connectFrom = null;
+                mapRenderAll(); mapRefreshTopbar();
+            }
+        };
+        vp.addEventListener('pointerup', endPointer);
+        vp.addEventListener('pointercancel', endPointer);
+        vp.addEventListener('wheel', (e) => { e.preventDefault(); mapZoom(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX, e.clientY); }, { passive: false });
+    }
+
+    function mapZoom(factor, cx, cy) {
+        const vp = document.getElementById('rpg-map-viewport');
+        mapSetScale(mapEd.view.scale * factor, cx ?? vp.clientWidth / 2, cy ?? vp.clientHeight / 2);
+    }
+    function mapSetScale(scale, cx, cy) {
+        scale = Math.min(8, Math.max(0.05, scale));
+        const v = mapEd.view;
+        // keep the point under (cx,cy) fixed while scaling
+        v.tx = cx - ((cx - v.tx) / v.scale) * scale;
+        v.ty = cy - ((cy - v.ty) / v.scale) * scale;
+        v.scale = scale;
+        mapApplyView();
+    }
+
+    // ---- node CRUD ----
+    function mapAddNode() {
+        const vp = document.getElementById('rpg-map-viewport');
+        const n = Object.keys(mapEd.world.locations).length + 1;
+        let id = `place-${n}`;
+        while (mapEd.world.locations[id]) id += 'x';
+        // land it at the current viewport center
+        let cx = ((vp.clientWidth / 2) - mapEd.view.tx) / (mapEd.stageW * mapEd.view.scale);
+        let cy = ((vp.clientHeight / 2) - mapEd.view.ty) / (mapEd.stageH * mapEd.view.scale);
+        // Nudge until clear of existing nodes — stacked newborns are untappable.
+        const tooClose = () => Object.values(mapEd.world.locations).some(l => Math.hypot((l.x ?? 0.5) - cx, (l.y ?? 0.5) - cy) < 0.05);
+        for (let k = 0; k < 40 && tooClose(); k++) { cx += 0.055 * Math.cos(k * 2.4); cy += 0.055 * Math.sin(k * 2.4); }
+        mapEd.world.locations[id] = { name: `New Place ${n}`, description: '', connections: [], background: '', x: Math.min(1, Math.max(0, cx)), y: Math.min(1, Math.max(0, cy)) };
+        mapEd.sel = [id];
+        mapRenderAll(); mapRefreshTopbar();
+        openMapNodePanel(id);
+    }
+    function mapConnect(a, b, on) {
+        const A = mapEd.world.locations[a], B = mapEd.world.locations[b];
+        if (!A || !B || a === b) return;
+        A.connections = A.connections || []; B.connections = B.connections || [];
+        if (on) {
+            if (!A.connections.includes(b)) A.connections.push(b);
+            if (!B.connections.includes(a)) B.connections.push(a);
+        } else {
+            A.connections = A.connections.filter(x => x !== b);
+            B.connections = B.connections.filter(x => x !== a);
+        }
+        context.saveSettingsDebounced();
+    }
+    function mapJoin(on) {
+        for (let i = 0; i < mapEd.sel.length; i++) {
+            for (let j = i + 1; j < mapEd.sel.length; j++) mapConnect(mapEd.sel[i], mapEd.sel[j], on);
+        }
+        mapRenderLines();
+    }
+    function mapDeleteSelected() {
+        const doomed = mapEd.sel.filter(id => id !== mapEd.world.startingLocation);
+        if (mapEd.sel.includes(mapEd.world.startingLocation)) wmToast('The starting location cannot be deleted — move the ⭐ first (Edit → starting location).', 'warning');
+        if (!doomed.length) return;
+        const names = doomed.map(id => mapEd.world.locations[id]?.name || id).join(', ');
+        // Warn about cast who live/work at doomed places (homes survive as dangling ids until reassigned)
+        const refs = Object.entries(mapEd.world.castData || {}).filter(([, card]) => {
+            const rc = (card.data || card).extensions?.rpg_custodian || {};
+            return doomed.includes(rc.home_location) || Object.values(rc.schedule || {}).some(l => doomed.includes(l));
+        }).map(([n]) => n);
+        if (!confirm(`Delete ${names}?${refs.length ? ` NOTE: ${refs.join(', ')} live or work there — reassign them later.` : ''}`)) return;
+        for (const id of doomed) {
+            delete mapEd.world.locations[id];
+            for (const loc of Object.values(mapEd.world.locations)) loc.connections = (loc.connections || []).filter(c => c !== id);
+        }
+        mapEd.sel = []; mapEd.connectFrom = null;
+        context.saveSettingsDebounced();
+        mapRenderAll(); mapRefreshTopbar();
+    }
+
+    // ---- the Edit Location panel ----
+    function openMapNodePanel(id) {
+        const loc = mapEd.world.locations[id];
+        if (!loc) return;
+        $('#rpg-map-panel').remove();
+        const p = $(`
+            <div id="rpg-map-panel">
+                <div class="rpg-popup-title">✏️ Edit Location</div>
+                <label>Name <input id="mp-name" type="text"></label>
+                <label>Alternate names <input id="mp-alt" type="text" placeholder="comma, separated, aliases"></label>
+                <label>Description <textarea id="mp-desc" rows="4"></textarea></label>
+                <label>Tags <input id="mp-tags" type="text" placeholder="danger:low, shop:alchemist, …"></label>
+                <label>Scene background (ST backgrounds filename) <input id="mp-bg" type="text"></label>
+                <label>Secrecy <select id="mp-secret">
+                    <option value="0">0 — public (all NPCs know it)</option>
+                    <option value="1">1 — unknown (NPCs don't know; on your menus)</option>
+                    <option value="2">2 — hidden (found only through the story)</option>
+                </select></label>
+                <label class="mp-check"><input id="mp-start" type="checkbox"> ⭐ Starting location</label>
+                <div class="mp-buttons">
+                    <button id="mp-save" class="rpg-map-btn">💾 Save</button>
+                    <button id="mp-cancel" class="rpg-map-btn">Cancel</button>
+                </div>
+            </div>`);
+        // Parent to the editor overlay, NOT body: ST's mobile body can be
+        // transformed, which breaks position:fixed coordinates (the panel
+        // rendered 600px above the viewport). Absolute inside the full-screen
+        // editor is viewport-aligned by construction.
+        $('#rpg-map-editor').append(p);
+        $('#mp-name').val(loc.name || '');
+        $('#mp-alt').val((loc.alternate_names || []).join(', '));
+        $('#mp-desc').val(loc.description || '');
+        $('#mp-tags').val((loc.tags || []).join(', '));
+        $('#mp-bg').val(loc.background || '');
+        $('#mp-secret').val(String(Number(loc.secret) || 0));
+        $('#mp-start').prop('checked', mapEd.world.startingLocation === id);
+        $('#mp-cancel').on('click', () => $('#rpg-map-panel').remove());
+        $('#mp-save').on('click', () => {
+            loc.name = ($('#mp-name').val() || '').trim() || loc.name;
+            loc.alternate_names = String($('#mp-alt').val() || '').split(',').map(s => s.trim()).filter(Boolean);
+            loc.description = String($('#mp-desc').val() || '').trim();
+            loc.tags = String($('#mp-tags').val() || '').split(',').map(s => s.trim()).filter(Boolean);
+            loc.background = String($('#mp-bg').val() || '').trim();
+            const sec = Number($('#mp-secret').val()) || 0;
+            if (sec) loc.secret = sec; else delete loc.secret;
+            if ($('#mp-start').prop('checked')) mapEd.world.startingLocation = id;
+            context.saveSettingsDebounced();
+            $('#rpg-map-panel').remove();
+            mapRenderAll(); mapRefreshTopbar();
+        });
     }
 
     function toggleRpgMenu() {
@@ -4310,8 +4720,11 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         const want = String(dest || '').toLowerCase().trim();
         if (!want) return false;
         const targetId = Object.keys(world.locations).find(id => {
-            const nm = (world.locations[id]?.name || id).toLowerCase();
-            return id.toLowerCase() === want || nm === want || nm.includes(want) || want.includes(nm);
+            const names = [world.locations[id]?.name || id, ...(world.locations[id]?.alternate_names || [])];
+            return id.toLowerCase() === want || names.some(n => {
+                const nm = String(n).toLowerCase();
+                return nm === want || nm.includes(want) || want.includes(nm);
+            });
         });
         if (!targetId) {
             travelIssueNote = `IMPORTANT: the player tried to travel to "${dest}", but no such place is known here. The party ENDS UP STILL AT ${locName(currentGameState.currentLocation)} — you may play it for a light comic beat (setting off confidently, getting turned around, sheepishly ending where they started), but do NOT narrate them arriving anywhere new.`;
@@ -4725,6 +5138,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         judgeReaction: (n, preLen) => judgeNpcReaction(n, preLen ?? Math.max(0, (getCtx().chat || []).length - 1)),
         spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
         nlMove: (d) => doNlMove(d),
+        refreshWorlds: () => loadRegisteredWorlds(),
         travelIssue: () => travelIssueNote,
         clearLegacyQuests: () => { const rd = getPlayerRpgData(); if (rd && rd.quests) { delete rd.quests; savePlayer(); return 'legacy card-quest state removed'; } return 'nothing to clear'; },
         charmNote: (tier) => buildCharmInterpretationNote(tier ? { tier, success: tier === 'success' || tier === 'critical' } : null),
