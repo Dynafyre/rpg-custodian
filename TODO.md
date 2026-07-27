@@ -181,7 +181,10 @@ name-conflict handling.
       drag/select/join/edit panel/secrecy/star, pinch+wheel zoom, bg image
       upload, shipped-world clone-to-edit, active-world hot-reload;
       mapbuilder-test.js 12/12 incl. mobile bottom-sheet pass)
-- [ ] Phase 4: cast onboarding wizard
+- [x] Phase 4: cast onboarding wizard ✅ 2026-07-26 (picker + card-file
+      import + RPG-ify form w/ schedule & anchor-hygiene warnings; verified
+      end-to-end with Trizel; cast-wizard-test.js 9/9 incl. mobile.
+      Expressions-zip upload deferred)
 - [ ] Phase 5: creation wizard shell
 - [ ] Phase 6: export/import bundles + conflict rename
 
