@@ -12,7 +12,7 @@ import { this_chid, generateQuietPrompt, user_avatar, isGenerating } from '../..
 import { background_settings } from '../../../backgrounds.js';
 import { getUserAvatars, setUserAvatar } from '../../../personas.js';
 import { openGroupById, editGroup, createNewGroupChat, group_activation_strategy, group_generation_mode } from '../../../group-chats.js';
-import { loadWorldInfo, saveWorldInfo, createWorldInfoEntry, updateWorldInfoList } from '../../../world-info.js';
+import { loadWorldInfo, saveWorldInfo, createWorldInfoEntry, updateWorldInfoList, world_info, world_names } from '../../../world-info.js';
 
 jQuery(async () => {
     'use strict';
@@ -744,6 +744,13 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     if (r.ok) zip.file(`backgrounds/${bg}`, await r.blob());
                 } catch { /* missing background file — bundle without it */ }
             }
+            // The world's bound lorebook travels too
+            if (world.lorebook) {
+                try {
+                    const lb = await loadWorldInfo(world.lorebook);
+                    if (lb?.entries) zip.file('lorebook.json', JSON.stringify({ name: world.lorebook, data: lb }));
+                } catch { /* book missing — bundle without it */ }
+            }
             const blob = await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -806,10 +813,27 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 if (r.ok) bgUp++;
             }
 
+            // Bundled lorebook: install unless a book of that name already exists
+            const lbFile = zip.file('lorebook.json');
+            if (lbFile) {
+                try {
+                    const lb = JSON.parse(await lbFile.async('string'));
+                    if (lb?.name && lb.data?.entries) {
+                        if ((world_names || []).includes(lb.name)) {
+                            wmToast(`Lorebook "${lb.name}" already exists — the world will use your copy.`, 'info');
+                        } else {
+                            await saveWorldInfo(lb.name, lb.data, true);
+                            await updateWorldInfoList();
+                        }
+                        world.lorebook = lb.name;
+                    }
+                } catch (e) { console.warn('RPG Custodian: bundled lorebook skipped', e); }
+            }
+
             authoredWorlds()[world.worldId] = world;
             context.saveSettingsDebounced();
             await loadRegisteredWorlds();
-            wmToast(`World "${world.name}" imported (${Object.keys(world.locations).length} locations, ${(world.cast || []).length} cast, ${bgUp} background${bgUp === 1 ? '' : 's'} added).`, 'success');
+            wmToast(`World "${world.name}" imported (${Object.keys(world.locations).length} locations, ${(world.cast || []).length} cast, ${bgUp} background${bgUp === 1 ? '' : 's'} added${world.lorebook ? `, lorebook "${world.lorebook}"` : ''}).`, 'success');
         } catch (e) { console.error('RPG Custodian: import failed', e); wmToast('Import failed — check the console.', 'error'); }
         finally { $('#rpg-world-file').remove(); }
     }
@@ -1150,6 +1174,96 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         return world;
     }
 
+    /**
+     * Bind a world's lorebook as the GM's ADDITIONAL character book
+     * (charLore) — the default RPG book stays on the GM's primary slot, and
+     * the world's book swaps in/out exclusively with the world being played.
+     */
+    function applyWorldLorebook(worldData) {
+        try {
+            const book = worldData?.lorebook || null;
+            world_info.charLore = world_info.charLore || [];
+            const idx = world_info.charLore.findIndex(e => e.name === 'Game Master');
+            if (book) {
+                if (idx >= 0) world_info.charLore[idx].extraBooks = [book];
+                else world_info.charLore.push({ name: 'Game Master', extraBooks: [book] });
+                console.log('RPG Custodian: world lorebook bound to GM:', book);
+            } else if (idx >= 0) {
+                world_info.charLore.splice(idx, 1);
+            }
+            context.saveSettingsDebounced();
+        } catch (e) { console.error('RPG Custodian: world lorebook binding failed', e); }
+    }
+
+    /** Map-editor picker: bind an existing book, upload one, or unbind. */
+    function openLorebookPicker() {
+        const world = mapEd.world;
+        $('#rpg-cast-overlay').remove();
+        const ov = $(`
+            <div id="rpg-cast-overlay">
+                <div class="rpg-form-panel">
+                    <div class="rpg-popup-title">📖 World lorebook — GM lore for this world only</div>
+                    <div class="pe-fx-title">Current: <b id="lb-current"></b></div>
+                    <input id="lb-filter" type="text" placeholder="filter lorebooks…">
+                    <div id="lb-list"></div>
+                    <div class="mp-buttons">
+                        <button type="button" id="lb-upload" class="rpg-map-btn">📁 Upload .json</button>
+                        <button type="button" id="lb-none" class="rpg-map-btn">🚫 Unbind</button>
+                        <button type="button" id="lb-cancel" class="rpg-map-btn">Close</button>
+                    </div>
+                </div>
+            </div>`);
+        $('body').append(ov);
+        const setBook = (name) => {
+            if (name) world.lorebook = name; else delete world.lorebook;
+            context.saveSettingsDebounced();
+            if (currentGameState.isActive && currentGameState.worldData?.worldId === mapEd.worldId) applyWorldLorebook(world);
+            $('#lb-current').text(world.lorebook || 'none');
+            renderBooks();
+            wmToast(name ? `"${name}" bound to this world's GM.` : 'World lorebook unbound.', 'success');
+        };
+        const renderBooks = () => {
+            const q = String($('#lb-filter').val() || '').toLowerCase();
+            const list = $('#lb-list').empty();
+            for (const n of (world_names || []).filter(n => n.toLowerCase().includes(q))) {
+                const row = $('<div class="rpg-menu-item"></div>').text(`${n === world.lorebook ? '✅ ' : '📖 '}${n}`);
+                row.on('click', (e) => { e.stopPropagation(); setBook(n); });
+                list.append(row);
+            }
+            if (!list.children().length) list.append('<div class="pe-fx-title" style="opacity:.6">— no lorebooks —</div>');
+        };
+        $('#lb-current').text(world.lorebook || 'none');
+        $('#lb-filter').on('input', renderBooks);
+        renderBooks();
+        $('#lb-cancel').on('click', (e) => { e.stopPropagation(); $('#rpg-cast-overlay').remove(); });
+        $('#lb-none').on('click', (e) => { e.stopPropagation(); setBook(null); });
+        $('#lb-upload').on('click', (e) => {
+            e.stopPropagation();
+            $('#lb-file').remove();
+            const inp = $('<input id="lb-file" type="file" accept=".json,application/json" style="display:none">');
+            $('body').append(inp);
+            inp.on('change', async function () {
+                const f = this.files?.[0];
+                if (!f) { $('#lb-file').remove(); return; }
+                try {
+                    const data = JSON.parse(await f.text());
+                    if (!data.entries || typeof data.entries !== 'object') { wmToast('Not a World Info file (no entries).', 'error'); return; }
+                    let name = f.name.replace(/\.json$/i, '');
+                    while ((world_names || []).includes(name)) {
+                        const nn = (prompt(`A lorebook named "${name}" already exists. New name?`) || '').trim();
+                        if (!nn) { wmToast('Upload cancelled.', 'info'); return; }
+                        name = nn;
+                    }
+                    await saveWorldInfo(name, data, true);
+                    await updateWorldInfoList();
+                    setBook(name);
+                } catch (err) { console.error('RPG Custodian: lorebook upload failed', err); wmToast('Lorebook upload failed.', 'error'); }
+                finally { $('#lb-file').remove(); }
+            });
+            inp.trigger('click');
+        });
+    }
+
     async function openMapEditor(worldId) {
         let world = authoredWorlds()[worldId];
         if (!world) world = await materializeShippedWorld(worldId);
@@ -1278,6 +1392,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         const btn = (act, label, title) => ctx.append($(`<button class="rpg-map-btn" data-act="${act}" title="${title}">${label}</button>`));
         btn('add', '➕', 'Add a place');
         btn('bg', '🖼️', 'Set map background image');
+        btn('lore', '📖', "Bind this world's GM lorebook");
         if (mapEd.connectFrom) btn('connect', '🔗✔', 'Tap nodes to link/unlink, then tap here to finish');
         else if (n === 1) { btn('edit', '✏️', 'Edit this place'); btn('connect', '🔗', 'Connect: tap other nodes to link'); btn('del', '🗑️', 'Delete this place'); }
         else if (n >= 2) { btn('join', '🔗', 'Join all selected'); btn('unjoin', '✂️', 'Unjoin selected'); btn('del', '🗑️', 'Delete selected'); }
@@ -1295,6 +1410,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             else if (act === 'zoomout') mapZoom(1 / 1.3);
             else if (act === 'add') mapAddNode();
             else if (act === 'bg') $('#rpg-map-bgfile').trigger('click');
+            else if (act === 'lore') openLorebookPicker();
             else if (act === 'edit') openMapNodePanel(mapEd.sel[0]);
             else if (act === 'del') mapDeleteSelected();
             else if (act === 'join') { mapJoin(true); }
@@ -1839,6 +1955,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         currentGameState.groupId = groupId;
         currentGameState.isActive = true;
         getPlayerRpgData();
+        applyWorldLorebook(worldData);   // this world's GM lore (exclusive), on top of the default book
 
         await syncPresence();
         projectPlayerStatus();
@@ -3192,6 +3309,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
             // Make sure the player persona has an rpg_data block (stats/gold/inventory)
             getPlayerRpgData();
+            applyWorldLorebook(worldData);   // this world's GM lore (exclusive), on top of the default book
 
             // Every new game plays in its own chat file — the previous
             // playthrough's log stays intact in the group's past chats. (The
@@ -5926,7 +6044,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         spendNpcStamina: (n, amt) => spendNpcStamina(n, amt || 1),
         nlMove: (d) => doNlMove(d),
         refreshWorlds: () => loadRegisteredWorlds(),
-        checkConditions: () => checkPendingConditions(),
+        makeLorebook: async (name) => { await saveWorldInfo(name, { entries: { 0: { uid: 0, key: ['test'], keysecondary: [], comment: 'test-entry', content: 'Test lore content.', constant: false, selective: true, order: 100, position: 0, disable: false } } }, true); await updateWorldInfoList(); return name; },
         travelIssue: () => travelIssueNote,
         clearLegacyQuests: () => { const rd = getPlayerRpgData(); if (rd && rd.quests) { delete rd.quests; savePlayer(); return 'legacy card-quest state removed'; } return 'nothing to clear'; },
         charmNote: (tier) => buildCharmInterpretationNote(tier ? { tier, success: tier === 'success' || tier === 'critical' } : null),

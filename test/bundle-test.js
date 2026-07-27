@@ -39,7 +39,16 @@ try {
     const cdp = await page.createCDPSession();
     await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: DL });
 
-    // ---- export prototype-town ----
+    // ---- bind a lorebook via the map editor, then export ----
+    await page.evaluate(() => window.rpgCustodianDebug.makeLorebook('RPGC Test Lore')); await wait(800);
+    await openMenuItem('Worlds (play');
+    await clickPopupItem('Mountain');
+    await clickPopupItem('Edit world'); await wait(1000);
+    await page.evaluate(() => document.querySelector('.rpg-map-btn[data-act="lore"]')?.click()); await wait(700);
+    await page.evaluate(() => [...document.querySelectorAll('#lb-list .rpg-menu-item')].find(e => e.textContent.includes('RPGC Test Lore'))?.click()); await wait(500);
+    await page.evaluate(() => document.getElementById('lb-cancel')?.click()); await wait(300);
+    await page.evaluate(() => document.querySelector('.rpg-map-btn[data-act="close"]')?.click()); await wait(900);
+    check('lorebook bound in the map editor', await page.evaluate(() => SillyTavern.getContext().extensionSettings['rpg-custodian'].authoredWorlds['prototype-town']?.lorebook) === 'RPGC Test Lore');
     await openMenuItem('Worlds (play');
     await clickPopupItem('Mountain');
     await clickPopupItem('Export bundle');
@@ -61,11 +70,14 @@ try {
     check('locations survived the round trip', imported && Object.keys(imported.locations).length >= 8, `${imported ? Object.keys(imported.locations).length : 0} locations`);
     check('castData embedded and intact', imported && (imported.cast || []).length === 6 && Object.keys(imported.castData || {}).length === 6, `${(imported?.cast || []).length} cast`);
     check('secret spring survived', imported && Object.values(imported.locations).some(l => l.secret === 2));
+    check('lorebook binding survived the round trip', imported?.lorebook === 'RPGC Test Lore');
 
     // ---- play the import ----
     await page.evaluate(() => window.rpgCustodianDebug.newGame('prototype-reborn')); await wait(25000);
     const state = await page.evaluate(() => { const s = window.rpgCustodianDebug.state(); return { active: s.isActive, world: s.worldData?.worldId, roster: (s.npcRoster || []).length }; });
     check('imported world plays (cast materialized)', state.active && state.world === 'prototype-reborn' && state.roster === 6, JSON.stringify(state));
+    const charLore = await page.evaluate(async () => (await import('/scripts/world-info.js')).world_info.charLore || []);
+    check('world book bound to GM as additional lore (charLore)', charLore.some(e => e.name === 'Game Master' && (e.extraBooks || []).includes('RPGC Test Lore')), JSON.stringify(charLore));
 
     // cleanup
     await page.evaluate(async () => {
