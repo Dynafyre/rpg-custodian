@@ -539,7 +539,7 @@ jQuery(async () => {
                     const rd2 = getPlayerRpgData();
                     rd2.customEffects = (rd2.customEffects || []).filter(x => x !== e && x.id !== e.id);
                     savePlayer();
-                    sendGhostMessage(`✅ **${e.name}** ends — dispelled.`);
+                    wmToast(`${e.name} dispelled.`, 'success');
                     projectPlayerStatus(); renderActionBar();
                     renderEffects();
                 });
@@ -591,7 +591,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         const prompt = `Player's request: "${text}"\nPlayer right now: ${statsContextForAnalyzer()}`;
         const p = await generateJson({ prompt, systemPrompt: sys, budget: 300 });
         if (!p || !p.name) return null;
-        return addCustomStatus('player', p);
+        return addCustomStatus('player', p, true);   // quiet: the editor is meta, not story
     }
 
     // ========================================================================
@@ -4311,7 +4311,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
     // A quest, oath, pact, or errand IS a "silent status" — same store, same
     // end-condition watcher. category:'quest' completes with a reward when met.
-    function addCustomStatus(target, spec) {
+    function addCustomStatus(target, spec, quiet = false) {
         const dur = Number(spec.duration) > 0 ? Math.floor(Number(spec.duration)) : null;   // time-increment lifespan
         const category = spec.category === 'quest' ? 'quest' : 'status';
         const rec = {
@@ -4349,7 +4349,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }
         savePlayer();
         const ends = [rec.expiresOnCheck ? `your next ${rec.expiresOnCheck} trial` : null, dur ? `${dur} time period${dur > 1 ? 's' : ''} pass` : null, rec.endCondition].filter(Boolean).join(', or ');
-        if (category === 'quest') {
+        if (quiet) {
+            // Editor/meta callers: no chat message — a chat may not even be open.
+        } else if (category === 'quest') {
             const rw = rewardLabel(rec.reward);
             sendGhostMessage(`📜 **New objective: ${rec.name}** — ${rec.endCondition || rec.desc || 'see it through'}.${statusModString(rec.mods)}${rw ? `\n_Reward: ${rw}._` : ''}`);
         } else {
