@@ -24,7 +24,8 @@ try {
 
     // apply a status in play (debug = in-play path, not the admin editor)
     await page.evaluate(() => window.rpgCustodianDebug.addStatus('Wren', { name: 'Glimmer Pox', kind: 'disease', polarity: 'negative', desc: 'itchy silver spots across her skin', mods: [{ stat: 'charm', amount: -1 }], duration: 6, end_condition: 'when treated with an herbal salve' }));
-    check('application reaction queued', /taken hold/.test(await page.evaluate(() => window.rpgCustodianDebug.rel('Wren').statusReactionNote || '')));
+    check('application reaction queued', /taken hold/.test(await page.evaluate(() => window.rpgCustodianDebug.statusNote('Wren') || '')));
+    check('fresh note keeps "JUST" wording', /JUST taken hold/.test(await page.evaluate(() => window.rpgCustodianDebug.statusNote('Wren') || '')));
 
     // self-note generates once, async
     let selfNote = '';
@@ -49,15 +50,19 @@ try {
     await wait(2000);
     const wren = await page.evaluate(x => (SillyTavern.getContext().chat ?? []).slice(x).filter(m => !m.is_user && !m.is_system && m.name === 'Wren').map(m => m.mes).join(' '), s2);
     console.log('Wren reacts:', wren.replace(/\s+/g, ' ').slice(0, 200));
-    check('reaction note consumed by her reply', (await page.evaluate(() => window.rpgCustodianDebug.rel('Wren').statusReactionNote || null)) === null);
+    check('reaction note consumed by her reply', (await page.evaluate(() => window.rpgCustodianDebug.statusNote('Wren'))) === null);
     console.log(`(behavioral: reply ${/itch|spot|pox|silver|skin|scratch|ill|sick/i.test(wren) ? 'DID' : 'did not clearly'} reference the affliction — flash-model dependent)`);
 
-    // timer expiry queues a worn-off reaction
+    // timer expiry queues a worn-off reaction — the status dies at period 6 of
+    // the tick(7), so by consumption time the event is ~1 period old and the
+    // rendered note must be AGED (no lying "just"), with the true elapsed time
     await page.evaluate(() => window.rpgCustodianDebug.tick(7)); await wait(800);
-    const wornNote = await page.evaluate(() => window.rpgCustodianDebug.rel('Wren').statusReactionNote || '');
+    const wornNote = await page.evaluate(() => window.rpgCustodianDebug.statusNote('Wren') || '');
+    console.log('aged note:', wornNote.slice(0, 160));
     check('expiry queues a worn-off reaction', /worn off/.test(wornNote), wornNote.slice(0, 60));
+    check('stale note reworded (no "just", elapsed shown)', /happened about .+ ago/.test(wornNote) && !/\bjust\b/i.test(wornNote));
     check('status actually expired', (await page.evaluate(() => (window.rpgCustodianDebug.rel('Wren').customEffects || []).length)) === 0);
-    await page.evaluate(() => { const r = window.rpgCustodianDebug.rel('Wren'); r.statusReactionNote = null; });   // cleanup
+    await page.evaluate(() => { const r = window.rpgCustodianDebug.rel('Wren'); r.statusReactionNotes = null; r.statusReactionNote = null; });   // cleanup
 
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;

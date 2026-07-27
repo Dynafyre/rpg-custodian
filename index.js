@@ -3981,12 +3981,32 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         } catch (e) { console.warn('RPG Custodian: status self-note generation failed', e); }
     }
 
-    /** Queue a one-shot status reaction for her next reply (in-play events only). */
+    /** Queue a one-shot status reaction for her next reply (in-play events only).
+     *  Each fragment is stamped with the timeStep it happened at, so a note
+     *  consumed days later (she was off-screen) can be reworded — "just worn
+     *  off" must not survive a three-day gap. */
     function queueStatusReaction(target, text) {
         if (!target || target === 'player') return;
         const rel = getRelationship(target);
-        rel.statusReactionNote = rel.statusReactionNote ? `${rel.statusReactionNote} ${text}` : text;
+        if (!Array.isArray(rel.statusReactionNotes)) {
+            rel.statusReactionNotes = rel.statusReactionNote            // migrate any pre-array note
+                ? [{ text: rel.statusReactionNote, step: currentGameState.timeStep || 0 }] : [];
+            rel.statusReactionNote = null;
+        }
+        rel.statusReactionNotes.push({ text, step: currentGameState.timeStep || 0 });
         savePlayer();
+    }
+    /** Render queued fragments for injection, aging stale ones honestly. */
+    function renderStatusReactionNotes(rel) {
+        const raw = Array.isArray(rel.statusReactionNotes) ? rel.statusReactionNotes
+            : rel.statusReactionNote ? [{ text: rel.statusReactionNote, step: currentGameState.timeStep || 0 }] : [];
+        if (!raw.length) return null;
+        const now = currentGameState.timeStep || 0;
+        return raw.map(n => {
+            const elapsed = now - (n.step ?? now);
+            if (elapsed < 1) return n.text;                              // fresh — "just" is true
+            return `(This happened about ${elapsedPhrase(elapsed)} ago — old news to you by now, though he may not know:) ${n.text.replace(/\bJUST\b/g, 'since').replace(/\bjust\b/g, 'since')}`;
+        }).join(' ');
     }
     const STATUSREACT_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS_REACT';
 
@@ -5834,9 +5854,10 @@ Narrate the result briefly, grounded in this location and the story's current be
         // In-play status lifecycle reaction (applied/lifted/worn-off since her
         // last reply) — one-shot, reunion-comment style
         const relForNote = getRelationship(npcName);
-        const statusNote = relForNote.statusReactionNote || null;
+        const statusNote = renderStatusReactionNotes(relForNote);
         if (statusNote) {
             context.setExtensionPrompt(STATUSREACT_PROMPT_KEY, `[What ${npcName} is feeling right now — weave a genuine reaction into her reply:] ${statusNote}`, 1, 0);
+            relForNote.statusReactionNotes = null;
             relForNote.statusReactionNote = null;
         }
         const preReplyLen = (getCtx().chat || []).length;
@@ -6113,6 +6134,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         addObjective: (spec) => addCustomStatus('player', { ...(spec || {}), category: 'quest' }),
         objectives: () => playerObjectives(),
         statuses: (target) => ((!target || target === 'player') ? getPlayerRpgData()?.customEffects : getRelationship(target).customEffects) || [],
+        statusNote: (n) => renderStatusReactionNotes(getRelationship(n)),
         checkConditions: () => checkPendingConditions(),
         appraise: (item) => appraiseItem(item),
         equipped: () => equippedItemsSummary(),
