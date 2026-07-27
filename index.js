@@ -513,6 +513,11 @@ jQuery(async () => {
                         ${num('pe-tokens', '⭐ Power Tokens', s.power_tokens ?? 0, 0, 9999)}
                     </div>
                     <div id="pe-effects"></div>
+                    <div id="pe-inv"></div>
+                    <div class="cf-row">
+                        <input id="pe-item-name" type="text" placeholder="new item name — the Custodian appraises its effect">
+                        <button type="button" id="pe-item-add" class="rpg-map-btn" title="Add item">➕</button>
+                    </div>
                     <label>🪄 Request a bespoke effect from the Custodian
                         <textarea id="pe-status-req" rows="3" placeholder="e.g. a lingering wolf-bite fever, weakening me until cured · a road-blessing, +1 charm for a day · a one-use battle draught for my next fight · a fey pact: +2 craftiness while I owe the errand"></textarea>
                     </label>
@@ -548,6 +553,43 @@ jQuery(async () => {
             }
         };
         renderEffects();
+
+        // Inventory: list with remove controls + add-by-name (the appraisal
+        // queue invents the effect, chat-silently, same as any acquired item).
+        const renderInv = () => {
+            const list = $('#pe-inv').empty();
+            const items = getPlayerRpgData()?.inventory?.items || [];
+            list.append('<div class="pe-fx-title">Inventory:</div>');
+            if (!items.length) { list.append('<div class="pe-fx-title" style="opacity:.6">— empty —</div>'); return; }
+            for (const it of items) {
+                const row = $('<div class="pe-fx-row"></div>');
+                row.append($('<span class="pe-fx-label"></span>').text(`${it.equipped ? '🗡️' : '📦'} ${prettyItem(it.name)}${it.effectText ? ` — ${it.effectText}` : ' — appraising…'}`));
+                const del = $('<button type="button" class="rpg-map-btn pe-fx-del" title="Remove">✖</button>');
+                del.on('click', () => {
+                    removeItemById(it.id);
+                    wmToast(`${prettyItem(it.name)} removed.`, 'success');
+                    renderActionBar(); renderInv();
+                });
+                row.append(del);
+                list.append(row);
+            }
+        };
+        renderInv();
+        $('#pe-item-add').on('click', (e) => {
+            e.stopPropagation();
+            const nm = String($('#pe-item-name').val() || '').trim();
+            if (!nm) return;
+            addItem({ id: `${slugify(nm)}-${Date.now()}`, name: nm, desc: '' });
+            $('#pe-item-name').val('');
+            renderInv();
+        });
+        // Appraisals land async — refresh the list until none are pending.
+        const invTimer = setInterval(() => {
+            if (!document.getElementById('rpg-player-overlay')) { clearInterval(invTimer); return; }
+            if ((getPlayerRpgData()?.inventory?.items || []).some(i => !i.effectText)) renderInv();
+            else if ($('#pe-inv .pe-fx-label:contains("appraising")').length) renderInv();
+        }, 1500);
+
         $('#pe-close').on('click', () => $('#rpg-player-overlay').remove());
         $('#pe-save').on('click', () => {
             const v = (id, min, max) => Math.max(min, Math.min(max, Number($(`#${id}`).val()) || 0));
@@ -837,6 +879,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     <label>Shop category (if merchant) <input id="cf-shop" type="text" placeholder="alchemist, smith, general…"></label>
                     <div class="mp-buttons">
                         <button id="cf-save" class="rpg-map-btn">💾 Save</button>
+                        <button id="cf-apply" class="rpg-map-btn" title="Save to the world AND update her in the running game (affection, arousal, stats, schedule)">⚡ Save + apply to game</button>
                         <button id="cf-cancel" class="rpg-map-btn">Cancel</button>
                     </div>
                 </div>
@@ -860,8 +903,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             if (opts.adopting) delete world.castData[name];   // adoption not completed
             openCastManager(worldId);   // flow back to the cast list
         });
-        $('#cf-save').on('click', (e) => {
-            e.stopPropagation();
+        const saveCastForm = (applyLive) => {
             const schedule = {};
             for (const p of periods) schedule[p] = $(`.cf-period[data-p="${p}"]`).val();
             card.extensions = card.extensions || {};
@@ -887,10 +929,37 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             };
             if (!(world.cast || []).includes(name)) world.cast = [...(world.cast || []), name];
             context.saveSettingsDebounced();
+
+            // ⚡ Also push the saved values into the RUNNING game: relationship
+            // affection/arousal set to the authored values, and the live roster
+            // entry updated so role/stats/schedule changes bite without restart.
+            if (applyLive) {
+                const active = currentGameState.isActive && currentGameState.worldData?.worldId === worldId;
+                if (!active) {
+                    wmToast('No running game in this world — saved to world data; it applies on the next New Game or Continue.', 'warning');
+                } else {
+                    const rc2 = card.extensions.rpg_custodian;
+                    const rel = getRelationship(name);
+                    rel.affection = rc2.base_stats.affection;
+                    rel.arousal = rc2.base_stats.arousal;
+                    const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
+                    if (npc) {
+                        Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats });
+                    } else {
+                        wmToast(`${name} is new to this cast — she takes the stage fully on the next Continue.`, 'info');
+                    }
+                    savePlayer(); saveCurrentState();
+                    syncPresence(); projectPlayerStatus();
+                    wmToast(`${name}'s current-game state updated (affection ${rel.affection}, arousal ${rel.arousal}).`, 'success');
+                }
+            }
+
             $('#rpg-cast-overlay').remove();
             wmToast(`${name} ${opts.adopting ? 'joined the cast of' : 'updated in'} ${world.name || worldId}.`, 'success');
             openCastManager(worldId);   // flow back to the cast list for the next edit
-        });
+        };
+        $('#cf-save').on('click', (e) => { e.stopPropagation(); saveCastForm(false); });
+        $('#cf-apply').on('click', (e) => { e.stopPropagation(); saveCastForm(true); });
     }
 
     // ========================================================================

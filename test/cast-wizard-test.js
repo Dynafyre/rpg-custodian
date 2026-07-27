@@ -132,6 +132,18 @@ try {
     const rc2 = (w.castData?.[castName]?.data || w.castData?.[castName])?.extensions?.rpg_custodian || {};
     check('edit saves + bumps card_version', rc2.role === 'master alchemist' && parseFloat(rc2.card_version) > parseFloat(rc.card_version), `${rc.card_version} → ${rc2.card_version}`);
 
+    // ---- ⚡ apply-to-game: authored values pushed into the running session ----
+    await openMenuItem('Worlds (play');
+    await clickPopupItem('Castlandia');
+    await clickPopupItem('👥 Cast'); await wait(400);
+    await clickPopupItem(castName); await wait(400);
+    await clickPopupItem('Edit RPG details'); await wait(500);
+    await page.evaluate(() => { document.getElementById('cf-aff').value = '8'; document.getElementById('cf-aro').value = '4'; });
+    await page.click('#cf-apply'); await wait(900);
+    const relApplied = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal }; }, castName);
+    check('⚡ apply pushes authored values into the running game', relApplied.aff === 8 && relApplied.aro === 4, JSON.stringify(relApplied));
+    await page.evaluate(() => document.getElementById('rpg-action-popup')?.remove());
+
     // ---- remove flow ----
     await openMenuItem('Worlds (play');
     await clickPopupItem('Castlandia');

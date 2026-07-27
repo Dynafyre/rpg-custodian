@@ -61,6 +61,18 @@ try {
     await wait(400);
     const fxAfter = await page.evaluate(() => (window.rpgCustodianDebug.player().customEffects || []).length);
     check('remove control dispels the status', fxAfter === beforeFx, `count=${fxAfter}`);
+
+    // ---- inventory editor: add (Custodian-appraised) + remove ----
+    await page.type('#pe-item-name', 'shimmering opal pendant');
+    await page.click('#pe-item-add');
+    let item2 = null;
+    for (let i = 0; i < 30; i++) { await wait(1000); item2 = await page.evaluate(() => (window.rpgCustodianDebug.player().inventory.items || []).find(x => /opal/i.test(x.name))); if (item2?.effectText) break; }
+    console.log('inv item:', JSON.stringify(item2 || {}).slice(0, 160));
+    check('inventory add + Custodian appraisal', !!item2?.effectText, item2?.effectText);
+    check('appraised effect shows in list', await page.evaluate(() => [...document.querySelectorAll('#pe-inv .pe-fx-label')].some(e => /opal/i.test(e.textContent) && !/appraising/.test(e.textContent))));
+    await page.evaluate(() => { const rows = [...document.querySelectorAll('#pe-inv .pe-fx-row')]; const r = rows.find(x => /opal/i.test(x.textContent)); r?.querySelector('.pe-fx-del')?.click(); });
+    await wait(400);
+    check('inventory remove control works', await page.evaluate(() => !(window.rpgCustodianDebug.player().inventory.items || []).some(x => /opal/i.test(x.name))));
     await page.evaluate(() => document.getElementById('pe-close')?.click());
 
     // ---- mobile ----
