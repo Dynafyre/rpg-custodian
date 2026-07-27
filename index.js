@@ -484,6 +484,15 @@ jQuery(async () => {
     // Adopting a character means the world manages its card from then on
     // (ensureCastExists refreshes it; greetings are stripped in RPG use).
 
+    // Toggle buttons instead of checkboxes: ST's global CSS restyles native
+    // checkboxes in ways that break rendering AND taps outside its own
+    // markup — a plain button with state is mobile-proof.
+    function setToggle($btn, on) {
+        $btn.attr('data-on', on ? '1' : '0').toggleClass('rpg-toggle-on', !!on).find('b').text(on ? 'Yes' : 'No');
+    }
+    function getToggle($btn) { return $btn.attr('data-on') === '1'; }
+    $(document).on('click', '.rpg-toggle', function (e) { e.stopPropagation(); setToggle($(this), !getToggle($(this))); });
+
     /** Location-anchoring hygiene: phrases like "always perched behind the
      *  counter" make models relocate the NPC there forever (the Wren lesson). */
     function anchorWarnings(text) {
@@ -631,10 +640,7 @@ jQuery(async () => {
                     </div>
                     <label>Home <select id="cf-home">${locOptions}</select></label>
                     <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
-                    <div class="cf-row">
-                        <label class="mp-check"><input id="cf-secret" type="checkbox"> 🕵️ Secret (unknown to other NPCs)</label>
-                        <label class="mp-check"><input id="cf-rom" type="checkbox"> 💕 Romanceable</label>
-                    </div>
+                    <button type="button" id="cf-secret" class="rpg-toggle">🕵️ Secret (unknown to other NPCs): <b>No</b></button>
                     <label>Shop category (if merchant) <input id="cf-shop" type="text" placeholder="alchemist, smith, general…"></label>
                     <label>Wrestle/contest DC (blank = none) <input id="cf-wrestle" type="number" min="6" max="18"></label>
                     <div class="mp-buttons">
@@ -652,8 +658,7 @@ jQuery(async () => {
         $('#cf-home').val(rc.home_location && world.locations[rc.home_location] ? rc.home_location : world.startingLocation);
         for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
-        $('#cf-secret').prop('checked', !!rc.secret);
-        $('#cf-rom').prop('checked', rc.romanceable !== false);
+        setToggle($('#cf-secret'), !!rc.secret);
         $('#cf-shop').val(rc.shop || '');
         $('#cf-wrestle').val(rc.wrestle?.difficulty ?? '');
         $('#cf-cancel').on('click', () => {
@@ -676,8 +681,7 @@ jQuery(async () => {
                 ruggedness: Math.max(1, Math.min(10, Number($('#cf-rug').val()) || 2)),
                 home_location: $('#cf-home').val(),
                 schedule,
-                secret: $('#cf-secret').prop('checked') || undefined,
-                romanceable: $('#cf-rom').prop('checked'),
+                secret: getToggle($('#cf-secret')) || undefined,
                 shop: String($('#cf-shop').val() || '').trim() || undefined,
                 wrestle: wr ? { stat: 'ruggedness', difficulty: wr } : undefined,
                 base_stats: prev.base_stats || { affection: 0, arousal: 1, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 },
@@ -1066,7 +1070,7 @@ jQuery(async () => {
                     <option value="1">1 — unknown (NPCs don't know; on your menus)</option>
                     <option value="2">2 — hidden (found only through the story)</option>
                 </select></label>
-                <label class="mp-check"><input id="mp-start" type="checkbox"> ⭐ Starting location</label>
+                <button type="button" id="mp-start" class="rpg-toggle">⭐ Starting location: <b>No</b></button>
                 <div class="mp-buttons">
                     <button id="mp-save" class="rpg-map-btn">💾 Save</button>
                     <button id="mp-cancel" class="rpg-map-btn">Cancel</button>
@@ -1083,7 +1087,7 @@ jQuery(async () => {
         $('#mp-tags').val((loc.tags || []).join(', '));
         $('#mp-bg').val(loc.background || '');
         $('#mp-secret').val(String(Number(loc.secret) || 0));
-        $('#mp-start').prop('checked', mapEd.world.startingLocation === id);
+        setToggle($('#mp-start'), mapEd.world.startingLocation === id);
         $('#mp-cancel').on('click', () => $('#rpg-map-panel').remove());
         $('#mp-save').on('click', () => {
             loc.name = ($('#mp-name').val() || '').trim() || loc.name;
@@ -1093,7 +1097,7 @@ jQuery(async () => {
             loc.background = String($('#mp-bg').val() || '').trim();
             const sec = Number($('#mp-secret').val()) || 0;
             if (sec) loc.secret = sec; else delete loc.secret;
-            if ($('#mp-start').prop('checked')) mapEd.world.startingLocation = id;
+            if (getToggle($('#mp-start'))) mapEd.world.startingLocation = id;
             context.saveSettingsDebounced();
             $('#rpg-map-panel').remove();
             mapRenderAll(); mapRefreshTopbar();

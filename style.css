@@ -257,3 +257,15 @@ code {
     border-radius: 8px; padding: 8px; font-size: 12.5px;
 }
 #cast-list { max-height: 45vh; overflow-y: auto; display: flex; flex-direction: column; }
+
+/* Toggle buttons (checkbox replacement — ST CSS breaks native checkboxes) */
+.rpg-toggle {
+    background: rgba(120, 120, 130, 0.18); border: 1px solid rgba(255,255,255,0.3);
+    color: inherit; border-radius: 8px; padding: 10px 12px; font-size: 14px;
+    cursor: pointer; text-align: left; min-height: 42px; width: 100%;
+}
+.rpg-toggle b { float: right; opacity: 0.85; }
+.rpg-toggle.rpg-toggle-on {
+    background: rgba(74, 144, 226, 0.35); border-color: rgba(120, 180, 255, 0.8);
+}
+.rpg-toggle.rpg-toggle-on b { color: #ffd166; opacity: 1; }

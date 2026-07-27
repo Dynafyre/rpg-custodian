@@ -66,6 +66,9 @@ try {
     await page.type('#cf-race', 'tiefling');
     await page.type('#cf-age', 'mid 20s');
     await page.evaluate(() => { document.getElementById('cf-fert').value = '40'; document.getElementById('cf-rug').value = '3'; });
+    await page.click('#cf-secret'); await wait(200);   // toggle secret ON (button, not checkbox)
+    check('secret toggle flips on click', await page.evaluate(() => document.getElementById('cf-secret').getAttribute('data-on')) === '1');
+    await page.click('#cf-secret'); await wait(200);   // and back off
     await page.click('#cf-save'); await wait(800);
     let w = await world();
     const castName = (w.cast || [])[0];
@@ -122,6 +125,17 @@ try {
     const rect = await page2.evaluate(() => { const p = document.querySelector('#rpg-cast-overlay .rpg-form-panel'); if (!p) return null; const r = p.getBoundingClientRect(); return { l: r.left, t: r.top, r: r.right, b: r.bottom, vw: innerWidth, vh: innerHeight }; });
     console.log('mobile picker rect:', JSON.stringify(rect));
     check('mobile: picker panel fully on-screen', !!rect && rect.l >= 0 && rect.t >= 0 && rect.r <= rect.vw && rect.b <= rect.vh);
+    // TOUCH-tap a character → form → touch-tap the secret toggle (the reported bug)
+    const rowRect = await page2.evaluate(() => { const el = document.querySelector('#cast-list .rpg-menu-item'); if (!el) return null; const r = el.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+    if (rowRect) {
+        await page2.touchscreen.tap(rowRect.x, rowRect.y); await wait(700);
+        const tgl = await page2.evaluate(() => { const b = document.getElementById('cf-secret'); if (!b) return null; const r = b.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+        if (tgl) {
+            await page2.touchscreen.tap(tgl.x, tgl.y); await wait(300);
+            check('mobile: secret toggle responds to TOUCH', await page2.evaluate(() => document.getElementById('cf-secret').getAttribute('data-on')) === '1');
+            await page2.evaluate(() => document.getElementById('cf-cancel')?.click());
+        } else check('mobile: secret toggle responds to TOUCH', false, 'form did not open');
+    } else check('mobile: secret toggle responds to TOUCH', false, 'no characters in picker');
     await page2.screenshot({ path: 'screenshots/cast-wizard-mobile.png' });
     await page2.close();
 
