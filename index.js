@@ -49,6 +49,32 @@ jQuery(async () => {
         { name: 'Night', emoji: '🌙' }
     ];
     
+    // === Authored worlds (world-management phase 2) ===
+    // Shipped worlds are read-only files under game-worlds/fresh-worlds/.
+    // Authored worlds live in extensionSettings — atomic with ST's settings
+    // persistence, no file-write APIs needed. Their cast card data embeds in
+    // the world object itself (castData) instead of shipping JSON files.
+    function authoredWorlds() {
+        context.extensionSettings[extensionName] = context.extensionSettings[extensionName] || {};
+        const s = context.extensionSettings[extensionName];
+        s.authoredWorlds = s.authoredWorlds || {};
+        return s.authoredWorlds;
+    }
+
+    /** Unified world loader: authored (settings) first, then shipped (file). */
+    async function loadWorldData(worldId) {
+        const authored = authoredWorlds()[worldId];
+        if (authored) return structuredClone(authored);
+        try {
+            const worldPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${worldId}/${worldId}.json`;
+            const response = await fetch(worldPath);
+            if (!response.ok) return null;
+            return await response.json();
+        } catch { return null; }
+    }
+
+    function slugify(s) { return String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, ''); }
+
     // World registry stored in extension settings
     function getWorldRegistry() {
         const settings = context.extensionSettings[extensionName] || {};
@@ -185,11 +211,12 @@ jQuery(async () => {
                 try {
                     const worldPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${worldName}/${worldName}.json`;
                     const response = await fetch(worldPath);
-                    
+
                     if (response.ok) {
                         const worldData = await response.json();
                         loadedWorlds.push({
                             name: worldName,
+                            displayName: worldData.name || worldName,
                             description: worldData.description || `${worldData.name} - No description available`,
                             emoji: '🗺️'
                         });
@@ -200,6 +227,17 @@ jQuery(async () => {
                 } catch (error) {
                     console.warn(`RPG Custodian: Could not load registered world "${worldName}":`, error);
                 }
+            }
+
+            // Authored worlds need no registration — existing IS registration.
+            for (const [id, w] of Object.entries(authoredWorlds())) {
+                loadedWorlds.push({
+                    name: id,
+                    displayName: w.name || id,
+                    description: w.description || '',
+                    emoji: '✍️',
+                    authored: true,
+                });
             }
             
             // Always have at least one world available
@@ -354,6 +392,88 @@ jQuery(async () => {
      * Primary player-facing entry point: New Game / Continue / Character /
      * Wait / Date / Exit, so slash commands stay fallback-only.
      */
+    // === World Manager (world-management §1, phase 2) ===
+    // List → per-world actions. Create/Delete are live; Edit (map builder),
+    // Export, and Import arrive with phases 3/6.
+    const wmToast = (msg, kind = 'info') => { try { toastr[kind](msg); } catch { console.log('RPG Custodian:', msg); } };
+
+    function openWorldManager() {
+        const items = [
+            { icon: '➕', label: 'Create a new world', sub: 'name, description & first location — build it out in the map editor later', action: () => createWorldMinimal() },
+            { icon: '📥', label: 'Import world bundle', sub: 'coming with the bundle system', action: () => wmToast('World import arrives with the export/import bundle phase.') },
+        ];
+        for (const w of availableWorldsCache) {
+            items.push({
+                icon: w.emoji || '🗺️',
+                label: w.displayName || w.name,
+                sub: `${w.authored ? 'authored' : 'shipped'}${w.description ? ` — ${w.description.slice(0, 70)}` : ''}`,
+                action: () => openWorldActions(w),
+            });
+        }
+        openActionPopup('🌍 Worlds', items);
+    }
+
+    function openWorldActions(w) {
+        const items = [
+            { icon: '🎲', label: 'New Game', sub: `start fresh in ${w.displayName || w.name}`, action: () => newGame(w.name) },
+            { icon: '✏️', label: 'Edit world', sub: 'map builder — coming next phase', action: () => wmToast('The graphical map builder is the next phase.') },
+            { icon: '📤', label: 'Export bundle', sub: 'coming with the bundle system', action: () => wmToast('World export arrives with the export/import bundle phase.') },
+        ];
+        if (w.authored) {
+            items.push({ icon: '🗑️', label: 'Delete world', sub: 'removes it permanently (saves referencing it will not load)', action: () => deleteAuthoredWorld(w.name) });
+        } else {
+            items.push({ icon: '🚫', label: 'Deregister', sub: 'hides it from lists; files stay on disk', action: () => deregisterWorldFromManager(w.name) });
+        }
+        openActionPopup(`${w.emoji || '🗺️'} ${w.displayName || w.name}`, items);
+    }
+
+    async function createWorldMinimal() {
+        const name = (prompt('World name?') || '').trim();
+        if (!name) return;
+        const id = slugify(name);
+        const conflict = !id
+            || availableWorldsCache.some(x => x.name === id || (x.displayName || '').toLowerCase() === name.toLowerCase())
+            || authoredWorlds()[id];
+        if (conflict) {
+            wmToast(`"${name}" conflicts with an existing world — pick another name.`, 'warning');
+            return createWorldMinimal();
+        }
+        const description = (prompt('One-line description of the world?') || '').trim();
+        const firstLocName = (prompt('Name of the starting location?') || '').trim() || 'The Crossroads';
+        const locId = slugify(firstLocName) || 'start';
+        authoredWorlds()[id] = {
+            worldId: id,
+            name,
+            description,
+            startingLocation: locId,
+            locations: {
+                [locId]: { name: firstLocName, description: '', connections: [], background: '' },
+            },
+            cast: [],
+            castData: {},
+        };
+        context.saveSettingsDebounced();
+        await loadRegisteredWorlds();
+        wmToast(`World "${name}" created — starting at ${firstLocName}. Build it out in the map editor, or start a New Game to walk its first ground.`, 'success');
+    }
+
+    async function deleteAuthoredWorld(id) {
+        const w = authoredWorlds()[id];
+        if (!w) return;
+        if (!confirm(`Delete world "${w.name || id}" permanently? Saves referencing it will no longer load.`)) return;
+        delete authoredWorlds()[id];
+        context.saveSettingsDebounced();
+        await loadRegisteredWorlds();
+        wmToast(`World "${w.name || id}" deleted.`, 'success');
+    }
+
+    async function deregisterWorldFromManager(id) {
+        if (!confirm(`Deregister "${id}"? Its files stay on disk; re-add it anytime with /rpg-register-world.`)) return;
+        saveWorldRegistry(getWorldRegistry().filter(x => x !== id));
+        await loadRegisteredWorlds();
+        wmToast(`World "${id}" deregistered.`, 'success');
+    }
+
     function toggleRpgMenu() {
         const existing = $('#rpg-menu-popup');
         if (existing.length) {
@@ -368,8 +488,9 @@ jQuery(async () => {
             items.push({ icon: '▶️', label: `Continue (${save.world}, Day ${save.day ?? 1})`, action: continueGame });
         }
         for (const world of availableWorldsCache) {
-            items.push({ icon: '🎲', label: `New Game: ${world.name}`, action: () => newGame(world.name) });
+            items.push({ icon: '🎲', label: `New Game: ${world.displayName || world.name}`, action: () => newGame(world.name) });
         }
+        items.push({ icon: '🌍', label: 'Worlds (create, edit, manage)', action: () => openWorldManager() });
         items.push({ icon: '✨', label: 'Create Character', action: () => createRPGCharacterCommand() });
         items.push({ icon: '👤', label: 'Character Sheet', action: () => showRPGCharacterInfoCommand({}, '') });
         if (currentGameState.isActive) {
@@ -580,13 +701,11 @@ jQuery(async () => {
             setSavedBackground(currentBackground);
         }
 
-        const worldPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${save.world}/${save.world}.json`;
-        const response = await fetch(worldPath);
-        if (!response.ok) {
+        const worldData = await loadWorldData(save.world);
+        if (!worldData) {
             sendGhostMessage(`❌ Saved world "${save.world}" could not be loaded.`);
             return;
         }
-        const worldData = await response.json();
 
         currentGameState.worldData = worldData;
         currentGameState.currentTime = save.time ?? 0;
@@ -1881,16 +2000,12 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
      */
     async function startRpgSession(worldName) {
         try {
-            // Load world data
-            const worldPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${worldName}/${worldName}.json`;
-            const response = await fetch(worldPath);
-            
-            if (!response.ok) {
-                sendGhostMessage(`❌ Error: World "${worldName}" not found. Check that the world file exists.`);
+            // Load world data (authored settings-world or shipped file-world)
+            const worldData = await loadWorldData(worldName);
+            if (!worldData) {
+                sendGhostMessage(`❌ Error: World "${worldName}" not found. Check that the world exists.`);
                 return;
             }
-            
-            const worldData = await response.json();
             const startingLocation = worldData.locations[worldData.startingLocation];
 
             if (!startingLocation) {
@@ -1967,6 +2082,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
      * Set the chat background image using SillyTavern's background system
      */
     async function setBackground(backgroundFileName) {
+        if (!backgroundFileName) return;   // authored worlds may not have one yet
         try {
             console.log(`RPG Custodian: Setting background to ${backgroundFileName}`);
             
@@ -2120,13 +2236,17 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
         for (const castName of castNames) {
             try {
-                const cardPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${worldData.worldId}/characters/${encodeURIComponent(castName)}.json`;
-                const response = await fetch(cardPath);
-                if (!response.ok) {
-                    console.warn(`RPG Custodian: Cast card "${castName}" not found at ${cardPath}`);
-                    continue;
+                // Authored worlds embed cast card data; shipped worlds file it.
+                let cardData = worldData.castData?.[castName];
+                if (!cardData) {
+                    const cardPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${worldData.worldId}/characters/${encodeURIComponent(castName)}.json`;
+                    const response = await fetch(cardPath);
+                    if (!response.ok) {
+                        console.warn(`RPG Custodian: Cast card "${castName}" not found at ${cardPath}`);
+                        continue;
+                    }
+                    cardData = await response.json();
                 }
-                const cardData = await response.json();
                 const charData = cardData.data || cardData;
                 const rpgMeta = charData.extensions?.rpg_custodian || {};
 
