@@ -5493,7 +5493,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // scene/look dumps) — noise for the Custodian's judgement, so we keep them out
     // of its story budget. (Ghost/system logs and the character sheet are already
     // excluded by is_system.) Narrative prose, examine, and dialogue are kept.
-    const GM_MECHANICAL_PREFIX = /^\s*(🚶|⏰|🗓️|👀|📦|🎒)/;
+    const GM_MECHANICAL_PREFIX = /^\s*(🚶|🌀|⏰|🗓️|👀|📦|🎒)/;
     function isStoryMessage(m) {
         if (m.is_system) return false;                          // ghost logs, character sheet, skill-check readouts
         if (!(m.mes || '').trim()) return false;
@@ -5511,7 +5511,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // Travel & time notices form the window's location/time SPINE — without
     // them the story reads as one unbroken scene and descriptions linger in
     // places the player already left. (Look/inventory noise stays excluded.)
-    const STORY_SPINE_PREFIX = /^\s*(🚶|⏰|🗓️)/;
+    const STORY_SPINE_PREFIX = /^\s*(🚶|🌀|⏰|🗓️)/;
     function recentStoryWindow(maxChars = 40000) {
         const chat = getCtx().chat || [];
         const lines = [];
@@ -5566,6 +5566,7 @@ Only roll if uncertain for THIS character: roughly (DC − their stat) between 5
 === EFFECTS ("effects_on_success"/"effects_on_failure": arrays of {type,...}) ===
 A single message often contains SEVERAL effects — a look taken while talking, a job accepted while setting off, a place entered while greeting someone. Emit ALL of them, in narrative order. NEVER let one effect crowd out another: dialogue does not cancel a travel, a travel does not cancel an acceptance, a look does not replace a move.
   {"type":"move","destination":"..."}  the player travels to / heads for / walks to / steps INTO any KNOWN PLACE (see the list). Give the place he actually INTENDS to reach — copy its name AS LISTED in KNOWN PLACES (the player may call it something else: "the secret tunnel", "her shop" — you translate to the listed name) — the engine finds the route there automatically, however many stops it takes; never substitute an intermediate stop for the real destination. Entering, going inside, or arriving at a named place IS a move — emit it even when the message also looks around, greets someone, or converses (emit the move FIRST, then the rest). SECRET-tagged places are fully valid destinations exactly like any other — the tag only describes NPC knowledge and menus, never routability; using a hidden entrance, lifting the false bush, slipping through the gap IS a move there. Deterministic, no check.
+  {"type":"event_teleport","destination":"..."}  the STORY translocates the party INSTANTLY — a spell or ritual, a portal or rift, an entity spiriting them away, strange technology, a summons taking hold. No walking and no route: any KNOWN PLACE is a valid destination, INCLUDING places no path joins to the map at all (pocket dimensions, sealed sanctums, other planes). The player and any party companions arrive together in a single beat. Emit it when the narrative performs the translocation — the player steps through the rift, accepts an entity's offer to be whisked away, is pulled bodily into somewhere else. Ordinary walking, riding, or climbing to a reachable place stays "move". Deterministic, no check.
   {"type":"advance_time","periods":N}  narrative time passes. Each period is a step Morning→Day→Evening→Night→(next) Morning. A FULL DAY IS EXACTLY 4 PERIODS — for an explicit span of days use N = days×4 EXACTLY: "one day" = 4, "two days" = 8, "three days" = 12, "a week" = 28. For a time-of-day span, count periods from CURRENT TIME to the target: from Morning "long into the evening" = 2; "that night"/"until nightfall" = to Night; "sleep until morning" = to next Morning.
   {"type":"add_party","npc":"..."}  a present NPC agrees to travel WITH the player or to spend extended time together (join me, come along, let's spend the day together, share stories into the evening). She then follows the player everywhere until dismissed.
   {"type":"remove_party","npc":"..."}  a companion parts ways / is dismissed / stays behind.
@@ -5860,10 +5861,11 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         return null;
     }
 
-    async function doNlMove(dest) {
+    /** Fuzzy place-name resolution shared by walking and teleportation. */
+    function resolveLocationId(dest) {
         const world = currentGameState.worldData;
         const want = String(dest || '').toLowerCase().trim();
-        if (!want) return false;
+        if (!want) return null;
         let targetId = Object.keys(world.locations).find(id => {
             const names = [world.locations[id]?.name || id, ...(world.locations[id]?.alternate_names || [])];
             return id.toLowerCase() === want || names.some(n => {
@@ -5892,6 +5894,47 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 if (best && bestScore > 0 && !tied) targetId = best;
             }
         }
+        return targetId || null;
+    }
+
+    /** Arrival machinery shared by every way of changing location: state,
+     *  persona world_state, background, presence, notice, save. */
+    async function arriveAt(targetId, notice) {
+        currentGameState.currentLocation = targetId;
+        const rpgData = getCurrentRPGData();
+        if (rpgData) {
+            updateCurrentRPGData({
+                world_state: {
+                    current_location: targetId,
+                    visited_locations: [...(rpgData.world_state.visited_locations || []), targetId].filter((v, i, a) => a.indexOf(v) === i),
+                },
+            });
+        }
+        await setBackground(currentGameState.worldData.locations[targetId]?.background);
+        await syncPresence();
+        sendGameMasterMessage(notice);
+        saveCurrentState();
+    }
+
+    /** Story-driven translocation: a spell, portal, or entity moves the party
+     *  INSTANTLY — no route, no adjacency, valid to node-isolated places
+     *  (pocket dimensions). Party members ride along by presence rules. */
+    async function doEventTeleport(dest) {
+        const world = currentGameState.worldData;
+        const targetId = resolveLocationId(dest);
+        if (!targetId) {
+            travelIssueNote = `IMPORTANT: the story tried to transport the player to "${dest}", but no such place is known here. The party REMAINS AT ${locName(currentGameState.currentLocation)} — the magic fizzles, the way does not open; do NOT narrate them arriving anywhere new.`;
+            sendGhostMessage(`🚫 No place called "${dest}" to be spirited away to.`);
+            return false;
+        }
+        if (targetId === currentGameState.currentLocation) return false;
+        await arriveAt(targetId, `🌀 **You are spirited away to: ${world.locations[targetId]?.name || targetId}**${presenceLine(targetId)}`);
+        return true;
+    }
+
+    async function doNlMove(dest) {
+        const world = currentGameState.worldData;
+        const targetId = resolveLocationId(dest);
         if (!targetId) {
             travelIssueNote = `IMPORTANT: the player tried to travel to "${dest}", but no such place is known here. The party ENDS UP STILL AT ${locName(currentGameState.currentLocation)} — you may play it for a light comic beat (setting off confidently, getting turned around, sheepishly ending where they started), but do NOT narrate them arriving anywhere new.`;
             sendGhostMessage(`🚫 No place called "${dest}" around here.`);
@@ -6106,7 +6149,7 @@ Narrate the result briefly, grounded in this location and the story's current be
                 //      → she's carried along (still party), dropped at the INN.
                 // A party member is only dragged by a move that happens BEFORE she's
                 // removed. Non-async effects (items, gold, etc.) go through applyEffects.
-                const ASYNC_TYPES = ['move', 'add_party', 'remove_party', 'advance_time', 'rest', 'examine'];
+                const ASYNC_TYPES = ['move', 'event_teleport', 'add_party', 'remove_party', 'advance_time', 'rest', 'examine'];
                 const otherEffects = (effects || []).filter(e => !ASYNC_TYPES.includes(e.type));
                 let moved = false;
                 for (const e of (effects || [])) {
@@ -6121,6 +6164,7 @@ Narrate the result briefly, grounded in this location and the story's current be
                         case 'add_party': await addToParty(e.npc); break;
                         case 'remove_party': dismissedThisTurn.push(e.npc); await removeFromParty(e.npc); break;
                         case 'move': moved = await doNlMove(e.destination) || moved; break;
+                        case 'event_teleport': moved = await doEventTeleport(e.destination) || moved; break;
                         case 'rest': await doRest(); break;
                         case 'advance_time': await advanceTimeBy(e.periods || 1); break;
                         default: break;   // sync effect — handled by applyEffects below
@@ -6298,6 +6342,8 @@ Narrate the result briefly, grounded in this location and the story's current be
         objectives: () => playerObjectives(),
         statuses: (target) => ((!target || target === 'player') ? getPlayerRpgData()?.customEffects : getRelationship(target).customEffects) || [],
         statusNote: (n) => renderStatusReactionNotes(getRelationship(n)),
+        eventTeleport: (d) => doEventTeleport(d),
+        addParty: (n) => addToParty(n),
         adoptCast: (worldId, charName) => {   // headless adoption (no form UI): castData + rpg block, world-ready
             const world = authoredWorlds()[worldId]; const char = getCtx().characters.find(c => c.name === charName);
             if (!world || !char) return null;
