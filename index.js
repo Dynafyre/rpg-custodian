@@ -5531,7 +5531,7 @@ Only roll if uncertain for THIS character: roughly (DC − their stat) between 5
 
 === EFFECTS ("effects_on_success"/"effects_on_failure": arrays of {type,...}) ===
 A single message often contains SEVERAL effects — a look taken while talking, a job accepted while setting off, a place entered while greeting someone. Emit ALL of them, in narrative order. NEVER let one effect crowd out another: dialogue does not cancel a travel, a travel does not cancel an acceptance, a look does not replace a move.
-  {"type":"move","destination":"..."}  the player travels to / heads for / walks to / steps INTO any KNOWN PLACE (see the list). Give the place he actually INTENDS to reach — the engine finds the route there automatically, however many stops it takes; never substitute an intermediate stop for the real destination. Entering, going inside, or arriving at a named place IS a move — emit it even when the message also looks around, greets someone, or converses (emit the move FIRST, then the rest). Deterministic, no check.
+  {"type":"move","destination":"..."}  the player travels to / heads for / walks to / steps INTO any KNOWN PLACE (see the list). Give the place he actually INTENDS to reach — copy its name AS LISTED in KNOWN PLACES (the player may call it something else: "the secret tunnel", "her shop" — you translate to the listed name) — the engine finds the route there automatically, however many stops it takes; never substitute an intermediate stop for the real destination. Entering, going inside, or arriving at a named place IS a move — emit it even when the message also looks around, greets someone, or converses (emit the move FIRST, then the rest). SECRET-tagged places are fully valid destinations exactly like any other — the tag only describes NPC knowledge and menus, never routability; using a hidden entrance, lifting the false bush, slipping through the gap IS a move there. Deterministic, no check.
   {"type":"advance_time","periods":N}  narrative time passes. Each period is a step Morning→Day→Evening→Night→(next) Morning. A FULL DAY IS EXACTLY 4 PERIODS — for an explicit span of days use N = days×4 EXACTLY: "one day" = 4, "two days" = 8, "three days" = 12, "a week" = 28. For a time-of-day span, count periods from CURRENT TIME to the target: from Morning "long into the evening" = 2; "that night"/"until nightfall" = to Night; "sleep until morning" = to next Morning.
   {"type":"add_party","npc":"..."}  a present NPC agrees to travel WITH the player or to spend extended time together (join me, come along, let's spend the day together, share stories into the evening). She then follows the player everywhere until dismissed.
   {"type":"remove_party","npc":"..."}  a companion parts ways / is dismissed / stays behind.
@@ -5830,13 +5830,34 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         const world = currentGameState.worldData;
         const want = String(dest || '').toLowerCase().trim();
         if (!want) return false;
-        const targetId = Object.keys(world.locations).find(id => {
+        let targetId = Object.keys(world.locations).find(id => {
             const names = [world.locations[id]?.name || id, ...(world.locations[id]?.alternate_names || [])];
             return id.toLowerCase() === want || names.some(n => {
                 const nm = String(n).toLowerCase();
                 return nm === want || nm.includes(want) || want.includes(nm);
             });
         });
+        // Substring missed? Token-overlap fallback: "the secret tunnel" shares
+        // no substring with "Hidden Tunnel" (synonym descriptors), but the noun
+        // does. Pick the UNIQUE best-scoring place; ties or zero stay unmatched.
+        if (!targetId) {
+            const stop = new Set(['the', 'a', 'an', 'of', 'to', 'at', 'in']);
+            const toks = (s) => String(s).toLowerCase().split(/[^a-z0-9]+/).filter(t => t && !stop.has(t));
+            const wantT = toks(want);
+            if (wantT.length) {
+                let best = null, bestScore = 0, tied = false;
+                for (const id of Object.keys(world.locations)) {
+                    const names = [world.locations[id]?.name || id, ...(world.locations[id]?.alternate_names || [])];
+                    const score = Math.max(...names.map(n => {
+                        const nt = new Set(toks(n));
+                        return wantT.filter(t => nt.has(t)).length;
+                    }));
+                    if (score > bestScore) { best = id; bestScore = score; tied = false; }
+                    else if (score === bestScore && score > 0 && id !== best) tied = true;
+                }
+                if (best && bestScore > 0 && !tied) targetId = best;
+            }
+        }
         if (!targetId) {
             travelIssueNote = `IMPORTANT: the player tried to travel to "${dest}", but no such place is known here. The party ENDS UP STILL AT ${locName(currentGameState.currentLocation)} — you may play it for a light comic beat (setting off confidently, getting turned around, sheepishly ending where they started), but do NOT narrate them arriving anywhere new.`;
             sendGhostMessage(`🚫 No place called "${dest}" around here.`);
