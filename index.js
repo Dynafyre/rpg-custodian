@@ -5090,11 +5090,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         expire(rd, 'Your');
         for (const [name, rel] of Object.entries(rd.relationships || {})) {
             expire(rel, `${name}'s`, name);
-            // Arousal cools by 1 per time period toward calm (romance-redesign
-            // §D) — bodies cool off; affection doesn't. Step-guarded so a
-            // repeated prune in the same period can't double-decay.
+            // Arousal cools by 2 per time period toward calm (romance-redesign
+            // §D; raised from 1, Dyna 2026-07-28 — it lingered too long) —
+            // bodies cool off; affection doesn't. Step-guarded so a repeated
+            // prune in the same period can't double-decay.
             if ((rel.arousal || 1) > 1 && rel.arousalDecayStep !== step) {
-                rel.arousal -= 1;
+                rel.arousal = Math.max(1, (rel.arousal || 1) - 2);
                 rel.arousalDecayStep = step;
             }
         }
