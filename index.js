@@ -974,7 +974,12 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         const world = authoredWorlds()[worldId];
         if ((world.cast || []).includes(char.name)) { wmToast(`${char.name} is already in this cast.`, 'warning'); return; }
         world.castData = world.castData || {};
-        world.castData[char.name] = cardFromLiveChar(char);
+        const cd = cardFromLiveChar(char);
+        // Remember where the portrait lives — the RPGC_ world copy is created
+        // from this JSON later, and without a source the create API paints the
+        // default silhouette over her face.
+        cd.extensions.rpg_custodian = { ...(cd.extensions.rpg_custodian || {}), source_avatar: char.avatar };
+        world.castData[char.name] = cd;
         openCastForm(worldId, char.name, { adopting: true });
     }
 
@@ -3434,6 +3439,31 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
      * Create a SillyTavern character from V2/V3 card JSON data.
      * Shared by Game Master bootstrap and world cast auto-creation.
      */
+    /** Best-available portrait for a (re)created card, or null. Priority:
+     *  the adopted original recorded at adoption → an on-disk original with
+     *  the same name → the existing world copy's current face (refreshes must
+     *  not wipe a portrait back to the silhouette). */
+    async function resolvePortraitBlob(charData, fileName) {
+        try {
+            const chars = getCtx().characters || [];
+            const rc = charData.extensions?.rpg_custodian || {};
+            const candidates = [
+                rc.source_avatar,
+                chars.find(c => c.name === charData.name && !String(c.avatar).startsWith('RPGC_') && c.avatar !== `${fileName}.png`)?.avatar,
+                `${fileName}.png`,
+            ].filter(av => av && chars.some(c => c.avatar === av));
+            for (const av of candidates) {
+                for (const url of [`/characters/${encodeURIComponent(av)}`, `/thumbnail?type=avatar&file=${encodeURIComponent(av)}`]) {
+                    try {
+                        const r = await fetch(url);
+                        if (r.ok) { const b = await r.blob(); if (b.size > 0 && /image/.test(b.type || 'image/png')) return b; }
+                    } catch { /* next url */ }
+                }
+            }
+        } catch (e) { console.warn('RPG Custodian: portrait lookup failed', e); }
+        return null;
+    }
+
     async function createCharacterFromCardData(cardData, fileName) {
         try {
             // Use the data object from the card (V2/V3 format)
@@ -3468,9 +3498,19 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 formData.append('tags', charData.tags.join(','));
             }
             
-            // Add extensions data (normalized: talkativeness 0 always)
-            formData.append('extensions', JSON.stringify({ ...(charData.extensions || {}), talkativeness: 0 }));
-            
+            // Add extensions data (normalized: talkativeness 0 always).
+            // portrait_v marks that this card was created portrait-aware, so
+            // pre-fix silhouette copies self-heal exactly once on next start.
+            const ext = structuredClone(charData.extensions || {});
+            ext.talkativeness = 0;
+            ext.rpg_custodian = { ...(ext.rpg_custodian || {}), portrait_v: 1 };
+            formData.append('extensions', JSON.stringify(ext));
+
+            // Attach her actual face — without an avatar file, the create API
+            // paints the default silhouette.
+            const portrait = await resolvePortraitBlob(charData, fileName);
+            if (portrait) formData.append('avatar', portrait, `${fileName}.png`);
+
             // Create character using SillyTavern's API with proper headers
             const saveResponse = await fetch('/api/characters/create', {
                 method: 'POST',
@@ -3564,7 +3604,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 if (!existing) {
                     console.log(`RPG Custodian: Creating cast member "${castName}" as ${fileName}.png...`);
                     await createCharacterFromCardData(cardData, fileName);
-                } else if (liveVersion !== srcVersion || cardHasGreeting(existing) || Number(existing.talkativeness) !== 0) {
+                } else if (liveVersion !== srcVersion || cardHasGreeting(existing) || Number(existing.talkativeness) !== 0
+                    || !existing.data?.extensions?.rpg_custodian?.portrait_v) {   // pre-portrait-fix copy: heal her face once
                     console.log(`RPG Custodian: Refreshing "${castName}" card (${liveVersion || 'none'} → ${srcVersion})`);
                     await createCharacterFromCardData(cardData, fileName);
                 }
@@ -6202,6 +6243,15 @@ Narrate the result briefly, grounded in this location and the story's current be
         objectives: () => playerObjectives(),
         statuses: (target) => ((!target || target === 'player') ? getPlayerRpgData()?.customEffects : getRelationship(target).customEffects) || [],
         statusNote: (n) => renderStatusReactionNotes(getRelationship(n)),
+        adoptCast: (worldId, charName) => {   // headless adoption (no form UI): castData + rpg block, world-ready
+            const world = authoredWorlds()[worldId]; const char = getCtx().characters.find(c => c.name === charName);
+            if (!world || !char) return null;
+            const cd = cardFromLiveChar(char);
+            cd.extensions.rpg_custodian = { ...(cd.extensions.rpg_custodian || {}), source_avatar: char.avatar, role: 'villager', home_location: world.startingLocation, card_version: '1.1' };
+            world.castData = world.castData || {}; world.castData[charName] = cd;
+            if (!(world.cast || []).includes(charName)) world.cast = [...(world.cast || []), charName];
+            context.saveSettingsDebounced(); return cd.extensions.rpg_custodian;
+        },
         checkConditions: () => checkPendingConditions(),
         appraise: (item) => appraiseItem(item),
         equipped: () => equippedItemsSummary(),
