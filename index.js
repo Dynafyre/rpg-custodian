@@ -1974,7 +1974,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         await setBackground(location.background);
 
         const time = TIME_PERIODS[currentGameState.currentTime];
-        sendGameMasterMessage(`💾 **Game Loaded: ${worldData.name}**\n\n🗓️ Day ${currentGameState.dayCount}, ${time.emoji} ${time.name}\n\n📍 **${location.name}**\n${location.description}${presenceLine(currentGameState.currentLocation)}`);
+        sendGameMasterMessage(`💾 **Game Loaded: ${worldData.name}**\n\n🗓️ Day ${currentGameState.dayCount}, ${time.emoji} ${time.name}\n\n📍 **${location.name}**${presenceLine(currentGameState.currentLocation)}`);
         console.log(`RPG Custodian: Continued save in "${save.world}" at "${currentGameState.currentLocation}"`);
     }
 
@@ -2891,7 +2891,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             await syncPresence();
 
             // Send movement message
-            sendGameMasterMessage(`🚶 **You traveled to: ${targetLocationData.name}**\n\n${targetLocationData.description}${presenceLine(targetLocation)}`);
+            sendGameMasterMessage(`🚶 **You traveled to: ${targetLocationData.name}**${presenceLine(targetLocation)}`);
 
             saveCurrentState();
             console.log(`RPG Custodian: Moved to location "${targetLocation}"`);
@@ -3329,7 +3329,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
             // Send game start message and persist it into the new chat file
             // (nothing else saves the chat until the first generation)
-            sendGameMasterMessage(`🎲 **New Game Started: ${worldData.name}**\n\n${worldData.description}\n\n📍 **${startingLocation.name}**\n${startingLocation.description}${presenceLine(currentGameState.currentLocation)}`);
+            sendGameMasterMessage(`🎲 **New Game Started: ${worldData.name}**\n\n${worldData.description}\n\n📍 **${startingLocation.name}**${presenceLine(currentGameState.currentLocation)}`);
             await getCtx().saveChat();
 
             // Create/update save file
