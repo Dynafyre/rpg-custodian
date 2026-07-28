@@ -134,6 +134,23 @@ jQuery(async () => {
         // Drive the Intent Analyzer off every player message
         context.eventSource.on(context.eventTypes.MESSAGE_SENT, onUserMessage);
 
+        // In-chat avatar tap → her cast editor (active-world cast only).
+        // Capture phase so it wins over ST's default avatar-zoom handler;
+        // anyone not in the playing world's editable cast falls through
+        // to vanilla behavior untouched.
+        document.addEventListener('click', (ev) => {
+            const av = ev.target?.closest?.('#chat .mes .avatar');
+            if (!av) return;
+            const mes = av.closest('.mes');
+            const name = mes?.getAttribute('ch_name');
+            if (!name || mes.getAttribute('is_user') === 'true' || mes.getAttribute('is_system') === 'true') return;
+            if (!currentGameState.isActive) return;
+            const worldId = currentGameState.worldData?.worldId;
+            if (!authoredWorlds()[worldId]?.castData?.[name]) return;   // GM, player, non-cast → default zoom
+            ev.preventDefault(); ev.stopPropagation();
+            openCastForm(worldId, name, { quick: true });
+        }, true);
+
         console.log('RPG Custodian: Extension initialized');
     }
 
@@ -998,6 +1015,12 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             <div id="rpg-cast-overlay">
                 <div class="rpg-form-panel">
                     <div class="rpg-popup-title">🎭 ${$('<i>').text(name).html()} — RPG details</div>
+                    ${(() => {
+                        const chars = getCtx().characters || [];
+                        const pav = [castCharFor(name)?.avatar, rc.source_avatar, chars.find(c => c.name === name && !String(c.avatar).startsWith('RPGC_'))?.avatar]
+                            .find(a => a && chars.some(c => c.avatar === a));
+                        return pav ? `<div class="cf-portrait-wrap"><img id="cf-portrait" src="/characters/${encodeURIComponent(pav)}" alt=""><button id="cf-portrait-full" class="rpg-map-btn" title="Full screen">⛶</button></div>` : '';
+                    })()}
                     ${warns.length ? `<div class="cast-warn">⚠️ Location-anchored phrasing in her card description may pin her to one spot in narration: <b>${$('<i>').text(warns.join(' · ')).html()}</b> — consider rewording the card.</div>` : ''}
                     <label>Role (public identity) <input id="cf-role" type="text" placeholder="innkeeper, wandering knight, witch…"></label>
                     <div class="cf-row">
@@ -1010,7 +1033,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     </div>
                     <div class="cf-row">
                         <label>Initial affection (0–10) <input id="cf-aff" type="number" min="0" max="10"></label>
-                        <label>Initial arousal (1–10) <input id="cf-aro" type="number" min="1" max="10"></label>
+                        <label>Initial arousal (0–10) <input id="cf-aro" type="number" min="0" max="10"></label>
                     </div>
                     <label>Current stamina — live game only, applied by ⚡ <input id="cf-stam" type="number" min="0" max="99"></label>
                     <label>🧠 Character note — her forefront thoughts / current objective <span id="cf-note-state"></span>
@@ -1034,7 +1057,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-fert').val(rc.fertility ?? 30);
         $('#cf-rug').val(rc.ruggedness ?? 2);
         $('#cf-aff').val(rc.base_stats?.affection ?? 0);
-        $('#cf-aro').val(rc.base_stats?.arousal ?? 1);
+        $('#cf-aro').val(rc.base_stats?.arousal ?? 0);
         // Current stamina is per-save state: only meaningful with a running
         // session in this world that has her on stage.
         {
@@ -1073,11 +1096,22 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
         setToggle($('#cf-secret'), !!rc.secret);
         $('#cf-shop').val(rc.shop || '');
+        // Portrait → full screen (the vanilla avatar-zoom behavior, relocated
+        // here). Overlay parents to the cast overlay, never body (ST layout).
+        const openPortraitFull = (e) => {
+            e.stopPropagation();
+            const src = $('#cf-portrait').attr('src');
+            if (!src) return;
+            const fs = $(`<div class="cf-portrait-fs"><img src="${src}" alt=""></div>`);
+            fs.on('click', () => fs.remove());
+            $('#rpg-cast-overlay').append(fs);
+        };
+        $('#cf-portrait, #cf-portrait-full').on('click', openPortraitFull);
         $('#cf-cancel').on('click', (e) => {
             e.stopPropagation();
             $('#rpg-cast-overlay').remove();
             if (opts.adopting) delete world.castData[name];   // adoption not completed
-            openCastManager(worldId);   // flow back to the cast list
+            if (!opts.quick) openCastManager(worldId);   // flow back to the cast list (quick-access closes outright)
         });
         const saveCastForm = (applyLive) => {
             const schedule = {};
@@ -1099,7 +1133,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 base_stats: {
                     ...(prev.base_stats || { familiarity: 0, pregnancies: 0, pregnancy_progress: 0 }),
                     affection: Math.max(0, Math.min(10, Number($('#cf-aff').val()) || 0)),
-                    arousal: Math.max(1, Math.min(10, Number($('#cf-aro').val()) || 1)),
+                    arousal: Math.max(0, Math.min(10, Number($('#cf-aro').val()) || 0)),
                 },
                 card_version: ((parseFloat(prev.card_version || '1.0') || 1.0) + 0.1).toFixed(1),
             };
@@ -1142,7 +1176,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
 
             $('#rpg-cast-overlay').remove();
             wmToast(`${name} ${opts.adopting ? 'joined the cast of' : 'updated in'} ${world.name || worldId}.`, 'success');
-            openCastManager(worldId);   // flow back to the cast list for the next edit
+            if (!opts.quick) openCastManager(worldId);   // flow back to the cast list (quick-access closes outright)
         };
         $('#cf-save').on('click', (e) => { e.stopPropagation(); saveCastForm(false); });
         $('#cf-apply').on('click', (e) => { e.stopPropagation(); saveCastForm(true); });
@@ -4145,7 +4179,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             }
             const beforeTier = affectionTier(getNpcAffection(npcName)).label;
             if (dAff) rel.affection = Math.max(0, Math.min(10, (rel.affection || 0) + dAff));
-            if (dAro) setNpcArousalRaw(npcName, (rel.arousal || 1) + dAro);
+            if (dAro) setNpcArousalRaw(npcName, (rel.arousal ?? 0) + dAro);
             savePlayer();
 
             // Every increment is shown to the player (Dyna's call) — with a
@@ -4416,7 +4450,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // heroes can share one living world. See core-mechanics §5b.
     function getRelationship(npcName) {
         const rd = getPlayerRpgData();
-        if (!rd) return { affection: 0, arousal: 1, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 };
+        if (!rd) return { affection: 0, arousal: 0, familiarity: 0, pregnancies: 0, pregnancy_progress: 0 };
         rd.relationships = rd.relationships || {};
         if (!rd.relationships[npcName]) {
             // First meeting: seed from the world-authored starting values on
@@ -4425,7 +4459,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             const bs = (currentGameState.npcRoster || []).find(n => n.name === npcName)?.baseStats || {};
             rd.relationships[npcName] = {
                 affection: Math.max(0, Math.min(10, Number(bs.affection) || 0)),
-                arousal: Math.max(1, Math.min(10, Number(bs.arousal) || 1)),
+                arousal: Math.max(0, Math.min(10, Number(bs.arousal) || 0)),
                 familiarity: 0, pregnancies: 0, pregnancy_progress: 0,
             };
         }
@@ -4443,16 +4477,16 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
     function getNpcArousal(name) {
         const rel = getRelationship(name);
-        const v = Math.max(1, Math.min(10, (rel.arousal || 1) + npcStatMod(name, 'arousal')));
+        const v = Math.max(0, Math.min(10, (rel.arousal ?? 0) + npcStatMod(name, 'arousal')));
         const cap = npcStatCap(name, 'arousal');
-        return cap != null ? Math.min(v, Math.max(1, cap)) : v;
+        return cap != null ? Math.min(v, Math.max(0, cap)) : v;
     }
     // Canonical raw-arousal write: clamps 1–10 AND to any active cap, so a
     // capped woman doesn't silently bank arousal that springs back later.
     function setNpcArousalRaw(name, v) {
         const rel = getRelationship(name);
         const cap = npcStatCap(name, 'arousal');
-        rel.arousal = Math.max(1, Math.min(10, cap != null ? Math.min(v, Math.max(1, cap)) : v));
+        rel.arousal = Math.max(0, Math.min(10, cap != null ? Math.min(v, Math.max(0, cap)) : v));
         return rel.arousal;
     }
     function adjustNpcAffection(name, delta) {
@@ -4489,7 +4523,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // her body is doing regardless of what her pride says. Projected to the
     // NPC/GM and judged from physical evidence in her replies.
     function arousalTier(v) {
-        const a = Math.max(1, Math.min(10, v || 1));
+        const a = Math.max(0, Math.min(10, v ?? 0));
         if (a <= 2) return { label: 'Calm', band: 'Her body is at ease — breathing even, skin cool, attention undistracted by him physically.' };
         if (a <= 4) return { label: 'Stirred', band: 'Something about him has her faintly stirred — glances that last a half-second too long, a warmth in her cheeks she could still deny, small self-conscious adjustments of hair and clothing.' };
         if (a <= 6) return { label: 'Flushed', band: 'Her body is plainly interested — color in her face, breath a touch short, finding reasons to stand near him, touches that linger. She knows it, and is hiding it imperfectly.' };
@@ -4584,10 +4618,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Post-coital physiology (romance-redesign §D): orgasms spend Stamina,
         // so exhaustion IS the sated state. 1 left → running out of steam
         // (arousal caps at 5); 0 → satisfied and spent (arousal drops to 2).
-        const aroBefore = rel.arousal || 1;
+        const aroBefore = rel.arousal ?? 0;
         if (rel.npcStamina <= 0) setNpcArousalRaw(npcName, Math.min(aroBefore, 2));
         else if (rel.npcStamina === 1) setNpcArousalRaw(npcName, Math.min(aroBefore, 5));
-        if ((rel.arousal || 1) < aroBefore) {
+        if ((rel.arousal ?? 0) < aroBefore) {
             sendGhostMessage(`${npcName}: 😮‍💨 ${rel.npcStamina <= 0 ? 'utterly satisfied' : 'running out of steam'} — 🔥 arousal settles to ${getNpcArousal(npcName)}/10 (${arousalTier(getNpcArousal(npcName)).label})`);
         }
         // On the moment she drops: note WHEN (for autonomous waking) and WHERE she
@@ -5135,8 +5169,8 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             // §D; raised from 1, Dyna 2026-07-28 — it lingered too long) —
             // bodies cool off; affection doesn't. Step-guarded so a repeated
             // prune in the same period can't double-decay.
-            if ((rel.arousal || 1) > 1 && rel.arousalDecayStep !== step) {
-                rel.arousal = Math.max(1, (rel.arousal || 1) - 2);
+            if ((rel.arousal ?? 0) > 0 && rel.arousalDecayStep !== step) {
+                rel.arousal = Math.max(0, (rel.arousal ?? 0) - 2);
                 rel.arousalDecayStep = step;
             }
         }
@@ -5758,7 +5792,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     if ((eff.target || 'player') === 'player') { spendStamina(eff.amount || 1); sendGhostMessage(`💢 You take ${eff.amount || 1} — Stamina ${getStamina()}/${maxStamina()}${getPlayerRpgData()?.stats.unconscious ? ' — you black out!' : ''}`); }
                     else if (eff.npc) { const rel = spendNpcStamina(eff.npc, eff.amount || 1); sendGhostMessage(`⚔️ ${eff.npc} takes ${eff.amount || 1} — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she goes down!' : ''}`); }
                     break;
-                case 'adjust_arousal': { const rel = getRelationship(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal || 1) + (eff.amount || 0)); if (eff.amount) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
+                case 'adjust_arousal': { const rel = getRelationship(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal ?? 0) + (eff.amount || 0)); if (eff.amount) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;

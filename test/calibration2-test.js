@@ -69,7 +69,7 @@ try {
     await page.evaluate(() => { window.rpgCustodianDebug.setAffection('Bryony', 2); window.rpgCustodianDebug.setArousal('Bryony', 1); });
     const p = await pushReply('Bryony', 'Bryony snorts, pushing off the fence. "Accountable to me? Don\'t get ideas, muscle-for-hire. You\'re accountable to the Madam\'s coin, same as anyone." She strides past him close enough that her vest creaks, hips swaying, and glances back over her shoulder. "Fair warning — the girls there are friendly. Don\'t get distracted. You\'re there to look mean, not get your cock wet." A pause; her scarred lip twitches. "Unless you\'ve got coin. Then what you do after your shift is your own damn business."');
     await page.evaluate(l => window.rpgCustodianDebug.judgeReaction('Bryony', l - 1), p); await wait(500);
-    const r = await page.evaluate(() => { const x = window.rpgCustodianDebug.rel('Bryony'); return { aff: x.affection || 0, aro: x.arousal || 1 }; });
+    const r = await page.evaluate(() => { const x = window.rpgCustodianDebug.rel('Bryony'); return { aff: x.affection || 0, aro: x.arousal ?? 0 }; });
     const judgeLog = (consoleLogs.filter(l => l.includes('reaction judge Bryony')).slice(-1)[0] || '').slice(-120);
     console.log('judge:', judgeLog);
     check('unprompted cock-talk → arousal at least +1', r.aro >= 2, `aro=${r.aro}`);
