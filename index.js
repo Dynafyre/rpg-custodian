@@ -5237,9 +5237,15 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         return 'live';
     }
     function birthKindFor(npcName, override) {
-        if (override && ['live', 'egg', 'crystal'].includes(override)) return override;
         const rel = getRelationship(npcName);
-        return rel.conceptionKind || resolveConceptionKind(npcName);
+        // What she carries was decided AT CONCEPTION and is engine ground
+        // truth — the Custodian's kind is only a fallback for a pregnancy that
+        // predates the record, NEVER an override. It reasons from what it can
+        // see (Seline is human, so: a child) and cannot know a magically
+        // egg-bearing womb, so letting it win turned a laid egg into a baby.
+        if (['live', 'egg', 'crystal'].includes(rel.conceptionKind)) return rel.conceptionKind;
+        if (override && ['live', 'egg', 'crystal'].includes(override)) return override;
+        return resolveConceptionKind(npcName);
     }
     function awardPowerTokens(n) {
         const rd = getPlayerRpgData(); if (!rd) return 0;
