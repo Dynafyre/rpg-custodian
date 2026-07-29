@@ -88,11 +88,13 @@ route around it with "verbatim" passthrough.
   PLAYER's move options — he found it, they haven't.
 - **Level 2 — hidden:** out of global NPC context AND absent from the shown
   Move/Look menus. The Custodian still holds it in KNOWN PLACES, annotated
-  `(secret — move there only when the player or an NPC explicitly names,
-  seeks, or leads the way to it)`, so fuzzy matching works unchanged and it
-  never volunteers the place as a helpful suggestion. **World authors seed
-  clues** to level-2 places in NPC cards and location descriptions; the
-  engine keeps the secret until the story spends it.
+  simply `(secret: unknown to NPCs, not on the player's menus)` — purely
+  informational, no behavioral restriction. If "take me somewhere
+  interesting" lands the player at a hidden spring, that's emergent
+  discovery working as intended (Dyna's call — no protection clauses).
+  **World authors seed clues** to level-2 places in NPC cards and location
+  descriptions; the engine keeps the secret out of projections until the
+  story finds it.
 - (Engine support for secrecy is independent of the editor and can ship
   first — it's small and immediately useful for prototype-town.)
 

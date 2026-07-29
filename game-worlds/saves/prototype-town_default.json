@@ -1,0 +1,15 @@
+{
+  "version": "1.0",
+  "metadata": {
+    "timestamp": "2025-01-11T00:00:00Z",
+    "worldId": "prototype-town",
+    "playerName": "Player",
+    "saveDescription": "New Game"
+  },
+  "player": {
+    "location": "outskirts",
+    "actionsCount": 0,
+    "gameDaysSpent": 0,
+    "lastAction": "started_adventure"
+  }
+}

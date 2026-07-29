@@ -19,3 +19,4 @@ node_modules/
 
 # Extension development specific
 # Add any extension-specific ignore patterns here
+test/screenshots/

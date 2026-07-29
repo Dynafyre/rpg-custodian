@@ -1,0 +1,1528 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Dragon Eggs</title>
+<link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@700&display=swap" rel="stylesheet">
+<style>body{font-family:Arial,sans-serif;background:#2d2d2d;color:#f0f0f0;display:flex;align-items:center;justify-content:center;min-height:100vh;margin:0;padding:10px}.container-wrapper{position:relative;max-width:450px;width:100%;height:600px}.c{background:#383838;border-radius:10px;padding:10px;box-shadow:0 4px 15px rgba(0,0,0,.3);text-align:center;width:100%}h1{font-size:20px;margin:0 0 10px;color:#ff69b4}.main{display:flex;align-items:center;justify-content:center;gap:15px;height:550px;width:200px;margin:0 auto}.m{flex:0 0 auto}.controls{display:flex;flex-direction:column;gap:8px;min-width:60px}.ct{display:flex;flex-direction:column;align-items:center;gap:4px}.s{padding:6px;background:#444;border-radius:8px}.l{font-weight:700;margin-bottom:3px;color:#e0e0e0;font-size:12px}button{border:none;border-radius:5px;padding:4px 8px;font-size:12px;cursor:pointer;transition:all .2s ease;color:#f0f0f0;font-weight:700;min-width:35px}button:hover{transform:translateY(-1px)}button:active{transform:translateY(0)}.v{font-size:12px;font-weight:700;margin:2px 0;min-width:35px;background:#333;padding:4px;border-radius:5px}.i{background:#ff69b4}.d{background:#4169e1}.i:hover{background:#ff8dc8}.d:hover{background:#6989ff}</style></head><body><div class="container-wrapper"><!-- Heart Button for minimize toggle - FIXED POSITION PARENT -->
+
+<!-- Flame behind heart button -->
+<svg id="flameSvg" style="position: absolute; top: 408px; left: 236px; width: 80px; height: 100px; z-index: 15; pointer-events: none; opacity: 0; transform: translate(-50%, -50%) scale(0);" viewBox="0 0 100 125">
+  <defs>
+    <linearGradient id="flameGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffaa00"/>
+      <stop offset="50%" stop-color="#ff4400"/>
+      <stop offset="100%" stop-color="#ff6600"/>
+    </linearGradient>
+  </defs>
+  <path d="m 81.014879,70.393169 c -8.384684,-8.824526 -8.545808,-18.89182 -4.165749,-27.781487 -9.282597,7.423383 -14.508946,16.60171 -10.859418,25.869443 0.463037,1.178904 0.760253,2.333537 0.977691,3.512441 l 0.0829,1.42158 -0.517786,0.155825 -2.204107,-4.112749 C 61.196676,62.458886 60.735205,55.07893 63.810633,47.499722 69.934893,32.654232 61.933465,18.117838 47.343174,6.4284357 54.066565,20.562497 53.440843,36.632868 39.831373,50.857616 c -2.613956,2.711603 -4.763314,5.467911 -6.477794,8.289357 l -1.035572,1.866065 0.08291,-0.487911 c 2.748491,-9.556391 -3.239673,-18.225096 -13.202746,-24.758234 5.171601,8.466898 5.961574,18.513755 -1.551792,28.070147 -6.288513,9.866765 -7.8950568,22.114324 -2.96749,31.204524 7.704212,13.135256 17.939471,19.180466 31.849287,19.490846 2.013264,0.0217 4.082843,-0.0434 6.207171,-0.26695 11.350611,-1.00008 25.532616,-5.53177 30.105084,-16.267073 4.51772,-9.203861 6.668639,-18.628697 -1.825546,-27.605218 z" 
+        fill="url(#flameGradient)" 
+        stroke-width="1.41351"/>
+</svg>
+
+<svg id="heartButtonSvg" style="position: absolute; top: 425px; left: 235px; width: 50px; height: 50px; z-index: 20; pointer-events: auto; cursor: pointer; transform: translate(-50%, -50%);" viewBox="0 0 50 50">
+  <defs>
+    <!-- Copy gradient definition for heart button -->
+    <radialGradient id="heartButtonGradientExternal" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#ff69b4" stop-opacity="0.4"/>
+      <stop offset="70%" stop-color="#ff69b4" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#ff69b4" stop-opacity="0"/>
+    </radialGradient>
+    <!-- Copy pink glow filter -->
+    <filter id="pinkGlowExternal" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="15" result="blur"/>
+      <feFlood flood-color="#ff69b4" result="pink"/>
+      <feComposite in="pink" in2="blur" operator="in" result="pinkBlur"/>
+      <feComposite in="SourceGraphic" in2="pinkBlur" operator="over"/>
+    </filter>
+  </defs>
+  
+  <g id="heartButton" transform="translate(25, 25)">
+    <!-- Heart background circle for better click target -->
+    <circle cx="0" cy="0" r="22" fill="url(#heartButtonGradientExternal)"/>
+    <!-- White background border (thickest) -->
+    <path d="M0,7 L-8,-2 A5,5 0 0,1 -4,-7 A5,5 0 0,1 0,-2 A5,5 0 0,1 4,-7 A5,5 0 0,1 8,-2 L0,7 Z" 
+          fill="none" 
+          stroke="#ffffff" 
+          stroke-width="3.5" 
+          opacity="0.9"/>
+    <!-- Large heart -->
+    <path d="M0,7 L-8,-2 A5,5 0 0,1 -4,-7 A5,5 0 0,1 0,-2 A5,5 0 0,1 4,-7 A5,5 0 0,1 8,-2 L0,7 Z" 
+          fill="#ffffff" 
+          stroke="#ff69b4" 
+          stroke-width="1.5" 
+          opacity="0.9"/>
+    <!-- Subtle glow effect -->
+    <path d="M0,7 L-8,-2 A5,5 0 0,1 -4,-7 A5,5 0 0,1 0,-2 A5,5 0 0,1 4,-7 A5,5 0 0,1 8,-2 L0,7 Z" 
+          fill="none" 
+          stroke="#ff69b4" 
+          stroke-width="3" 
+          opacity="0.3" 
+          filter="url(#pinkGlowExternal)"/>
+    <!-- Pregnancy count number (only visible in widget mode) -->
+    <text id="pregnancyCount" x="0" y="0" 
+          text-anchor="middle" 
+          dominant-baseline="central" 
+          font-family="Dancing Script, cursive" 
+          font-size="8" 
+          font-weight="bold" 
+          fill="#8B0000" 
+          opacity="0" 
+          pointer-events="none">0</text>
+  </g>
+</svg>
+
+<div class="controls" style="position: absolute; left: 0; top: 0; width: 60px;"><div class="s"><div class="l">Affection</div><div class="ct"><button class="i" onclick="uA(1)">+</button><div class="v" id="av">0/10</div><button class="d" onclick="uA(-1)">-</button></div></div><div class="s"><div class="l">Arousal</div><div class="ct"><button class="i" onclick="updateArousal(1)">+</button><div class="v" id="arousal-display">0/10</div><button class="d" onclick="updateArousal(-1)">-</button></div></div><div class="s"><div class="l">Pregnancies</div><div class="ct"><button class="i" onclick="uE(1)">+</button><div class="v" id="ev">0</div><button class="d" onclick="uE(-1)">-</button></div></div></div>
+
+<div class="c"><div class="main"><div class="m" style="position: relative; border-radius: 50px; overflow: hidden; background: transparent;"><canvas id="fireCanvas" width="200" height="550" style="position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none;"></canvas><svg viewBox="0 0 150 340" width="200" height="550" xmlns="http://www.w3.org/2000/svg" style="position: relative; z-index: 1;">
+<defs>
+<linearGradient id="a" x1="0%" y1="0%" x2="0%" y2="100%">
+<stop offset="0%" stop-color="#ff69b4"/>
+<stop offset="100%" stop-color="#d44a91"/>
+</linearGradient>
+<linearGradient id="eggGrad" x1="30%" y1="30%" x2="70%" y2="70%">
+<stop offset="0%" stop-color="#ff8dc8"/>
+<stop offset="70%" stop-color="#ff69b4"/>
+<stop offset="100%" stop-color="#d44a91"/>
+</linearGradient>
+<radialGradient id="eggCore" cx="40%" cy="40%" r="50%" fx="30%" fy="30%">
+<stop offset="0%" stop-color="#ffe6f5"/>
+<stop offset="50%" stop-color="#ffc0dd"/>
+<stop offset="100%" stop-color="#ffa6ce"/>
+</radialGradient>
+<!-- Paint spray gradients -->
+<radialGradient id="paintGradient" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#ff69b4" stop-opacity="0.9"/>
+<stop offset="70%" stop-color="#ff1493" stop-opacity="0.7"/>
+<stop offset="100%" stop-color="#c71585" stop-opacity="0.5"/>
+</radialGradient>
+<radialGradient id="paintGlow" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#ff69b4" stop-opacity="1"/>
+<stop offset="70%" stop-color="#ff69b4" stop-opacity="0.3"/>
+<stop offset="100%" stop-color="#ff69b4" stop-opacity="0"/>
+</radialGradient>
+<radialGradient id="heartButtonGradient" cx="50%" cy="50%" r="50%">
+<stop offset="0%" stop-color="#ff69b4" stop-opacity="0.4"/>
+<stop offset="70%" stop-color="#ff69b4" stop-opacity="0.2"/>
+<stop offset="100%" stop-color="#ff69b4" stop-opacity="0"/>
+</radialGradient>
+<linearGradient id="trailGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+<stop offset="0%" stop-color="#ff69b4" stop-opacity="0.1"/>
+<stop offset="50%" stop-color="#ff1493" stop-opacity="0.5"/>
+<stop offset="100%" stop-color="#ff69b4" stop-opacity="0.9"/>
+</linearGradient>
+<!-- Pentagram gradient -->
+<linearGradient id="pentagramGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+<stop offset="0%" stop-color="#ff69b4">
+<animate attributeName="stop-color" values="#ff69b4;#dc143c;#ff69b4" dur="4s" repeatCount="indefinite"/>
+</stop>
+<stop offset="100%" stop-color="#dc143c">
+<animate attributeName="stop-color" values="#dc143c;#ff69b4;#dc143c" dur="4s" repeatCount="indefinite"/>
+</stop>
+</linearGradient>
+<!-- Modified egg glow filter with larger dimensions and circular effect -->
+<filter id="c" x="-100%" y="-100%" width="300%" height="300%">
+<feGaussianBlur stdDeviation="12" result="blur"/>
+<feComposite in="SourceGraphic" in2="blur" operator="over"/>
+</filter>
+<!-- Add new filter for pink glow effect -->
+<filter id="pinkGlow" x="-20%" y="-20%" width="140%" height="140%">
+  <feGaussianBlur stdDeviation="15" result="blur"/>
+  <feFlood flood-color="#ff69b4" result="pink"/>
+  <feComposite in="pink" in2="blur" operator="in" result="pinkBlur"/>
+  <feComposite in="SourceGraphic" in2="pinkBlur" operator="over"/>
+</filter>
+<!-- Paint spray glow filter -->
+<filter id="glow">
+<feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+<feMerge>
+<feMergeNode in="coloredBlur"/>
+<feMergeNode in="SourceGraphic"/>
+</feMerge>
+</filter>
+<mask id="meterMask">
+<circle id="bulbMaskCircle" cx="75" cy="50" r="35" fill="white"/>
+<rect x="60" y="80" width="30" height="210" rx="15" ry="15" fill="white"/>
+</mask>
+</defs>
+
+<!-- Spinning Pentagram Background -->
+<g id="pentagram" opacity="0.6">
+  <!-- Complete pentagram as single path -->
+  <path d="M75,90 L122,235 L-1,145 L151,145 L28,235 Z"
+        fill="none"
+        stroke="url(#pentagramGrad)"
+        stroke-width="7">
+    <animateTransform attributeName="transform"
+                      type="rotate"
+                      values="0 75 170;360 75 170"
+                      dur="20s"
+                      repeatCount="indefinite"/>
+  </path>
+
+  <circle cx="75" cy="170" r="87" fill="none" stroke="url(#pentagramGrad)" stroke-width="7">
+    <animateTransform attributeName="transform"
+                      type="rotate"
+                      values="0 75 170;-360 75 170"
+                      dur="30s"
+                      repeatCount="indefinite"/>
+  </circle>
+</g>
+
+<g id="w" transform="translate(75, 290)">
+  <!-- Left Wing (mirrored) -->
+  <g transform="translate(-20, -30) scale(-30, 40.5)">
+    <path d="M 1.423489,0.09775254 C 1.1637818,0.17269749 0.98042887,0.12099272 0.77313972,0.07205769 -0.48383304,-0.22470954 0.14357387,0.94353673 0.53095132,0.71527548 c 0.00217,-0.001274 0.004538,-0.001536 0.006932,-7.6789e-4 0.21555404,0.0693203 0.59229258,-0.0130935 0.68586858,-0.11934478 3.364e-4,-3.8723e-4 6.464e-4,-6.957e-4 0.00104,-0.001011 0.00962,-0.007718 0.015969,-0.0188954 0.00733,-0.0282676 -0.00192,-0.00208 -0.00264,-0.004712 -0.00205,-0.007475 5.936e-4,-0.002756 0.00234,-0.00487 0.00494,-0.005992 0.1761636,-0.07589 0.2018276,-0.13839116 0.2441799,-0.20237598 7.256e-4,-0.001096 0.00114,-0.002166 0.00132,-0.003459 0.00306,-0.0213238 0.00109,-0.0351655 -0.00662,-0.0404029 -0.00232,-0.001575 -0.00362,-0.003938 -0.00371,-0.006727 -8.57e-5,-0.002789 0.00107,-0.005224 0.00329,-0.006938 0.1042812,-0.080399 0.1069326,-0.14282127 0.1208762,-0.20723903 1.31e-5,-5.251e-5 1.97e-5,-9.189e-5 3.3e-5,-1.444e-4 C 1.609521,0.00890552 1.575704,0.03285457 1.517739,0.06260548 1.491223,0.07621748 1.45143,0.08969174 1.423497,0.0977517 Z M 1.1671195,0.32970201 c 0.223416,-0.0145046 0.3265826,-0.0878547 0.3683743,-0.20001275 0.00122,-0.003275 3.825e-4,-0.006773 -0.0022,-0.009142 -0.00259,-0.002376 -0.00616,-0.002934 -0.00934,-0.001451 -0.1851936,0.0859121 -0.5002923,0.0674301 -0.90882307,-0.02615423 -5.277e-5,-1.312e-5 -9.894e-5,-1.969e-5 -1.5171e-4,-3.281e-5 -0.82023371,-0.20406222 -0.55561883,0.6213694 -0.14777431,0.60736331 0.003608,-1.247e-4 0.006602,-0.00235 0.007757,-0.005749 0.001148,-0.003406 1.0555e-4,-0.006983 -0.002691,-0.009254 -0.0101181,-0.008191 -0.0202362,-0.0163882 -0.0303544,-0.0245857 -0.003074,-0.002487 -0.00401,-0.006616 -0.002309,-0.0101795 0.001696,-0.003564 0.005507,-0.005447 0.009393,-0.004647 0.3583554,0.0738489 0.53641811,0.0149443 0.69408679,-0.0589768 0.00345,-0.001615 0.00533,-0.005152 0.00478,-0.0089 -5.673e-4,-0.003747 -0.00343,-0.00657 -0.00719,-0.007115 -0.095357,-0.0136448 -0.18692822,-0.0298034 -0.26147484,-0.0572506 -0.004043,-0.00149 -0.006306,-0.00569 -0.005323,-0.009865 9.8894e-4,-0.004174 0.004901,-0.006931 0.009188,-0.006465 0.37379594,0.0404358 0.46171284,-0.0415515 0.53403034,-0.13022054 0.00227,-0.002776 0.00255,-0.006478 7.52e-4,-0.009569 -0.00181,-0.003097 -0.00519,-0.00468 -0.00873,-0.004095 -0.090958,0.0149707 -0.1705171,0.008026 -0.2431646,-0.006997 -0.00419,-8.6635e-4 -0.00704,-0.004614 -0.00675,-0.00886 2.968e-4,-0.004246 0.00365,-0.007567 0.00792,-0.007842 z"
+          fill="#f0f0f0" stroke="#333" stroke-width="0.02"/>
+  </g>
+  
+  <!-- Right Wing -->
+  <g transform="translate(20, -30) scale(30, 40.5)">
+    <path d="M 1.423489,0.09775254 C 1.1637818,0.17269749 0.98042887,0.12099272 0.77313972,0.07205769 -0.48383304,-0.22470954 0.14357387,0.94353673 0.53095132,0.71527548 c 0.00217,-0.001274 0.004538,-0.001536 0.006932,-7.6789e-4 0.21555404,0.0693203 0.59229258,-0.0130935 0.68586858,-0.11934478 3.364e-4,-3.8723e-4 6.464e-4,-6.957e-4 0.00104,-0.001011 0.00962,-0.007718 0.015969,-0.0188954 0.00733,-0.0282676 -0.00192,-0.00208 -0.00264,-0.004712 -0.00205,-0.007475 5.936e-4,-0.002756 0.00234,-0.00487 0.00494,-0.005992 0.1761636,-0.07589 0.2018276,-0.13839116 0.2441799,-0.20237598 7.256e-4,-0.001096 0.00114,-0.002166 0.00132,-0.003459 0.00306,-0.0213238 0.00109,-0.0351655 -0.00662,-0.0404029 -0.00232,-0.001575 -0.00362,-0.003938 -0.00371,-0.006727 -8.57e-5,-0.002789 0.00107,-0.005224 0.00329,-0.006938 0.1042812,-0.080399 0.1069326,-0.14282127 0.1208762,-0.20723903 1.31e-5,-5.251e-5 1.97e-5,-9.189e-5 3.3e-5,-1.444e-4 C 1.609521,0.00890552 1.575704,0.03285457 1.517739,0.06260548 1.491223,0.07621748 1.45143,0.08969174 1.423497,0.0977517 Z M 1.1671195,0.32970201 c 0.223416,-0.0145046 0.3265826,-0.0878547 0.3683743,-0.20001275 0.00122,-0.003275 3.825e-4,-0.006773 -0.0022,-0.009142 -0.00259,-0.002376 -0.00616,-0.002934 -0.00934,-0.001451 -0.1851936,0.0859121 -0.5002923,0.0674301 -0.90882307,-0.02615423 -5.277e-5,-1.312e-5 -9.894e-5,-1.969e-5 -1.5171e-4,-3.281e-5 -0.82023371,-0.20406222 -0.55561883,0.6213694 -0.14777431,0.60736331 0.003608,-1.247e-4 0.006602,-0.00235 0.007757,-0.005749 0.001148,-0.003406 1.0555e-4,-0.006983 -0.002691,-0.009254 -0.0101181,-0.008191 -0.0202362,-0.0163882 -0.0303544,-0.0245857 -0.003074,-0.002487 -0.00401,-0.006616 -0.002309,-0.0101795 0.001696,-0.003564 0.005507,-0.005447 0.009393,-0.004647 0.3583554,0.0738489 0.53641811,0.0149443 0.69408679,-0.0589768 0.00345,-0.001615 0.00533,-0.005152 0.00478,-0.0089 -5.673e-4,-0.003747 -0.00343,-0.00657 -0.00719,-0.007115 -0.095357,-0.0136448 -0.18692822,-0.0298034 -0.26147484,-0.0572506 -0.004043,-0.00149 -0.006306,-0.00569 -0.005323,-0.009865 9.8894e-4,-0.004174 0.004901,-0.006931 0.009188,-0.006465 0.37379594,0.0404358 0.46171284,-0.0415515 0.53403034,-0.13022054 0.00227,-0.002776 0.00255,-0.006478 7.52e-4,-0.009569 -0.00181,-0.003097 -0.00519,-0.00468 -0.00873,-0.004095 -0.090958,0.0149707 -0.1705171,0.008026 -0.2431646,-0.006997 -0.00419,-8.6635e-4 -0.00704,-0.004614 -0.00675,-0.00886 2.968e-4,-0.004246 0.00365,-0.007567 0.00792,-0.007842 z"
+          fill="#f0f0f0" stroke="#333" stroke-width="0.02"/>
+  </g>
+</g>
+
+<!-- Add the glow elements before the meter outline -->
+<g id="glowGroup">
+  <circle id="bulbGlow" cx="75" cy="50" r="35" fill="none" stroke="#ff69b4" stroke-width="6" opacity="0.2" filter="url(#pinkGlow)"/>
+  <rect id="tubeGlow" x="60" y="80" width="30" height="210" rx="15" ry="15" fill="none" stroke="#ff69b4" stroke-width="6" opacity="0.2" filter="url(#pinkGlow)"/>
+</g>
+
+<g id="meterOutline">
+<circle id="bb" cx="75" cy="50" r="35" fill="#f5f5f5" stroke="black" stroke-width="5"/>
+<rect id="tb" x="60" y="80" width="30" height="210" rx="15" ry="15" fill="#f5f5f5" stroke="black" stroke-width="3"/>
+</g>
+
+<g id="bulbJunctionFix">
+<circle id="bjf" cx="75" cy="50" r="35" fill="#f5f5f5" stroke="none"/>
+</g>
+
+<g mask="url(#meterMask)">
+<g id="eg"></g>
+
+<rect id="liquidBase" x="0" y="340" width="150" height="290" fill="url(#a)" opacity="0.95" stroke="none">
+</rect>
+
+<g id="waveContainer" stroke="none">
+  <!-- This will be replaced with a dynamically generated sine wave -->
+  <path id="sineWave" fill="#ff69b4" opacity="0.95" stroke="none"></path>
+</g>
+
+<!-- Add sparkles group -->
+<g id="sparklesGroup"></g>
+
+<!-- Paint spray containers (inside mask) -->
+<g id="paintTrails"></g>
+<g id="paintSpray"></g>
+</g>
+
+<g id="tm">
+</g>
+</svg>
+
+</div></div></div></div></div><script>
+let a=0,arousal=0,e=0,s=5,mx=100,maxA=10,maxArousal=10;const eggS=s;let currentLiquidY=340;
+
+// Smooth fill animation variables
+let targetAffection = 0; // Target affection value
+let displayAffection = 0; // Current animated display value
+let maxFillSpeed = 0.02; // Maximum fill speed per frame
+let animationFrame = null;
+
+// Fire effect variables
+let fireEffect = null;
+
+// Flame toggle state and scaling
+let flameVisible = false; // Track if flame is toggled on
+let currentFlameScale = 0; // Current arousal-based flame scale
+
+// Update flame size based on arousal level
+function updateFlameSize(arousalLevel) {
+  // Cap arousal at 15 for flame scaling
+  const cappedArousal = Math.min(arousalLevel, 15);
+  
+  // Enhanced scaling curve: boost lower values, smooth progression
+  // Scale all values up by 30%: 0->0, 1->0.39, 2->0.65, 5->1.04, 10->1.3, 15->1.56 (capped)
+  let scale;
+  if (cappedArousal === 0) {
+    scale = 0;
+  } else if (cappedArousal <= 5) {
+    // Boost lower values: 1-5 maps to 0.39-1.04 (30% increase)
+    scale = (0.3 + (cappedArousal - 1) * 0.125) * 1.3; // Base values * 1.3
+  } else if (cappedArousal <= 10) {
+    // Normal progression: 6-10 maps to 1.04-1.3 (30% increase)
+    scale = (0.8 + (cappedArousal - 5) * 0.04) * 1.3; // Base values * 1.3
+  } else {
+    // Higher values: 11-15 maps to 1.3-1.56 (30% increase)
+    scale = (1.0 + (cappedArousal - 10) * 0.04) * 1.3; // Base values * 1.3
+  }
+  
+  currentFlameScale = Math.max(0, scale);
+  console.log('updateFlameSize called:', { arousalLevel, cappedArousal, currentFlameScale, flameVisible, isAnimating });
+  
+  // Only apply visual changes if flame is currently visible (toggled on)
+  if (flameVisible) {
+    const flameSvg = document.getElementById('flameSvg');
+    if (!flameSvg) {
+      console.log('flameSvg element not found');
+      return;
+    }
+    
+    // Only update if not currently animating
+    if (!isAnimating) {
+      const opacity = currentFlameScale > 0.1 ? currentFlameScale : 0;
+      flameSvg.style.opacity = opacity;
+      flameSvg.style.transform = `translate(-50%, -50%) scale(${currentFlameScale})`;
+      console.log('Flame updated:', { opacity, scale: currentFlameScale });
+    }
+  }
+}
+
+// Update heart button colors based on affection level
+function updateHeartButtonColor(affection) {
+  console.log('Updating heart color for affection:', affection);
+  
+  // Find all heart-related elements with more specific selectors
+  const heartPaths = document.querySelectorAll('#heartButton path');
+  const gradientStops = document.querySelectorAll('#heartButtonGradientExternal stop');
+  
+  let color;
+  
+  if (affection <= 5) {
+    // Blue to Pink (0-5)
+    const t = affection / 5;
+    const r = Math.round(100 + (155 * t)); // 100 -> 255
+    const g = Math.round(150 + (-45 * t)); // 150 -> 105  
+    const b = Math.round(255 + (-75 * t)); // 255 -> 180
+    color = `rgb(${r}, ${g}, ${b})`;
+  } else if (affection <= 15) {
+    // Pink to Cherry Red (5-15)
+    const t = (affection - 5) / 10;
+    const r = Math.round(255 + (-35 * t)); // 255 -> 220
+    const g = Math.round(105 + (-85 * t)); // 105 -> 20
+    const b = Math.round(180 + (-160 * t)); // 180 -> 20
+    color = `rgb(${r}, ${g}, ${b})`;
+  } else {
+    // Cherry Red for 15+
+    color = 'rgb(220, 20, 20)';
+  }
+  
+  console.log('Setting color to:', color);
+  
+  // Update all heart paths
+  heartPaths.forEach(path => {
+    if (path.hasAttribute('stroke')) {
+      path.setAttribute('stroke', color);
+    }
+  });
+  
+  // Update gradient stops for button background
+  gradientStops.forEach(stop => {
+    stop.setAttribute('stop-color', color);
+  });
+}
+
+// Accordion animation variables
+let isCollapsed = false;
+let isAnimating = false;
+const animationDuration = 500;
+
+function toggleMeterCollapse() {
+  if (isAnimating) return;
+  
+  isAnimating = true;
+  isCollapsed = !isCollapsed;
+  
+  if (isCollapsed) {
+    collapseMeter();
+  } else {
+    expandMeter();
+  }
+}
+
+function collapseMeter() {
+  const meterDiv = document.querySelector('.m');
+  const svg = meterDiv.querySelector('svg');
+  const fireCanvas = document.getElementById('fireCanvas');
+  const heartButton = document.getElementById('heartButtonSvg');
+  const flameSvg = document.getElementById('flameSvg');
+  
+  const startTime = performance.now();
+  
+  function animate(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / animationDuration, 1);
+    const easeProgress = 1 - Math.pow(1 - progress, 3);
+    
+    // Scale down to heart button size and position
+    const scale = 1 - (easeProgress * 0.9); // Scale from 1 to 0.1
+    const targetX = 0; // Heart button is at left: 235px - 100px offset for centering
+    const targetY = 130; // Heart button is at top: 425px - 100px offset for centering + 30px down
+    
+    const translateX = targetX * easeProgress;
+    const translateY = targetY * easeProgress;
+    
+    meterDiv.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    meterDiv.style.transformOrigin = 'center center';
+    
+    // Scale up heart button 3x
+    const heartScale = 1 + (easeProgress * 2); // Scale from 1 to 3
+    heartButton.style.transform = `translate(-50%, -50%) scale(${heartScale})`;
+    
+    // Fade in and scale up flame behind heart button
+    // Use arousal-based scale (currentFlameScale) as the target, minimum 0.5 for visibility
+    const targetFlameScale = Math.max(currentFlameScale, 0.5);
+    const flameScale = easeProgress * targetFlameScale;
+    flameSvg.style.opacity = easeProgress;
+    flameSvg.style.transform = `translate(-50%, -50%) scale(${flameScale})`;
+    flameSvg.style.transformOrigin = '50% calc(50% + 40px)';
+    
+    // Fade out elements
+    const elements = ['pentagram', 'w', 'meterOutline', 'glowGroup', 'sparklesGroup', 'paintContainer', 'bulbJunctionFix', 'eg', 'liquidBase', 'waveContainer', 'paintTrails', 'paintSpray'];
+    elements.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.style.opacity = 1 - easeProgress;
+      }
+    });
+    
+    if (fireCanvas) {
+      fireCanvas.style.opacity = 1 - easeProgress;
+    }
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      isAnimating = false;
+      flameVisible = true; // Flame is now visible after collapse
+      // Apply current arousal-based scaling immediately when flame becomes visible
+      const flameSvg = document.getElementById('flameSvg');
+      if (flameSvg && currentFlameScale > 0.1) {
+        flameSvg.style.opacity = currentFlameScale;
+        flameSvg.style.transform = `translate(-50%, -50%) scale(${currentFlameScale})`;
+      }
+      // Show pregnancy count in widget mode
+      const pregnancyCountElement = document.getElementById('pregnancyCount');
+      if (pregnancyCountElement) {
+        pregnancyCountElement.style.opacity = '1';
+      }
+    }
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+function expandMeter() {
+  const meterDiv = document.querySelector('.m');
+  const svg = meterDiv.querySelector('svg');
+  const fireCanvas = document.getElementById('fireCanvas');
+  const heartButton = document.getElementById('heartButtonSvg');
+  const flameSvg = document.getElementById('flameSvg');
+  
+  const startTime = performance.now();
+  
+  function animate(currentTime) {
+    const elapsed = currentTime - startTime;
+    const progress = Math.min(elapsed / animationDuration, 1);
+    const easeProgress = 1 - Math.pow(1 - progress, 3);
+    
+    // Scale back up and return to center
+    const scale = 0.1 + (easeProgress * 0.9); // Scale from 0.1 to 1
+    const startX = 0;
+    const startY = 130;
+    
+    const translateX = startX * (1 - easeProgress);
+    const translateY = startY * (1 - easeProgress);
+    
+    meterDiv.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+    meterDiv.style.transformOrigin = 'center center';
+    
+    // Scale heart button back down from 3x to 1x
+    const heartScale = 3 - (easeProgress * 2); // Scale from 3 to 1
+    heartButton.style.transform = `translate(-50%, -50%) scale(${heartScale})`;
+    
+    // Fade out and scale down flame
+    // Use arousal-based scale as starting point
+    const targetFlameScale = Math.max(currentFlameScale, 0.5);
+    const flameScale = targetFlameScale - (easeProgress * targetFlameScale); // Scale from target to 0
+    flameSvg.style.opacity = 1 - easeProgress;
+    flameSvg.style.transform = `translate(-50%, -50%) scale(${flameScale})`;
+    flameSvg.style.transformOrigin = '50% calc(50% + 40px)';
+    
+    // Fade in elements
+    const elements = ['pentagram', 'w', 'meterOutline', 'glowGroup', 'sparklesGroup', 'paintContainer', 'bulbJunctionFix', 'eg', 'liquidBase', 'waveContainer', 'paintTrails', 'paintSpray'];
+    elements.forEach(id => {
+      const element = document.getElementById(id);
+      if (element) {
+        element.style.opacity = easeProgress;
+      }
+    });
+    
+    if (fireCanvas) {
+      fireCanvas.style.opacity = easeProgress;
+    }
+    
+    if (progress < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Reset all styles
+      meterDiv.style.transform = '';
+      meterDiv.style.transformOrigin = '';
+      heartButton.style.transform = 'translate(-50%, -50%)'; // Reset to original size
+      flameSvg.style.opacity = '0'; // Reset flame to hidden
+      flameSvg.style.transform = 'translate(-50%, -50%) scale(0)'; // Reset flame scale
+      flameSvg.style.transformOrigin = ''; // Reset transform origin
+      
+      const elements = ['pentagram', 'w', 'meterOutline', 'glowGroup', 'sparklesGroup', 'paintContainer', 'bulbJunctionFix', 'eg', 'liquidBase', 'waveContainer', 'paintTrails', 'paintSpray'];
+      elements.forEach(id => {
+        const element = document.getElementById(id);
+        if (element) {
+          element.style.opacity = '';
+        }
+      });
+      
+      if (fireCanvas) {
+        fireCanvas.style.opacity = '';
+      }
+      
+      isAnimating = false;
+      flameVisible = false; // Flame is now hidden after expand
+      // Hide pregnancy count when exiting widget mode
+      const pregnancyCountElement = document.getElementById('pregnancyCount');
+      if (pregnancyCountElement) {
+        pregnancyCountElement.style.opacity = '0';
+      }
+    }
+  }
+  
+  requestAnimationFrame(animate);
+}
+
+// FireEffect class for WebGL fire animation
+class FireEffect {
+    constructor(canvas) {
+        this.canvas = canvas;
+        this.gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        
+        if (!this.gl) {
+            console.error('WebGL not supported');
+            return;
+        }
+        
+        this.time = 0;
+        this.intensity = 0; // Start with 0 intensity (0/10 arousal)
+        this.speed = 1.7;
+        this.height = 1.5;
+        
+        this.setupShaders();
+        this.setupGeometry();
+        this.setupUniforms();
+        
+        this.render();
+    }
+    
+    setupShaders() {
+        const vertexShaderSource = `
+            attribute vec4 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+            
+            void main() {
+                gl_Position = a_position;
+                v_texCoord = a_texCoord;
+            }
+        `;
+        
+        const fragmentShaderSource = `
+            precision mediump float;
+            
+            uniform float u_time;
+            uniform vec2 u_resolution;
+            uniform float u_intensity;
+            uniform float u_speed;
+            uniform float u_height;
+            
+            varying vec2 v_texCoord;
+            
+            float hash(vec2 p) {
+                return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+            }
+            
+            float noise(vec2 p) {
+                vec2 i = floor(p);
+                vec2 f = fract(p);
+                
+                float a = hash(i);
+                float b = hash(i + vec2(1.0, 0.0));
+                float c = hash(i + vec2(0.0, 1.0));
+                float d = hash(i + vec2(1.0, 1.0));
+                
+                vec2 u = f * f * (3.0 - 2.0 * f);
+                return mix(a, b, u.x) + (c - a) * u.y * (1.0 - u.x) + (d - b) * u.x * u.y;
+            }
+            
+            float fbm(vec2 p) {
+                float value = 0.0;
+                float amplitude = 0.5;
+                
+                for(int i = 0; i < 4; i++) {
+                    value += amplitude * noise(p);
+                    p *= 2.0;
+                    amplitude *= 0.5;
+                }
+                return value;
+            }
+            
+            void main() {
+                vec2 uv = v_texCoord;
+                
+                uv.y = uv.y - 0.05;
+                uv.x = (uv.x - 0.5) * 2.5;
+                
+                float flameShape = 1.0 - abs(uv.x) * (1.0 + uv.y * 0.5);
+                flameShape = smoothstep(0.0, 1.0, flameShape);
+                
+                vec2 noiseCoord = vec2(uv.x * 3.0, uv.y * u_height * 4.0 + u_time * u_speed * 2.0);
+                float noiseValue = fbm(noiseCoord);
+                
+                vec2 turbulence = vec2(
+                    fbm(noiseCoord + vec2(u_time * u_speed * 0.5, 0.0)) - 0.5,
+                    fbm(noiseCoord + vec2(0.0, u_time * u_speed * 0.3)) - 0.5
+                ) * 0.2;
+                
+                float flame = flameShape + noiseValue * 0.3 + turbulence.x;
+                
+                float heightFactor = 1.0 - uv.y;
+                flame *= smoothstep(0.0, 0.6, heightFactor) * (1.0 - smoothstep(0.6, 1.0, heightFactor) * 0.8);
+                flame *= u_intensity;
+                
+                vec3 fireColor;
+                if (flame > 0.7) {
+                    fireColor = mix(vec3(1.0, 0.8, 0.2), vec3(1.0, 1.0, 0.8), (flame - 0.7) / 0.3);
+                } else if (flame > 0.3) {
+                    fireColor = mix(vec3(1.0, 0.2, 0.0), vec3(1.0, 0.8, 0.2), (flame - 0.3) / 0.4);
+                } else {
+                    fireColor = mix(vec3(0.3, 0.0, 0.0), vec3(1.0, 0.2, 0.0), flame / 0.3);
+                }
+                
+                if (uv.y > 0.8 && flame > 0.1) {
+                    float blueAmount = smoothstep(0.8, 1.0, uv.y) * flame;
+                    fireColor = mix(fireColor, vec3(0.2, 0.4, 1.0), blueAmount * 0.5);
+                }
+                
+                flame = smoothstep(0.0, 0.5, flame);
+                
+                gl_FragColor = vec4(fireColor * flame, flame);
+            }
+        `;
+        
+        this.vertexShader = this.compileShader(this.gl.VERTEX_SHADER, vertexShaderSource);
+        this.fragmentShader = this.compileShader(this.gl.FRAGMENT_SHADER, fragmentShaderSource);
+        
+        this.program = this.gl.createProgram();
+        this.gl.attachShader(this.program, this.vertexShader);
+        this.gl.attachShader(this.program, this.fragmentShader);
+        this.gl.linkProgram(this.program);
+        
+        if (!this.gl.getProgramParameter(this.program, this.gl.LINK_STATUS)) {
+            console.error('Error linking program:', this.gl.getProgramInfoLog(this.program));
+        }
+    }
+    
+    compileShader(type, source) {
+        const shader = this.gl.createShader(type);
+        this.gl.shaderSource(shader, source);
+        this.gl.compileShader(shader);
+        
+        if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
+            console.error('Error compiling shader:', this.gl.getShaderInfoLog(shader));
+            this.gl.deleteShader(shader);
+            return null;
+        }
+        
+        return shader;
+    }
+    
+    setupGeometry() {
+        const vertices = new Float32Array([
+            -1, -1,  0, 1,
+             1, -1,  1, 1,
+            -1,  1,  0, 0,
+             1,  1,  1, 0
+        ]);
+        
+        this.vertexBuffer = this.gl.createBuffer();
+        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+        this.gl.bufferData(this.gl.ARRAY_BUFFER, vertices, this.gl.STATIC_DRAW);
+    }
+    
+    setupUniforms() {
+        this.gl.useProgram(this.program);
+        
+        this.positionLocation = this.gl.getAttribLocation(this.program, 'a_position');
+        this.texCoordLocation = this.gl.getAttribLocation(this.program, 'a_texCoord');
+        
+        this.timeLocation = this.gl.getUniformLocation(this.program, 'u_time');
+        this.resolutionLocation = this.gl.getUniformLocation(this.program, 'u_resolution');
+        this.intensityLocation = this.gl.getUniformLocation(this.program, 'u_intensity');
+        this.speedLocation = this.gl.getUniformLocation(this.program, 'u_speed');
+        this.heightLocation = this.gl.getUniformLocation(this.program, 'u_height');
+    }
+    
+    render() {
+        this.time += 0.016;
+        
+        const gl = this.gl;
+        
+        gl.viewport(0, 0, gl.canvas.width, gl.canvas.height);
+        gl.clearColor(0, 0, 0, 0); // Transparent background
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        gl.useProgram(this.program);
+        
+        gl.uniform1f(this.timeLocation, this.time);
+        gl.uniform2f(this.resolutionLocation, gl.canvas.width, gl.canvas.height);
+        gl.uniform1f(this.intensityLocation, this.intensity);
+        gl.uniform1f(this.speedLocation, this.speed);
+        gl.uniform1f(this.heightLocation, this.height);
+        
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexBuffer);
+        
+        gl.enableVertexAttribArray(this.positionLocation);
+        gl.vertexAttribPointer(this.positionLocation, 2, gl.FLOAT, false, 16, 0);
+        
+        gl.enableVertexAttribArray(this.texCoordLocation);
+        gl.vertexAttribPointer(this.texCoordLocation, 2, gl.FLOAT, false, 16, 8);
+        
+        gl.enable(gl.BLEND);
+        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        
+        gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+        
+        requestAnimationFrame(() => this.render());
+    }
+    
+    setIntensity(value) {
+        this.intensity = value;
+    }
+}
+
+// Smooth fill animation function
+function animateAffectionFill() {
+    const difference = targetAffection - displayAffection;
+    
+    if (Math.abs(difference) < 0.01) {
+        // Close enough, stop animation
+        displayAffection = targetAffection;
+        if (animationFrame) {
+            cancelAnimationFrame(animationFrame);
+            animationFrame = null;
+        }
+        return;
+    }
+    
+    // Check if crossing 100% threshold for burst effect
+    const oldDisplayAffection = displayAffection;
+    
+    // Move toward target at maximum speed
+    if (difference > 0) {
+        displayAffection = Math.min(targetAffection, displayAffection + maxFillSpeed);
+    } else {
+        displayAffection = Math.max(targetAffection, displayAffection - maxFillSpeed);
+    }
+    
+    // Trigger burst if display level crosses 10 (not target)
+    if (oldDisplayAffection <= 10 && displayAffection > 10) {
+        initializeBurstSpray();
+        triggerBurst();
+    }
+    
+    // Update visual elements
+    updateLiquidLevel();
+    updateGlowIntensity();
+    
+    // Continue animation
+    animationFrame = requestAnimationFrame(animateAffectionFill);
+}
+
+// Start smooth fill animation
+function startAffectionAnimation() {
+    if (!animationFrame) {
+        animationFrame = requestAnimationFrame(animateAffectionFill);
+    }
+}
+
+// Store egg positions to prevent repositioning
+let eggPositions = [];
+
+// Paint spray system variables
+let burstSpraySystem = null;
+let burstActive = false;
+
+// New variables for the sine wave
+let wavePhase = 0;
+const waveAmplitude = 7; // Height of the wave
+const waveFrequency = 0.05; // Controls how many waves appear (higher = more waves)
+const waveSpeed = 0.03; // Speed of wave animation
+const waveYOffset = -10; // Vertical offset to move wave up
+
+// Paint spray system implementation
+function createPaintSpraySystem(config) {
+    const {
+        svgElement,
+        sprayContainer,
+        trailContainer,
+        origin = { x: 75, y: 80 },
+        gradients = {
+            particle: 'url(#paintGradient)',
+            trail: 'url(#trailGradient)'
+        }
+    } = config;
+
+    let isActive = false;
+    let particles = [];
+    let animationId;
+    let currentOrigin = { ...origin };
+
+    let params = {
+        particleCount: 1,
+        speed: 10,
+        spread: 0.4,
+        angle: -90,
+        size: 6,
+        trailLength: 25,
+        thickness: 1,
+        gravity: 1,
+        opacity: 1
+    };
+
+    class PaintParticle {
+        constructor() {
+            this.x = currentOrigin.x;
+            this.y = currentOrigin.y;
+
+            const baseAngle = (params.angle * Math.PI) / 180;
+            const spreadAngle = (Math.random() - 0.5) * params.spread;
+            const finalAngle = baseAngle + spreadAngle;
+
+            this.vx = params.speed * Math.cos(finalAngle);
+            this.vy = params.speed * Math.sin(finalAngle) + (Math.random() - 0.5) * 4;
+
+            this.size = 3 + Math.random() * 2; // Random size between 3-5
+            this.opacity = params.opacity;
+            this.trail = [];
+
+            this.element = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            this.element.setAttribute('r', this.size);
+            this.element.setAttribute('fill', '#ff69b4');
+            sprayContainer.appendChild(this.element);
+
+            this.trailElement = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+            this.trailElement.setAttribute('fill', 'none');
+            this.trailElement.setAttribute('stroke', gradients.trail);
+            this.trailElement.setAttribute('stroke-width', this.size * params.thickness);
+            this.trailElement.setAttribute('stroke-linecap', 'round');
+            trailContainer.appendChild(this.trailElement);
+        }
+
+        update() {
+            this.trail.push({ x: this.x, y: this.y });
+            if (this.trail.length > params.trailLength) {
+                this.trail.shift();
+            }
+
+            this.x += this.vx;
+            this.y += this.vy;
+            this.vy += params.gravity;
+
+            // Add current position to trail to close the gap
+            this.trail.push({ x: this.x, y: this.y });
+            if (this.trail.length > params.trailLength) {
+                this.trail.shift();
+            }
+
+            this.element.setAttribute('cx', this.x);
+            this.element.setAttribute('cy', this.y);
+            this.element.setAttribute('opacity', 0); // Make particles invisible
+
+            if (this.trail.length > 1) {
+                const points = this.trail.map(point => `${point.x},${point.y}`).join(' ');
+                this.trailElement.setAttribute('points', points);
+                this.trailElement.setAttribute('opacity', this.opacity); // 100% opaque
+                this.trailElement.setAttribute('stroke-width', (this.size + 2) * params.thickness); // 2px bigger than particle
+            }
+
+            this.opacity *= 0.985;
+
+            return this.x > 200 || this.y > 400 || this.x < -50 || this.y < -50 || this.opacity < 0.1;
+        }
+
+        remove() {
+            if (this.element && this.element.parentNode) this.element.remove();
+            if (this.trailElement && this.trailElement.parentNode) this.trailElement.remove();
+        }
+    }
+
+    function createParticles() {
+        for (let i = 0; i < params.particleCount; i++) {
+            particles.push(new PaintParticle());
+        }
+    }
+
+    function updateParticles() {
+        for (let i = particles.length - 1; i >= 0; i--) {
+            if (particles[i].update()) {
+                particles[i].remove();
+                particles.splice(i, 1);
+            }
+        }
+    }
+
+    function animate() {
+        // Only create new particles if actively spraying
+        if (isActive) {
+            createParticles();
+        }
+
+        // Always update existing particles
+        updateParticles();
+
+        // Continue animation if spraying or if particles still exist
+        if (isActive || particles.length > 0) {
+            animationId = requestAnimationFrame(animate);
+        } else {
+            animationId = null;
+        }
+    }
+
+    return {
+        start() {
+            if (isActive) return;
+            isActive = true;
+            animate();
+        },
+
+        stop() {
+            isActive = false;
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+            }
+        },
+
+        updateParams(newParams) {
+            Object.assign(params, newParams);
+        },
+
+        setOrigin(x, y) {
+            currentOrigin.x = x;
+            currentOrigin.y = y;
+        },
+
+        isRunning() {
+            return isActive;
+        },
+
+        cleanup() {
+            this.stop();
+            particles.forEach(p => p.remove());
+            particles = [];
+        },
+
+        getParticleCount() {
+            return particles.length;
+        }
+    };
+}
+
+// Initialize burst spray system
+function initializeBurstSpray() {
+    if (burstSpraySystem) return;
+
+    const paintSpray = document.getElementById('paintSpray');
+    const paintTrails = document.getElementById('paintTrails');
+
+    burstSpraySystem = createPaintSpraySystem({
+        sprayContainer: paintSpray,
+        trailContainer: paintTrails,
+        origin: { x: 75, y: 80 }
+    });
+}
+
+// Trigger burst effect
+function triggerBurst() {
+    if (burstActive || !burstSpraySystem) return;
+
+    burstActive = true;
+    burstSpraySystem.start();
+
+    // Stop after 2 seconds
+    setTimeout(() => {
+        // Set particle count to 0 to stop new particles
+        burstSpraySystem.updateParams({ particleCount: 0 });
+
+        // Wait a moment for existing particles to clear, then stop and cleanup together
+        setTimeout(() => {
+            burstSpraySystem.stop();
+            // Force cleanup any remaining particles and reset
+            const paintSpray = document.getElementById('paintSpray');
+            const paintTrails = document.getElementById('paintTrails');
+            paintSpray.innerHTML = '';
+            paintTrails.innerHTML = '';
+            // Reset particle count for next time
+            burstSpraySystem.updateParams({ particleCount: 1 });
+            burstActive = false;
+        }, 1500);
+    }, 2000);
+}
+
+// Function to generate a sine wave path
+function generateSineWavePath() {
+  const width = 300; // Make wider than viewport for smooth animation
+  const height = 30; // Space above the liquid for the wave
+  const steps = 50; // Number of points (higher = smoother curve)
+
+  // Start path at bottom left (outside visible area)
+  let path = `M-50,${height}`;
+
+  // Generate the sine curve
+  for (let i = 0; i <= steps; i++) {
+    const x = (i / steps) * width - 50; // Start from -50px
+    const y = waveAmplitude * Math.sin((i / steps) * Math.PI * 2 * 3 + wavePhase) + waveYOffset;
+    path += ` L${x},${y}`;
+  }
+
+  // Complete the path by connecting to bottom right and back to start
+  path += ` L${width-50},${height} L-50,${height} Z`;
+
+  return path;
+}
+
+// Animate the sine wave
+function updateSineWave() {
+  // Update phase to shift the wave horizontally
+  wavePhase += waveSpeed;
+
+  // Generate and update path
+  const pathData = generateSineWavePath();
+  document.getElementById('sineWave').setAttribute('d', pathData);
+
+  // Continue animation
+  requestAnimationFrame(updateSineWave);
+}
+
+function uA(c){
+  a = Math.max(0, a + c); // Remove cap, allow beyond 10
+  targetAffection = a; // Set new target for smooth animation
+  
+  document.getElementById('av').textContent = a + '/' + maxA;
+
+  // Update heart button color based on new affection level
+  updateHeartButtonColor(a);
+
+  // Start smooth animation toward new target
+  startAffectionAnimation();
+  
+  gl(c < 0);
+}
+
+function updateArousal(c) {
+  arousal = Math.max(0, arousal + c); // No cap, allow beyond 10 like affection
+  document.getElementById('arousal-display').textContent = arousal + '/' + maxArousal;
+  
+  // Scale arousal 0-10 to fire intensity 0-2
+  const fireIntensity = (arousal / 10) * 2;
+  if (fireEffect) {
+    fireEffect.setIntensity(fireIntensity);
+  }
+  
+  // Update flame size based on arousal level
+  updateFlameSize(arousal);
+  
+  console.log('Arousal updated to:', arousal, 'Fire intensity:', fireIntensity);
+}
+
+function updateGlowIntensity() {
+  // Calculate opacity based on affection level
+  const minOpacity = 0.2;
+  const maxOpacity = 0.8;
+  let opacity = minOpacity;
+
+  if (displayAffection > 0) {
+    // Scale opacity with affection (use original 150 max for glow scaling)
+    const scaledA = displayAffection * 10;
+    opacity = minOpacity + ((scaledA / 150) * (maxOpacity - minOpacity));
+  }
+
+  // Apply opacity to glow elements
+  document.getElementById('bulbGlow').setAttribute('opacity', opacity);
+  document.getElementById('tubeGlow').setAttribute('opacity', opacity);
+
+  // Adjust glow filter based on affection
+  const minBlur = 2;
+  const maxBlur = 5;
+  const blurAmount = minBlur + ((a / maxA) * (maxBlur - minBlur));
+
+  // Update the filter (need to recreate it with new parameters)
+  const filterDef = document.getElementById('pinkGlow').firstElementChild;
+  filterDef.setAttribute('stdDeviation', blurAmount);
+}
+
+function updateLiquidLevel(){
+  const emptyY=340;
+  const fullTubeY=100;
+  const newMaxY=5;  // Fill remaining space at top
+  let targetY;
+
+  // Scale affection by 10 for meter display (10/10 = 100 on meter)
+  // Cap visual at 150 to prevent meter lifting out the bottom
+  const scaledA = Math.min(displayAffection * 10, 150);
+
+  // Make sure we show visible liquid level at very low percentages
+  if(scaledA===0){
+    targetY = emptyY;
+  } else if(scaledA<=100){
+    // Scale differently at low percentages to ensure visibility
+    if(scaledA < 20) {
+      targetY = emptyY - 30 - ((scaledA/20) * 30); // Show at least 30px at minimum affection
+    } else {
+      targetY = emptyY - 60 - ((scaledA-20)/80)*(emptyY-fullTubeY-60);
+    }
+  } else {
+    // Continuous overflow: 100-150% goes from fullTubeY to newMaxY
+    const overflowPercent=(scaledA-100)/50;
+    targetY=fullTubeY-overflowPercent*(fullTubeY-newMaxY);
+  }
+
+  // Update position directly without animation
+  document.getElementById('liquidBase').setAttribute('y', targetY);
+  currentLiquidY = targetY;
+
+  // Update the wave container position directly
+  document.getElementById('waveContainer').setAttribute('transform', `translate(0,${targetY})`);
+
+  // Update sparkle container position to match liquid
+  document.getElementById('sparklesGroup').setAttribute('transform', `translate(0,${targetY})`);
+}
+
+function uE(c){
+  const o = e;
+  e = Math.max(0, Math.min(mx, e+c));
+  if(o === e) return;
+
+  document.getElementById('ev').textContent = e;
+  
+  // Update pregnancy count display on heart button
+  const pregnancyCountElement = document.getElementById('pregnancyCount');
+  if (pregnancyCountElement) {
+    pregnancyCountElement.textContent = e;
+  }
+
+  const mr = 35, xr = 70;
+  // Cap bulb growth at 20 eggs
+  const effectiveEggs = Math.min(e, 20);
+  const nr = mr + (effectiveEggs/20) * (xr-mr);
+
+  // Calculate new center position to keep bottom of bulb at same location
+  const originalCenterY = 50;
+  const originalRadius = 35;
+  const bottomY = originalCenterY + originalRadius; // y = 85
+  const newCenterY = bottomY - nr; // Keep bottom at y=85
+
+  // Update bulb background
+  document.getElementById('bb').setAttribute('r', nr);
+  document.getElementById('bb').setAttribute('cy', newCenterY);
+
+  // Update bulb mask circle
+  document.getElementById('bulbMaskCircle').setAttribute('r', nr);
+  document.getElementById('bulbMaskCircle').setAttribute('cy', newCenterY);
+
+  // Update junction fix element
+  document.getElementById('bjf').setAttribute('r', nr);
+  document.getElementById('bjf').setAttribute('cy', newCenterY);
+
+  // Update bulb glow to match the new bulb size and position
+  document.getElementById('bulbGlow').setAttribute('r', nr);
+  document.getElementById('bulbGlow').setAttribute('cy', newCenterY);
+
+  dE(newCenterY, nr); // Pass new center Y and radius to egg positioning
+  gl(c < 0);
+
+  if(a > 0) {
+    updateLiquidLevel();
+    updateGlowIntensity(); // Update glow when egg count changes
+  }
+}
+
+function dE(centerY = 50, bulbRadius = 35){
+  const g=document.getElementById('eg');
+
+  // If reducing eggs or starting fresh, clear everything
+  if(e < eggPositions.length || e === 0){
+    g.innerHTML='';
+    eggPositions = [];
+    if(e === 0) return;
+  }
+
+  const x=75,y=centerY;
+  const baseSize=8+(eggS/10)*15;
+
+  // Draw eggs 1-20 using original organized patterns
+  if(e <= 20) {
+    g.innerHTML=''; // Clear and redraw organized eggs
+    eggPositions = [];
+
+    if(e===1){
+      aE(x,y,baseSize);
+      eggPositions.push({x:x, y:y, size:baseSize});
+    }else if(e<=5){
+      const r=baseSize*.9,o=r*1.3,as=(2*Math.PI)/e;
+      for(let i=0;i<e;i++){
+        const an=i*as;
+        const nx=x+Math.cos(an)*o;
+        const ny=y+Math.sin(an)*o;
+        aE(nx,ny,r);
+        eggPositions.push({x:nx, y:ny, size:r});
+      }
+    }else if(e<=12){
+      aE(x,y,baseSize*.85);
+      eggPositions.push({x:x, y:y, size:baseSize*.85});
+      const r=baseSize*.75,o=baseSize*2.2,as=(2*Math.PI)/(e-1);
+      for(let i=0;i<e-1;i++){
+        const an=i*as;
+        const nx=x+Math.cos(an)*o;
+        const ny=y+Math.sin(an)*o;
+        aE(nx,ny,r);
+        eggPositions.push({x:nx, y:ny, size:r});
+      }
+    }else{
+      // 13-20 eggs
+      aE(x,y,baseSize*.8);
+      eggPositions.push({x:x, y:y, size:baseSize*.8});
+
+      const ic=Math.min(8,e-1);
+      const ir=baseSize*.7,io=baseSize*2,ia=(2*Math.PI)/ic;
+      for(let i=0;i<ic;i++){
+        const an=i*ia;
+        const nx=x+Math.cos(an)*io;
+        const ny=y+Math.sin(an)*io;
+        aE(nx,ny,ir);
+        eggPositions.push({x:nx, y:ny, size:ir});
+      }
+
+      if(e > 9){
+        const oc=e-ic-1;
+        const or=baseSize*.6,oo=baseSize*3.2,oa=(2*Math.PI)/oc;
+        for(let i=0;i<oc;i++){
+          const an=i*oa+(Math.PI/oc);
+          const nx=x+Math.cos(an)*oo;
+          const ny=y+Math.sin(an)*oo;
+          aE(nx,ny,or);
+          eggPositions.push({x:nx, y:ny, size:or});
+        }
+      }
+    }
+  } else {
+    // For 21+ eggs, only add new random eggs
+    const startIndex = eggPositions.length;
+
+    for(let i = startIndex; i < e; i++){
+      let attempts = 0;
+      let placed = false;
+      let newPos;
+
+      while(!placed && attempts < 100){
+        const angle = Math.random() * 2 * Math.PI;
+        const distance = Math.random() * (bulbRadius - 8);
+        const nx = x + Math.cos(angle) * distance;
+        const ny = y + Math.sin(angle) * distance;
+
+        let tooClose = false;
+        const minDistance = baseSize * 0.7;
+
+        for(let j = 0; j < eggPositions.length; j++){
+          const dx = nx - eggPositions[j].x;
+          const dy = ny - eggPositions[j].y;
+          if(Math.sqrt(dx*dx + dy*dy) < minDistance){
+            tooClose = true;
+            break;
+          }
+        }
+
+        if(!tooClose){
+          newPos = {x: nx, y: ny, size: baseSize * 0.75}; // Larger to match organized eggs
+          placed = true;
+        }
+
+        attempts++;
+      }
+
+      if(!placed){
+        const angle = Math.random() * 2 * Math.PI;
+        const distance = Math.random() * (bulbRadius - 5);
+        newPos = {
+          x: x + Math.cos(angle) * distance,
+          y: y + Math.sin(angle) * distance,
+          size: baseSize * 0.75
+        };
+      }
+
+      eggPositions.push(newPos);
+      aE(newPos.x, newPos.y, newPos.size);
+    }
+  }
+}
+
+function aE(x,y,r){
+  const g=document.getElementById('eg');
+  const egg=document.createElementNS("http://www.w3.org/2000/svg","g");
+
+  // Background glow - modified radius and removed filter to add new one
+  const glow=document.createElementNS("http://www.w3.org/2000/svg","circle");
+  glow.setAttribute('cx',x);
+  glow.setAttribute('cy',y);
+  glow.setAttribute('r',r*1.5); // Increased from 1.2 to 1.5 for larger glow
+  glow.setAttribute('fill','white');
+  glow.setAttribute('opacity','0.4');
+  glow.setAttribute('filter','url(#c)');
+
+  // Egg shell
+  const eggShell=document.createElementNS("http://www.w3.org/2000/svg","circle");
+  eggShell.setAttribute('cx',x);
+  eggShell.setAttribute('cy',y);
+  eggShell.setAttribute('r',r);
+  eggShell.setAttribute('fill','url(#eggGrad)');
+  eggShell.setAttribute('opacity','0.85');
+
+  // Egg core
+  const eggCore=document.createElementNS("http://www.w3.org/2000/svg","circle");
+  eggCore.setAttribute('cx',x);
+  eggCore.setAttribute('cy',y);
+  eggCore.setAttribute('r',r*0.65);
+  eggCore.setAttribute('fill','url(#eggCore)');
+  eggCore.setAttribute('opacity','0.85');
+
+  // Glint
+  const glint=document.createElementNS("http://www.w3.org/2000/svg","circle");
+  glint.setAttribute('cx',x-r*0.4);
+  glint.setAttribute('cy',y-r*0.4);
+  glint.setAttribute('r',r*0.2);
+  glint.setAttribute('fill','white');
+  glint.setAttribute('opacity','0.7');
+
+  egg.appendChild(glow);
+  egg.appendChild(eggShell);
+  egg.appendChild(eggCore);
+  egg.appendChild(glint);
+  g.appendChild(egg);
+}
+function gl(b){document.querySelector('.c').style.boxShadow='0 0 20px rgba('+(b?'65, 105, 225, 0.5':'255, 105, 180, 0.5')+')';setTimeout(()=>{document.querySelector('.c').style.boxShadow='0 4px 15px rgba(0, 0, 0, 0.3)'},1000);}
+
+// Create sparkles with better distribution across the entire liquid area
+function createSparkles() {
+  const sparklesGroup = document.getElementById('sparklesGroup');
+
+  // Function to generate heart path
+  function generateHeartPath(x, y, size) {
+    const s = size;
+    const r = s * 0.25; // radius for semicircles
+    return `M${x},${y + s*0.4}
+            L${x - s*0.4},${y}
+            A${r},${r} 0 0,1 ${x - s*0.2},${y - r}
+            A${r},${r} 0 0,1 ${x},${y}
+            A${r},${r} 0 0,1 ${x + s*0.2},${y - r}
+            A${r},${r} 0 0,1 ${x + s*0.4},${y}
+            L${x},${y + s*0.4} Z`;
+  }
+
+  // Pre-create all sparkle elements - restored original count
+  const sparkleCount = 40;
+  const sparklePool = [];
+
+  // Create the DOM elements for all sparkles
+  for (let i = 0; i < sparkleCount; i++) {
+    const sparkle = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    sparkle.setAttribute('d', '');
+    sparkle.setAttribute('fill', 'white');
+    sparkle.setAttribute('opacity', '0');
+    sparklesGroup.appendChild(sparkle);
+    sparklePool.push({
+      element: sparkle,
+      active: false,
+      animationId: null
+    });
+  }
+
+  // Function to animate a single sparkle
+  function animateSparkle(sparkleObj) {
+    // Don't restart if already active
+    if (sparkleObj.active) return;
+
+    // Clear any existing animation
+    if (sparkleObj.animationId !== null) {
+      cancelAnimationFrame(sparkleObj.animationId);
+      sparkleObj.animationId = null;
+    }
+
+    const sparkle = sparkleObj.element;
+    sparkleObj.active = true;
+
+    // Use the full meter dimensions - SVG mask will handle clipping
+    const tubeWidth = 30;  // Width of the tube
+    const tubeLeft = 60;   // Left edge of tube
+    const bulbWidth = 70;  // Width of the bulb
+    const bulbLeft = 40;   // Left edge for bulb area
+    const totalHeight = 290; // Total height of liquid (when empty)
+
+    // Randomly choose whether this sparkle is in the tube or bulb area
+    const inTube = Math.random() > 0.3; // 70% chance in tube for better distribution
+
+    // Position randomly within the chosen area
+    let x, y;
+
+    if (inTube) {
+      // Position in tube
+      x = tubeLeft + Math.random() * tubeWidth;
+      // Position anywhere in the total liquid height
+      y = Math.random() * totalHeight;
+    } else {
+      // Position in bulb
+      x = bulbLeft + Math.random() * bulbWidth;
+      // Position in the bulb portion only
+      y = Math.random() * 70;  // Approximate bulb height
+    }
+
+    const size = 4.0 + Math.random() * 6.0;
+    const moveDistance = 5 + Math.random() * 15;
+    const duration = 3000 + Math.random() * 2000;
+
+    // Set initial position using heart path
+    sparkle.setAttribute('d', generateHeartPath(x, y, size));
+    sparkle.setAttribute('opacity', '0.9');
+
+    // Use a precise timestamp for animation
+    const startTime = performance.now();
+
+    function step(timestamp) {
+      const elapsed = timestamp - startTime;
+
+      if (elapsed >= duration) {
+        // Animation complete
+        sparkle.setAttribute('opacity', '0');
+        sparkleObj.animationId = null;
+
+        // Schedule a new animation with a delay
+        setTimeout(() => {
+          if (a > 0) {
+            sparkleObj.active = false; // Mark inactive just before restarting
+            animateSparkle(sparkleObj);
+          } else {
+            sparkleObj.active = false; // Mark inactive if affection is 0
+          }
+        }, 100 + Math.random() * 300);
+
+        return;
+      }
+
+      // Calculate current position and opacity
+      const progress = elapsed / duration;
+      const currentY = y - (moveDistance * progress);
+      const currentOpacity = 0.9 * (1 - progress);
+
+      // Update attributes using heart path
+      sparkle.setAttribute('d', generateHeartPath(x, currentY, size));
+      sparkle.setAttribute('opacity', currentOpacity);
+
+      // Continue animation
+      sparkleObj.animationId = requestAnimationFrame(step);
+    }
+
+    // Start the animation
+    sparkleObj.animationId = requestAnimationFrame(step);
+  }
+
+  // Main loop to ensure we have the right number of active sparkles
+  function maintainSparkles() {
+    if (a > 0) {
+      // Calculate target number of active sparkles - restored original density
+      const targetActive = Math.max(8, Math.min(25, Math.floor(a / 5)));
+
+      // Count currently active sparkles
+      let activeCount = sparklePool.filter(s => s.active).length;
+
+      // Activate more if needed
+      if (activeCount < targetActive) {
+        const inactiveSparkles = sparklePool.filter(s => !s.active);
+        const toActivate = Math.min(inactiveSparkles.length, targetActive - activeCount);
+
+        for (let i = 0; i < toActivate; i++) {
+          animateSparkle(inactiveSparkles[i]);
+        }
+      }
+    }
+  }
+
+  // Run the maintenance loop at a fixed interval
+  setInterval(maintainSparkles, 300);
+
+  // Start initial sparkles
+  setTimeout(() => {
+    if (a > 0) {
+      const initialCount = Math.min(15, sparklePool.length);
+      for (let i = 0; i < initialCount; i++) {
+        setTimeout(() => {
+          animateSparkle(sparklePool[i]);
+        }, i * 80);
+      }
+    }
+  }, 100);
+}
+
+// Clean initialization
+let sparklesInitialized = false;
+function startSparkles() {
+  if (sparklesInitialized) return;
+  sparklesInitialized = true;
+  setTimeout(createSparkles, 100);
+}
+
+// Initialize the wave container position to match the initial liquid level
+document.getElementById('waveContainer').setAttribute('transform', `translate(0,${currentLiquidY})`);
+// Initialize sparkles group position
+document.getElementById('sparklesGroup').setAttribute('transform', `translate(0,${currentLiquidY})`);
+// Call updateLiquidLevel once to ensure proper initialization
+uA(0);uE(0);
+updateGlowIntensity(); // Initialize the glow intensity
+updateHeartButtonColor(a); // Initialize heart button color
+updateFlameSize(arousal); // Initialize flame size based on arousal (but stays hidden until toggled)
+// Initialize pregnancy count display
+const pregnancyCountElement = document.getElementById('pregnancyCount');
+if (pregnancyCountElement) {
+  pregnancyCountElement.textContent = e; // Initialize with current pregnancy count
+}
+
+// Start the sine wave animation
+requestAnimationFrame(updateSineWave);
+
+// Start the sparkles immediately and ensure they keep running
+startSparkles();
+
+// Initialize fire effect
+const canvas = document.getElementById('fireCanvas');
+fireEffect = new FireEffect(canvas);
+
+// Set initial fire intensity based on current arousal
+const initialFireIntensity = (arousal / 10) * 2;
+fireEffect.setIntensity(initialFireIntensity);
+
+// Initialize heart button click handler
+document.addEventListener('DOMContentLoaded', () => {
+  const heartButtonSvg = document.getElementById('heartButtonSvg');
+  if (heartButtonSvg) {
+    heartButtonSvg.addEventListener('click', toggleMeterCollapse);
+  }
+});
+
+// Ensure sparkles keep running even if there were any issues
+window.addEventListener('load', () => {
+  // Force restart sparkles after a short delay to ensure everything is loaded
+  setTimeout(() => {
+    startSparkles();
+  }, 500);
+});</script></body></html>

@@ -1,0 +1,268 @@
+{
+  "personas": {
+    "1745354016374-Doggy.png": "Doggy",
+    "1745969562070-HoardofShoggoths.png": "The Hoard of Shoggoths",
+    "1746523161097-Erik.png": "Dyna",
+    "1746834785220-Erik.png": "Erik",
+    "1754805983727-DynarrStormswell.png": "Dynarr Stormswell",
+    "rpg_character_1755271117794.png": "beano",
+    "rpg_character_1755271174709.png": "ant guy",
+    "rpg_character_1755271746057.png": "beans",
+    "rpg_character_1755271786654.png": "guy",
+    "rpg_character_1755271961626.png": "bean"
+  },
+  "persona_descriptions": {
+    "1745354016374-Doggy.png": {
+      "description": "Doggy is a huge male Labrador dog with a bright white coat of fur. Doggy is playful and curious. He walks on all fours. And can communicate only with barks and body language. Besides his great size, Doggy is a normal dog!",
+      "position": 0,
+      "depth": 2,
+      "role": 0,
+      "lorebook": ""
+    },
+    "1745969562070-HoardofShoggoths.png": {
+      "description": "Shoggoths are large eldritch monsters consisting of a mass of slimy dark tentacles coated in microscopic spines that inject a potent venom that causes complete body paralysis.",
+      "position": 0,
+      "depth": 2,
+      "role": 0,
+      "lorebook": ""
+    },
+    "1746523161097-Erik.png": {
+      "description": "Dyna is a larger-than-life figure, embodying the essence of raw masculinity and charming allure.",
+      "position": 0,
+      "depth": 2,
+      "role": 0,
+      "lorebook": ""
+    },
+    "1746834785220-Erik.png": {
+      "description": "Erik hates coffee.",
+      "position": 0,
+      "depth": 2,
+      "role": 0,
+      "lorebook": ""
+    },
+    "1754805983727-DynarrStormswell.png": {
+      "description": "A powerful wizard!",
+      "position": 3,
+      "depth": 2,
+      "role": 0,
+      "lorebook": "",
+      "title": ""
+    },
+    "rpg_character_1755271117794.png": {
+      "description": "always eating beans",
+      "position": 0,
+      "depth": 4,
+      "role": 0,
+      "lorebook": "",
+      "title": "",
+      "rpg_data": {
+        "version": "1.0",
+        "created_at": "2025-08-15T15:18:47.051Z",
+        "stats": {
+          "level": 1,
+          "experience": 0,
+          "health": 100,
+          "mana": 50,
+          "strength": 10,
+          "dexterity": 10,
+          "intelligence": 10,
+          "charisma": 10
+        },
+        "skills": {},
+        "inventory": {
+          "items": [],
+          "currency": 0
+        },
+        "progression": {
+          "quests_completed": [],
+          "achievements": [],
+          "unlocked_areas": []
+        },
+        "world_state": {
+          "current_location": null,
+          "visited_locations": [],
+          "relationship_flags": {},
+          "story_flags": {}
+        },
+        "metadata": {
+          "character_class": "Adventurer",
+          "background": "Traveler",
+          "notes": ""
+        }
+      }
+    },
+    "rpg_character_1755271174709.png": {
+      "description": "has ant legs",
+      "position": 0,
+      "depth": 4,
+      "role": 0,
+      "lorebook": "",
+      "title": "",
+      "rpg_data": {
+        "version": "1.0",
+        "created_at": "2025-08-15T15:19:50.006Z",
+        "stats": {
+          "level": 1,
+          "experience": 0,
+          "health": 100,
+          "mana": 50,
+          "strength": 10,
+          "dexterity": 10,
+          "intelligence": 10,
+          "charisma": 10
+        },
+        "skills": {},
+        "inventory": {
+          "items": [],
+          "currency": 0
+        },
+        "progression": {
+          "quests_completed": [],
+          "achievements": [],
+          "unlocked_areas": []
+        },
+        "world_state": {
+          "current_location": null,
+          "visited_locations": [],
+          "relationship_flags": {},
+          "story_flags": {}
+        },
+        "metadata": {
+          "character_class": "Adventurer",
+          "background": "Traveler",
+          "notes": ""
+        }
+      }
+    },
+    "rpg_character_1755271746057.png": {
+      "description": "ass",
+      "position": 0,
+      "depth": 4,
+      "role": 0,
+      "lorebook": "",
+      "title": "",
+      "rpg_data": {
+        "version": "1.0",
+        "created_at": "2025-08-15T15:29:11.219Z",
+        "stats": {
+          "level": 1,
+          "experience": 0,
+          "health": 100,
+          "mana": 50,
+          "strength": 10,
+          "dexterity": 10,
+          "intelligence": 10,
+          "charisma": 10
+        },
+        "skills": {},
+        "inventory": {
+          "items": [],
+          "currency": 0
+        },
+        "progression": {
+          "quests_completed": [],
+          "achievements": [],
+          "unlocked_areas": []
+        },
+        "world_state": {
+          "current_location": null,
+          "visited_locations": [],
+          "relationship_flags": {},
+          "story_flags": {}
+        },
+        "metadata": {
+          "character_class": "Adventurer",
+          "background": "Traveler",
+          "notes": ""
+        }
+      }
+    },
+    "rpg_character_1755271786654.png": {
+      "description": "a dude",
+      "position": 0,
+      "depth": 4,
+      "role": 0,
+      "lorebook": "",
+      "title": "",
+      "rpg_data": {
+        "version": "1.0",
+        "created_at": "2025-08-15T15:29:55.505Z",
+        "stats": {
+          "level": 1,
+          "experience": 0,
+          "health": 100,
+          "mana": 50,
+          "strength": 10,
+          "dexterity": 10,
+          "intelligence": 10,
+          "charisma": 10
+        },
+        "skills": {},
+        "inventory": {
+          "items": [],
+          "currency": 0
+        },
+        "progression": {
+          "quests_completed": [],
+          "achievements": [],
+          "unlocked_areas": []
+        },
+        "world_state": {
+          "current_location": null,
+          "visited_locations": [],
+          "relationship_flags": {},
+          "story_flags": {}
+        },
+        "metadata": {
+          "character_class": "Adventurer",
+          "background": "Traveler",
+          "notes": ""
+        }
+      }
+    },
+    "rpg_character_1755271961626.png": {
+      "description": "beans",
+      "position": 0,
+      "depth": 4,
+      "role": 0,
+      "lorebook": "",
+      "title": "",
+      "rpg_data": {
+        "version": "1.0",
+        "created_at": "2025-08-15T15:32:46.485Z",
+        "stats": {
+          "level": 1,
+          "experience": 0,
+          "health": 100,
+          "mana": 50,
+          "strength": 10,
+          "dexterity": 10,
+          "intelligence": 10,
+          "charisma": 10
+        },
+        "skills": {},
+        "inventory": {
+          "items": [],
+          "currency": 0
+        },
+        "progression": {
+          "quests_completed": [],
+          "achievements": [],
+          "unlocked_areas": []
+        },
+        "world_state": {
+          "current_location": null,
+          "visited_locations": [],
+          "relationship_flags": {},
+          "story_flags": {}
+        },
+        "metadata": {
+          "character_class": "Adventurer",
+          "background": "Traveler",
+          "notes": ""
+        }
+      }
+    }
+  },
+  "default_persona": null
+}

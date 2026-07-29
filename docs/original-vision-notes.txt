@@ -1,0 +1,24 @@
+Alright, I'm going to lay out my vision for the silly tavern extension we are developing,           │
+│   RPG-Custodian. As a long time fan of old school text based adventures, visual novels, and now AI    │
+│   characters, I have really founds that Silly Tavern character roleplay would really benefit from     │
+│   some hard-coded game mechanics and rpg stats. Many have tried to gameify Silly Tavern through       │
+│   extentions before, but all of them fail in one way or another. The dice roller extension allows     │
+│   user's to make tabletop rolls in chat, but gives no way to meaningfully integrate the results of    │
+│   those rolls into the situation. The group chat feature allows multiple characters to interact with  │
+│   eachother, but leaves it up to the user to painstakingly control who is present and steer the       │
+│   conversation. Many users integrate stat trackers into their character card prompts, making the llm  │
+│   reiterate the current value of the character's health or familiarity with the user over and over,   │
+│   but this approach suffers from temporal coherence, and forgetfulness of the llm, when these         │
+│   numbers could easily just be stored in a variable, like a normal game or visual novel. Inspired by  │
+│   visual novels such as Katawa Shoujo, Haramese Simulator, text based adventures like Dungeon Man,    │
+│   MUDs like Hack.MUD, and tabletop roleplaying games; RPG-Custodian hopes to fix these issues and     │
+│   make Silly Tavern roleplay into a repeatable and customizable gameplay loop with progression,       │
+│   goals, resources, stats, a traverable map, a time system, a party system, and many other role       │
+│   playing game features that will provide endless fun. I'm hoping to use pre-existing systems as      │
+│   much as I can, such as the existing group chat feature, visual novel mode, and the Expressions      │
+│   plugin implemented with this. Character cards make for RPG-Custodian will use the v2-spec format,   │
+│   but have additional details about the character's rpg stats stored in the less used data areas,     │
+│   like creator notes. I also want to be able to import and export game world maps, which will use     │
+│   the traditional text based adventure style of chaining areas together. I want to use the existing   │
+│   background system to dynamically change the background to be fitting of the sub-area the player     │
+│   has entered.

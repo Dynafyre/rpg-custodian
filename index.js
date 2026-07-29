@@ -48,6 +48,23 @@ jQuery(async () => {
         { name: 'Evening', emoji: '🌆' },
         { name: 'Night', emoji: '🌙' }
     ];
+
+    // Day of the week. Fresh games anchor Day 1 to the REAL-LIFE weekday at
+    // New Game time (startWeekday); every later date derives from dayCount so
+    // the calendar stays consistent across saves.
+    const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    function weekdayName(day = currentGameState.dayCount, startWeekday = currentGameState.startWeekday) {
+        const anchor = Number.isInteger(startWeekday) ? startWeekday : new Date().getDay();
+        return WEEKDAYS[(((anchor + (day || 1) - 1) % 7) + 7) % 7];
+    }
+    // Legacy saves predate weekday tracking — anchor them so TODAY in-game
+    // lands on the real-life weekday at load, same rule as a fresh world.
+    function backfillStartWeekday(day) {
+        return (((new Date().getDay() - ((day || 1) - 1)) % 7) + 7) % 7;
+    }
+    function saveWeekdayName(save) {
+        return weekdayName(save?.day ?? 1, Number.isInteger(save?.startWeekday) ? save.startWeekday : backfillStartWeekday(save?.day));
+    }
     
     // === Authored worlds (world-management phase 2) ===
     // Shipped worlds are read-only files under game-worlds/fresh-worlds/.
@@ -484,7 +501,7 @@ jQuery(async () => {
     function openWorldActions(w) {
         const save = getSaveFor(w.name);
         const items = [
-            ...(save ? [{ icon: '▶️', label: 'Continue', sub: `Day ${save.day ?? 1}, ${['Morning', 'Day', 'Evening', 'Night'][save.time ?? 0] || ''}`, action: () => continueGame(w.name) }] : []),
+            ...(save ? [{ icon: '▶️', label: 'Continue', sub: `Day ${save.day ?? 1} (${saveWeekdayName(save)}), ${['Morning', 'Day', 'Evening', 'Night'][save.time ?? 0] || ''}`, action: () => continueGame(w.name) }] : []),
             { icon: '🎲', label: 'New Game', sub: `start fresh in ${w.displayName || w.name}`, action: () => newGame(w.name) },
             { icon: '✏️', label: 'Edit world', sub: w.authored ? 'open the map builder' : 'creates an editable copy that overrides the shipped files', action: () => openMapEditor(w.name) },
             { icon: '👥', label: 'Cast', sub: w.authored ? 'add, edit, or remove world characters' : 'creates an editable copy that overrides the shipped files', action: () => openCastManager(w.name) },
@@ -1797,7 +1814,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         const items = [];
 
         if (save) {
-            items.push({ icon: '▶️', label: `Continue (${save.world}, Day ${save.day ?? 1})`, action: continueGame });
+            items.push({ icon: '▶️', label: `Continue (${save.world}, Day ${save.day ?? 1} — ${saveWeekdayName(save)})`, action: continueGame });
         }
         // New games start from the Worlds manager (world → 🎲 New Game).
         items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
@@ -2032,6 +2049,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         currentGameState.worldData = worldData;
         currentGameState.currentTime = save.time ?? 0;
         currentGameState.dayCount = save.day ?? 1;
+        currentGameState.startWeekday = Number.isInteger(save.startWeekday) ? save.startWeekday : backfillStartWeekday(save.day);
         currentGameState.party = save.party || [];
         currentGameState.offspring = save.offspring || [];
         currentGameState.timeStep = save.timeStep ?? 0;
@@ -2078,7 +2096,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         await setBackground(location.background);
 
         const time = TIME_PERIODS[currentGameState.currentTime];
-        sendGameMasterMessage(`💾 **Game Loaded: ${worldData.name}**\n\n🗓️ Day ${currentGameState.dayCount}, ${time.emoji} ${time.name}\n\n📍 **${location.name}**${presenceLine(currentGameState.currentLocation)}`);
+        sendGameMasterMessage(`💾 **Game Loaded: ${worldData.name}**\n\n🗓️ Day ${currentGameState.dayCount} (${weekdayName()}), ${time.emoji} ${time.name}\n\n📍 **${location.name}**${presenceLine(currentGameState.currentLocation)}`);
         console.log(`RPG Custodian: Continued save in "${save.world}" at "${currentGameState.currentLocation}"`);
     }
 
@@ -2114,6 +2132,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             location: currentGameState.currentLocation,
             time: currentGameState.currentTime,
             day: currentGameState.dayCount,
+            startWeekday: currentGameState.startWeekday ?? null,
             timeStep: currentGameState.timeStep || 0,
             groupId: currentGameState.groupId || null,
             party: currentGameState.party || [],
@@ -2916,6 +2935,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             currentGameState.groupId = null;
             currentGameState.currentTime = 0;
             currentGameState.dayCount = 1;
+            currentGameState.startWeekday = null;
             $('#rpg-action-bar').remove();
             $('#rpg-action-popup').remove();
             projectPlayerStatus();  // clears the injected status block
@@ -3168,7 +3188,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             let timeMessage = `⏰ **Time passes...** ${timeResult.previousTime.emoji} → ${timeResult.newTime.emoji}\n\nIt is now **${timeResult.newTime.name}**.`;
 
             if (timeResult.newDay) {
-                timeMessage += `\n\n🗓️ **A new day has begun!** (Day ${timeResult.dayCount})`;
+                timeMessage += `\n\n🗓️ **A new day has begun!** (Day ${timeResult.dayCount} — ${weekdayName(timeResult.dayCount)})`;
             }
 
             // NPC schedules shift with the clock — report who is around now
@@ -3203,7 +3223,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             }
             
             const currentTime = TIME_PERIODS[currentGameState.currentTime];
-            const dateMessage = `📅 **Current Date & Time**\n\n🗓️ **Day ${currentGameState.dayCount}**\n${currentTime.emoji} **${currentTime.name}**`;
+            const dateMessage = `📅 **Current Date & Time**\n\n🗓️ **Day ${currentGameState.dayCount} — ${weekdayName()}**\n${currentTime.emoji} **${currentTime.name}**`;
             
             sendGameMasterMessage(dateMessage);
             
@@ -3227,7 +3247,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (currentGameState.isActive) {
             const currentTime = TIME_PERIODS[currentGameState.currentTime];
             button.text(currentTime.emoji);
-            button.attr('title', `${currentTime.name} - Day ${currentGameState.dayCount}`);
+            button.attr('title', `${currentTime.name} - Day ${currentGameState.dayCount} (${weekdayName()})`);
         } else {
             button.text('RPG');
             button.attr('title', 'rpg-menu');
@@ -3381,10 +3401,12 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 return;
             }
 
-            // Initialize game state (fresh game starts at Morning, Day 1)
+            // Initialize game state (fresh game starts at Morning, Day 1,
+            // anchored to the real-life current day of the week)
             currentGameState.worldData = worldData;
             currentGameState.currentTime = 0;
             currentGameState.dayCount = 1;
+            currentGameState.startWeekday = new Date().getDay();
             currentGameState.party = [];
             currentGameState.offspring = [];
             currentGameState.timeStep = 0;
@@ -3446,7 +3468,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
             // Send game start message and persist it into the new chat file
             // (nothing else saves the chat until the first generation)
-            sendGameMasterMessage(`🎲 **New Game Started: ${worldData.name}**\n\n${worldData.description}\n\n📍 **${startingLocation.name}**${presenceLine(currentGameState.currentLocation)}`);
+            sendGameMasterMessage(`🎲 **New Game Started: ${worldData.name}**\n\n${worldData.description}\n\n🗓️ Day 1 (${weekdayName()}), ${TIME_PERIODS[0].emoji} ${TIME_PERIODS[0].name}\n\n📍 **${startingLocation.name}**${presenceLine(currentGameState.currentLocation)}`);
             await getCtx().saveChat();
 
             // Create/update save file
@@ -4031,7 +4053,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
         const t = TIME_PERIODS[currentGameState.currentTime];
         let msg = `⏰ ${multi ? `Time skips ahead ${steps} periods` : 'Time passes'}… it is now ${t.emoji} **${t.name}**`;
-        if (currentGameState.dayCount > startDay) msg += ` (Day ${currentGameState.dayCount})`;
+        if (currentGameState.dayCount > startDay) msg += ` (Day ${currentGameState.dayCount}, ${weekdayName()})`;
         msg += `.${presenceLine(currentGameState.currentLocation)}`;
         sendGameMasterMessage(msg);
 
@@ -4390,7 +4412,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const lines = [
             // The scene anchor — FIRST, so every reply/narration is grounded in
             // WHERE and WHEN this is happening. NPCs must speak/act as being here.
-            `[SCENE — this is happening at: ${currentSceneLabel()} (Day ${currentGameState.dayCount}).${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''} Everyone present is HERE, in this place; ground all dialogue, action, and description in this exact setting — do not drift to another location.]`,
+            `[SCENE — this is happening at: ${currentSceneLabel()} (Day ${currentGameState.dayCount} — today is ${weekdayName()}).${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''} Everyone present is HERE, in this place; ground all dialogue, action, and description in this exact setting — do not drift to another location.]`,
             ``,
             `[Adventurer Status — plainly visible to everyone present]`,
             `${name} — Ruggedness ${effectiveStat('ruggedness')}, Charm ${effectiveStat('charm')}, Craftiness ${effectiveStat('craftiness')}, Virility ${effectiveStat('virility')} (Level ${s.level}).`,
@@ -6459,10 +6481,12 @@ Narrate the result briefly, grounded in this location and the story's current be
         player: () => getPlayerRpgData(),
         avatar: () => playerAvatar(),
         state: () => currentGameState,
+        weekday: (day) => weekdayName(day),
         gold: () => getGold(),
         effectiveStat: (s) => effectiveStat(s),
         createCharacter: () => createRPGCharacterCommand(),
         newGame: (w) => newGame(w),
+        continueGame: (w) => continueGame(w),
         boost: (stat, amt) => addBoost(stat, amt, 'debug'),
         rollCheck: (stat, dc) => { const c = skillCheck(stat, dc || 8); consumeCheckEffects(stat); return c; },
         addGold: (n) => addGold(n),
