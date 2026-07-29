@@ -134,6 +134,10 @@ jQuery(async () => {
         // Drive the Intent Analyzer off every player message
         context.eventSource.on(context.eventTypes.MESSAGE_SENT, onUserMessage);
 
+        // Single-card migration: fold legacy RPGC_ copies into their originals
+        // (groups re-pointed, copies deleted). Idempotent; no-ops when clean.
+        await migrateSingleCards();
+
         // In-chat avatar tap → her cast editor (active-world cast only).
         // Capture phase so it wins over ST's default avatar-zoom handler;
         // anyone not in the playing world's editable cast falls through
@@ -152,6 +156,43 @@ jQuery(async () => {
         }, true);
 
         console.log('RPG Custodian: Extension initialized');
+    }
+
+    /** One-time single-card migration: every legacy RPGC_ copy whose ORIGINAL
+     *  still exists gets folded away — groups swap to the original (Dyna's
+     *  call: the original's avatar art wins), then the copy is deleted (chat
+     *  files kept). A copy with no original IS the single card and stays. */
+    async function migrateSingleCards() {
+        try {
+            const chars = getCtx().characters || [];
+            const copies = chars.filter(c => String(c.avatar).startsWith('RPGC_'));
+            let folded = 0;
+            for (const copy of copies) {
+                const orig = chars.find(c => c.name === copy.name && !String(c.avatar).startsWith('RPGC_'));
+                if (!orig) continue;
+                for (const g of (getCtx().groups || [])) {
+                    let changed = false;
+                    for (const key of ['members', 'disabled_members']) {
+                        const arr = g[key] || [];
+                        const i = arr.indexOf(copy.avatar);
+                        if (i >= 0) {
+                            if (!arr.includes(orig.avatar)) arr[i] = orig.avatar; else arr.splice(i, 1);
+                            changed = true;
+                        }
+                    }
+                    if (changed) { try { await editGroup(g.id, false, false); } catch (e) { console.error('RPG Custodian: group migration failed', g.id, e); } }
+                }
+                try {
+                    await fetch('/api/characters/delete', {
+                        method: 'POST', headers: context.getRequestHeaders(),
+                        body: JSON.stringify({ avatar_url: copy.avatar, delete_chats: false }),
+                    });
+                    folded++;
+                    console.log(`RPG Custodian: folded ${copy.avatar} into ${orig.avatar}`);
+                } catch (e) { console.error('RPG Custodian: could not delete', copy.avatar, e); }
+            }
+            if (folded) await context.getCharacters();
+        } catch (e) { console.error('RPG Custodian: single-card migration failed', e); }
     }
 
     // The extension's own SillyTavern lorebook (World Info), BOUND TO THE GAME
@@ -1085,7 +1126,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 context.saveSettingsDebounced();
                 const live = currentGameState.isActive && currentGameState.worldData?.worldId === worldId && castCharFor(name);
                 if (live) {
-                    try { await createCharacterFromCardData(card, castCharFor(name).avatar.replace(/\.png$/, '')); }
+                    try { await mergeRpgIntoCard(castCharFor(name), card); }
                     catch (e) { console.error('RPG Custodian: live note push failed', e); }
                 }
                 $('#cf-note-state').text(live ? '✓ saved & live' : '✓ saved');
@@ -2005,7 +2046,19 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         // cast to everything that already happened.
         {
             let stamped = 0;
-            for (const m of (getCtx().chat || [])) if (!m.present) { m.present = ['presence_universal_tracker']; stamped++; }
+            const toOriginal = (av) => {
+                if (!String(av).startsWith('RPGC_')) return av;
+                const nm = String(av).replace(/^RPGC_/, '').replace(/\.png$/, '');
+                const orig = getCtx().characters.find(c => c.name === nm && !String(c.avatar).startsWith('RPGC_'));
+                return orig ? orig.avatar : av;
+            };
+            for (const m of (getCtx().chat || [])) {
+                if (!m.present) { m.present = ['presence_universal_tracker']; stamped++; }
+                else if (Array.isArray(m.present) && m.present.some(av => String(av).startsWith('RPGC_'))) {
+                    const mapped = m.present.map(toOriginal);
+                    if (JSON.stringify(mapped) !== JSON.stringify(m.present)) { m.present = mapped; stamped++; }
+                }
+            }
             if (stamped) { try { await getCtx().saveChat(); } catch (e) { console.warn('RPG Custodian: presence backfill save failed', e); } }
         }
 
@@ -3357,6 +3410,12 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             if (groupPreexisted) {
                 await createNewGroupChat(groupId);
             }
+            // Cards keep their greetings; the fresh GAME chat does not — clear
+            // the auto-seeded intros before the engine posts its banner.
+            {
+                const c = getCtx().chat || [];
+                if (c.length) { c.splice(0, c.length); $('#chat').children('.mes').remove(); }
+            }
             await syncPresence();
             projectPlayerStatus();
 
@@ -3500,6 +3559,29 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         return null;
     }
 
+    /** Write one field of an existing card IN PLACE via ST's edit-attribute —
+     *  image and every other field untouched. Never use the create API on a
+     *  card that already exists (that is what wiped portraits and greetings). */
+    async function writeCardField(char, field, value) {
+        const r = await fetch('/api/characters/edit-attribute', {
+            method: 'POST', headers: context.getRequestHeaders(),
+            body: JSON.stringify({ avatar_url: char.avatar, ch_name: char.name, field, value }),
+        });
+        if (!r.ok) throw new Error(`edit-attribute ${field}: ${r.status}`);
+    }
+    /** Fold the world's rpg_custodian block (+ talkativeness 0, + depth_prompt)
+     *  into an existing card's extensions — the single-card architecture's only
+     *  write path for adopted originals. Spec-legal: vanilla ST ignores the block. */
+    async function mergeRpgIntoCard(char, cardData) {
+        const ext = structuredClone(char.data?.extensions || {});
+        ext.rpg_custodian = structuredClone(cardData.extensions?.rpg_custodian || {});
+        ext.talkativeness = 0;   // house rule: every card speaks only when triggered
+        if (cardData.extensions?.depth_prompt !== undefined) ext.depth_prompt = structuredClone(cardData.extensions.depth_prompt);
+        await writeCardField(char, 'extensions', ext);
+        try { await writeCardField(char, 'talkativeness', '0'); } catch { /* some cards lack the root field */ }
+        await context.getCharacters();
+    }
+
     async function createCharacterFromCardData(cardData, fileName) {
         try {
             // Use the data object from the card (V2/V3 format)
@@ -3512,11 +3594,9 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             formData.append('description', charData.description || '');
             formData.append('personality', charData.personality || '');
             formData.append('scenario', charData.scenario || '');
-            // Greetings are a vanilla-ST feature the engine never uses — and a
-            // fresh group chat auto-seeds every member's non-empty first_mes,
-            // spamming a New Game with canned intros. RPG cards are therefore
-            // always created greeting-less, whatever the source card says.
-            formData.append('first_mes', '');
+            // Cards keep their authored greeting — fresh RPG chats clear the
+            // auto-seeded intros at the CHAT level instead (startRpgSession).
+            formData.append('first_mes', charData.first_mes || '');
             formData.append('mes_example', charData.mes_example || '');
             formData.append('creator_notes', charData.creator_notes || '');
             formData.append('system_prompt', charData.system_prompt || '');
@@ -3570,18 +3650,19 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     }
 
     /**
-     * Resolve the CHARACTER that embodies a cast member. Ownership-aware:
-     * a card only counts as world-owned if it carries the rpg_custodian
-     * block. Adopted originals (a user's own character pulled into a cast)
-     * are NEVER matched — the world plays a separate RPGC_<name>.png copy,
-     * so the original card is never touched. (Learned the hard way: a blind
-     * name-fallback let the refresh cycle overwrite seven of Dyna's original
-     * cards, nuking their greetings.)
+     * Resolve the CHARACTER that embodies a cast member — single-card
+     * architecture: the ORIGINAL card by name is the one that plays; all
+     * engine data lives namespaced in data.extensions.rpg_custodian and the
+     * only write path is mergeRpgIntoCard (in-place edit-attribute — never
+     * the create API, which is what once nuked seven original cards).
+     * Legacy RPGC_ copies resolve only when no original exists (they ARE the
+     * single card on accounts that never had an original).
      */
     function castCharFor(name) {
         const chars = getCtx().characters;
-        return chars.find(c => c.avatar === `${name}.png` && c.data?.extensions?.rpg_custodian)   // legacy world-generated card
-            || chars.find(c => c.avatar === `RPGC_${name}.png`)                                    // world-owned copy of an adopted character
+        return chars.find(c => c.avatar === `${name}.png`)                                       // canonical file — the single card
+            || chars.find(c => c.name === name && !String(c.avatar).startsWith('RPGC_'))          // original under a variant filename
+            || chars.find(c => c.avatar === `RPGC_${name}.png`)                                    // legacy copy with no original
             || null;
     }
 
@@ -3633,17 +3714,24 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 // are stripped at creation and would spam fresh group chats).
                 // ONLY world-owned cards are ever created/refreshed — adopted
                 // originals stay untouched; their world copy lives at RPGC_<name>.
-                const existing = castCharFor(castName);
-                const fileName = existing ? existing.avatar.replace(/\.png$/, '') : `RPGC_${castName}`;
+                // Prefer the exact card that was ADOPTED (source_avatar) — with
+                // duplicate names on an account, resolution stays deterministic.
+                const existing = (rpgMeta.source_avatar && getCtx().characters.find(c => c.avatar === rpgMeta.source_avatar))
+                    || castCharFor(castName);
                 const liveVersion = existing?.data?.extensions?.rpg_custodian?.card_version;
                 const srcVersion = rpgMeta.card_version;
                 if (!existing) {
-                    console.log(`RPG Custodian: Creating cast member "${castName}" as ${fileName}.png...`);
-                    await createCharacterFromCardData(cardData, fileName);
-                } else if (liveVersion !== srcVersion || cardHasGreeting(existing) || Number(existing.talkativeness) !== 0
-                    || !existing.data?.extensions?.rpg_custodian?.portrait_v) {   // pre-portrait-fix copy: heal her face once
-                    console.log(`RPG Custodian: Refreshing "${castName}" card (${liveVersion || 'none'} → ${srcVersion})`);
-                    await createCharacterFromCardData(cardData, fileName);
+                    // No card anywhere (shipped world / bundle import on a fresh
+                    // account): create it ONCE under its plain name.
+                    console.log(`RPG Custodian: Creating cast member "${castName}"...`);
+                    await createCharacterFromCardData(cardData, castName);
+                } else if (liveVersion !== srcVersion
+                    || Number(existing.talkativeness) !== 0
+                    || Number(existing.data?.extensions?.talkativeness ?? 0) !== 0) {
+                    // Single-card architecture: fold the world's rpg block into
+                    // the ORIGINAL in place — art, greeting, prose untouched.
+                    console.log(`RPG Custodian: Folding world data into "${castName}" (${liveVersion || 'none'} → ${srcVersion})`);
+                    await mergeRpgIntoCard(existing, cardData);
                 }
             } catch (error) {
                 console.error(`RPG Custodian: Failed to ensure cast member "${castName}":`, error);

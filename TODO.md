@@ -204,26 +204,26 @@ shared across all worlds. Works fine while casts don't share names, but:
 - [x] Single-save-slot loss on world switch ✅ fixed 2026-07-27 (per-world
       saves; Dyna's prototype-town save reconstructed from chat forensics).
 
-## 6.95 Single-card architecture (retire RPGC_ copies) 🃏
+## 6.95 Single-card architecture (retire RPGC_ copies) 🃏 — ✅ SHIPPED 2026-07-28
 Dyna's verdict 2026-07-28: separate RPGC_ world copies instead of cleanly
 extending originals backwards-compatibly is bad design — the copy machinery
 has caused the greeting-nuking, the portrait wipe, spec-mismatch warnings,
 and duplicate-entry clutter in the vanilla character menu.
-- [ ] Goal: play the ORIGINAL card; all engine data stays namespaced in
+- [x] Goal: play the ORIGINAL card; all engine data stays namespaced in
   `data.extensions.rpg_custodian` (spec-legal, ignored by vanilla ST).
-- [ ] Greeting spam: instead of stripping first_mes on a copy, suppress the
+- [x] Greeting spam: instead of stripping first_mes on a copy, suppress the
   auto-seeded greetings at group-chat creation time (engine deletes them
   from the fresh chat) — card untouched.
-- [ ] Talkativeness: original keeps its value; engine already gates replies
+- [x] Talkativeness: all cards normalized to 0 (Dyna's house rule); engine already gates replies
   deterministically (triggerNpcReply / disabled_members) — verify ST group
   auto-select can't fire while the engine drives, or override at the group
   member level rather than the card.
-- [ ] Live edits (depth_prompt notes, card_version): write only inside the
+- [x] Live edits (depth_prompt notes, card_version): write only inside the
   rpg_custodian extension block via merge-style updates — never recreate
   the card through /api/characters/create (that's what wiped portraits).
-- [ ] Migration: castCharFor resolves originals again; existing RPGC_
+- [x] Migration: castCharFor resolves originals again; existing RPGC_
   copies detected, relationships/effects carried over, copies deleted.
-- [ ] Bundles: cast export embeds the full original card (incl. portrait).
+- [ ] Bundles: cast export embeds the full original card (incl. portrait). ← still open
 
 ## 7. Spellcasting system ✨
 

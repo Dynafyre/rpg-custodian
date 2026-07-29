@@ -89,13 +89,16 @@ try {
     const relT = await page.evaluate(n => { const r = window.rpgCustodianDebug.rel(n); return { aff: r.affection, aro: r.arousal }; }, castName);
     check('relationship seeded from world-authored values (Fond 5, aroused 2)', relT.aff === 5 && relT.aro === 2, JSON.stringify(relT));
 
-    // ---- THE ORIGINAL CARD IS SACRED: adoption + play must not touch it ----
+    // ---- SINGLE-CARD: the ORIGINAL plays; rpg data namespaced; no copies ----
     const cardStates = await page.evaluate(n => SillyTavern.getContext().characters
         .filter(c => c.name === n)
-        .map(c => ({ avatar: c.avatar, fm: (c.data?.first_mes || c.first_mes || '').length, owned: !!c.data?.extensions?.rpg_custodian })), castName);
+        .map(c => ({ avatar: c.avatar, fm: (c.data?.first_mes || c.first_mes || '').length, owned: !!c.data?.extensions?.rpg_custodian, talk: Number(c.talkativeness), extTalk: Number(c.data?.extensions?.talkativeness ?? 0) })), castName);
     console.log('Trizel cards:', JSON.stringify(cardStates));
-    check('world copy exists at RPGC_ namespace', cardStates.some(c => /^RPGC_/.test(c.avatar) && c.owned));
-    check('original cards keep their first message', cardStates.filter(c => !/^RPGC_/.test(c.avatar)).every(c => c.fm > 0));
+    check('no RPGC_ copy exists (single-card architecture)', cardStates.every(c => !/^RPGC_/.test(c.avatar)));
+    check('the ORIGINAL carries the rpg_custodian block', cardStates.some(c => !/^RPGC_/.test(c.avatar) && c.owned));
+    check('original keeps its first message (chat-level suppression)', cardStates.every(c => c.fm > 0));
+    const played = cardStates.find(c => c.owned);
+    check('the playing card has talkativeness 0 on both surfaces', played && played.talk === 0 && played.extTalk === 0, JSON.stringify(played));
 
     // ---- live NPC effects: forge + remove ----
     await openMenuItem('Worlds (play');
@@ -148,7 +151,7 @@ try {
     });
     check('character note debounce-saved to world data', /elixir/.test(noteSaved), noteSaved.slice(0, 50));
     const noteLive = await page.evaluate(n => {
-        const c = SillyTavern.getContext().characters.find(x => x.avatar === `RPGC_${n}.png`);
+        const c = SillyTavern.getContext().characters.find(x => x.name === n && !x.avatar.startsWith('RPGC_'));
         return c?.data?.extensions?.depth_prompt?.prompt || '';
     }, castName);
     check('character note hot-pushed to her live card', /elixir/.test(noteLive), noteLive.slice(0, 50));
