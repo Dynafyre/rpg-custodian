@@ -188,6 +188,7 @@ jQuery(async () => {
                         body: JSON.stringify({ avatar_url: copy.avatar, delete_chats: false }),
                     });
                     folded++;
+                    ensureRpgTag(orig.avatar);
                     console.log(`RPG Custodian: folded ${copy.avatar} into ${orig.avatar}`);
                 } catch (e) { console.error('RPG Custodian: could not delete', copy.avatar, e); }
             }
@@ -951,6 +952,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 world.cast = (world.cast || []).filter(n => n !== name);
                 if (world.castData) delete world.castData[name];
                 context.saveSettingsDebounced();
+                removeRpgTagIfUnused(name);
                 wmToast(`${name} removed from the cast.`, 'success');
                 openCastManager(worldId);
             } },
@@ -1038,6 +1040,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         // default silhouette over her face.
         cd.extensions.rpg_custodian = { ...(cd.extensions.rpg_custodian || {}), source_avatar: char.avatar };
         world.castData[char.name] = cd;
+        ensureRpgTag(char.avatar);
         openCastForm(worldId, char.name, { adopting: true });
     }
 
@@ -3496,6 +3499,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             const liveVersion = gameMaster?.data?.extensions?.rpg_custodian?.card_version;
             if (gameMaster && !cardHasGreeting(gameMaster) && Number(gameMaster.talkativeness) === 0 && liveVersion === GM_CARD_VERSION) {
                 console.log('RPG Custodian: Game Master character already exists');
+                ensureRpgTag('Game Master.png');
                 return;
             }
 
@@ -3503,6 +3507,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 ? `RPG Custodian: Game Master card out of date (${liveVersion || 'unversioned'} → ${GM_CARD_VERSION}), recreating...`
                 : 'RPG Custodian: Game Master not found, creating from template...');
             await createGameMasterFromTemplate();
+            ensureRpgTag('Game Master.png');
 
         } catch (error) {
             console.error('RPG Custodian: Error ensuring Game Master exists:', error);
@@ -3557,6 +3562,43 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             }
         } catch (e) { console.warn('RPG Custodian: portrait lookup failed', e); }
         return null;
+    }
+
+    // === ST tag system: every engine-managed card wears the RPG-C tag ===
+    const RPG_TAG_NAME = 'RPG-C';
+    function ensureRpgTag(avatar) {
+        try {
+            if (!avatar) return;
+            const ctx = getCtx();
+            let tag = (ctx.tags || []).find(t => String(t.name).toLowerCase() === RPG_TAG_NAME.toLowerCase());
+            if (!tag) {
+                tag = {
+                    id: crypto.randomUUID(), name: RPG_TAG_NAME,
+                    folder_type: 'NONE', filter_state: 'UNDEFINED',
+                    sort_order: Math.max(0, ...(ctx.tags || []).map(t => t.sort_order || 0)) + 1,
+                    is_hidden_on_character_card: false, color: '', color2: '', create_date: Date.now(),
+                };
+                ctx.tags.push(tag);
+            }
+            ctx.tagMap[avatar] = ctx.tagMap[avatar] || [];
+            if (!ctx.tagMap[avatar].includes(tag.id)) {
+                ctx.tagMap[avatar].push(tag.id);
+                context.saveSettingsDebounced();
+            }
+        } catch (e) { console.warn('RPG Custodian: RPG-C tagging failed for', avatar, e); }
+    }
+    /** Untag when she leaves her LAST cast — other worlds may still claim her. */
+    function removeRpgTagIfUnused(name) {
+        try {
+            const stillCast = Object.values(authoredWorlds() || {}).some(w => (w.cast || []).includes(name));
+            if (stillCast) return;
+            const ctx = getCtx();
+            const tag = (ctx.tags || []).find(t => String(t.name).toLowerCase() === RPG_TAG_NAME.toLowerCase());
+            const char = castCharFor(name);
+            if (!tag || !char || !ctx.tagMap[char.avatar]) return;
+            ctx.tagMap[char.avatar] = ctx.tagMap[char.avatar].filter(id => id !== tag.id);
+            context.saveSettingsDebounced();
+        } catch (e) { console.warn('RPG Custodian: RPG-C untagging failed for', name, e); }
     }
 
     /** Write one field of an existing card IN PLACE via ST's edit-attribute —
@@ -3733,6 +3775,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     console.log(`RPG Custodian: Folding world data into "${castName}" (${liveVersion || 'none'} → ${srcVersion})`);
                     await mergeRpgIntoCard(existing, cardData);
                 }
+                ensureRpgTag((existing || castCharFor(castName))?.avatar);
             } catch (error) {
                 console.error(`RPG Custodian: Failed to ensure cast member "${castName}":`, error);
             }

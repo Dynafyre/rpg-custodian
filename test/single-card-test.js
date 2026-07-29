@@ -88,6 +88,20 @@ try {
     });
     check('group membership = original card', members.includes(before.avatar) && members.every(m => !m.startsWith('RPGC_')), JSON.stringify(members));
 
+    // 3b. RPG-C tags via the ST tag system
+    const tagState = await page.evaluate((av) => {
+        const ctx = SillyTavern.getContext();
+        const tag = (ctx.tags || []).find(t => t.name === 'RPG-C');
+        return {
+            exists: !!tag,
+            onCast: !!tag && (ctx.tagMap[av] || []).includes(tag.id),
+            onGM: !!tag && (ctx.tagMap['Game Master.png'] || []).includes(tag.id),
+        };
+    }, before.avatar);
+    check('RPG-C tag exists in the ST tag system', tagState.exists);
+    check('cast member wears the RPG-C tag', tagState.onCast);
+    check('Game Master wears the RPG-C tag', tagState.onGM);
+
     // 4. fresh chat: no auto-seeded greetings — engine banner only
     const chatHeads = await page.evaluate(() => (SillyTavern.getContext().chat || []).slice(0, 4).map(m => `${m.name}:${m.is_system ? 'sys' : 'live'}:${(m.mes || '').slice(0, 30)}`));
     console.log('chat head:', JSON.stringify(chatHeads));
