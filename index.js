@@ -3949,7 +3949,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             parts.push(`🌱 Fertility: ${fertilityPercent(npcName)}% — ${ph.emoji} ${ph.label} (cycle ${ph.pct}%${mod ? `, mod ${mod > 0 ? '+' : ''}${mod}%` : ''})`);
         }
         if (npc?.wrestle) parts.push(`🤼 Contest DC: ${npc.wrestle.difficulty}`);
-        if ((rel.pregnancies || 0) > 0) parts.push(`🤰 Pregnancy: ${rel.pregnancies} carried — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} (${rel.pregnancy_progress || 0}%)`);
+        if ((rel.pregnancies || 0) > 0) { const pb = pregnancyBand(npcName, 'third'); parts.push(`🤰 Pregnancy: ${pb.countWord} — ${pb.stage} (${rel.pregnancy_progress || 0}%)`); }
         for (const e of npcActiveEffects(npcName)) parts.push(effectDetailLine(e));
         if (isCrystalCursed(npcName)) parts.push(`💠 **Crystal Curse** — her issue turns to soulgems (${(getRelationship(npcName).crystalCurse?.expiresStep == null) ? 'permanent until broken' : `${Math.max(0, getRelationship(npcName).crystalCurse.expiresStep - (currentGameState.timeStep || 0))} periods left`})`);
         if (isInParty(npcName)) parts.push('🧑‍🤝‍🧑 Travelling with you');
@@ -3966,7 +3966,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (!rel.npcUnconscious && stamNow < npcMaxStamina(npcName)) {
             flavor.push(stamNow <= npcMaxStamina(npcName) / 3 ? 'utterly spent, barely upright' : 'worn and tired');
         }
-        if ((rel.pregnancies || 0) > 0) flavor.push(`${pregnancyStage(rel.pregnancy_progress)} pregnant, carrying ${rel.pregnancies}`);
+        if ((rel.pregnancies || 0) > 0) { const pb = pregnancyBand(npcName, 'third'); if (pb) flavor.push(`carrying ${pb.countWord} (${pb.stage}) — ${pb.band}`); }
         for (const e of npcActiveEffects(npcName)) flavor.push(e.selfNote ? `under the effect of ${e.name}: ${e.selfNote}` : `under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
         const t = affectionTier(getNpcAffection(npcName));
         // Positive framing beats negation: telling the model to "ignore her
@@ -4434,8 +4434,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const t = affectionTier(getNpcAffection(npcName));
         const dur = elapsedPhrase(elapsed);
         const role = npc?.role ? ` (${aOrAn(npc.role)})` : '';
-        const preg = rel.pregnancies > 0
-            ? ` You have carried ${rel.pregnancies} of his ${rel.pregnancies === 1 ? 'child' : 'children'} through this absence (now ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'}, ${rel.pregnancy_progress || 0}% along).`
+        const pregBand = rel.pregnancies > 0 ? pregnancyBand(npcName, 'second') : null;
+        const preg = pregBand
+            ? ` You have carried ${pregBand.countWord} of his through this absence, and it has moved on without him: ${pregBand.band}`
             : '';
         // If the last thing that happened was being left unconscious, that colors
         // the whole reunion — she remembers passing out / being left, not a
@@ -4510,7 +4511,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             const a = arousalTier(getNpcArousal(npc.name));
             let d = `${npc.name} (${t.label}${isInParty(npc.name) ? ', travelling with you' : ''}): ${npc.name} ${t.band}`;
             if (getNpcArousal(npc.name) >= 3) d += ` Physically (${a.label}): ${a.band}`;
-            if (rel.pregnancies > 0) d += ` She is carrying ${rel.pregnancies} of your ${rel.pregnancies === 1 ? 'child' : 'children'} — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} stage, ${rel.pregnancy_progress || 0}% developed.`;
+            if (rel.pregnancies > 0) {
+                const pb = pregnancyBand(npc.name, 'third');
+                if (pb) d += ` Carrying ${pb.countWord} of his (${pb.stage}): ${pb.band}`;
+            }
             // Cycle extremes only (peak / anti-peak), and only when not already
             // carrying. Deliberately terse and unflavored: a plain fact she
             // knows, small enough that she won't fixate on it unprompted —
@@ -4974,6 +4978,135 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         for (const s of PREGNANCY_STAGES) if (pct >= s.min && pct <= s.max) return s.name;
         return 'Birth Overdue';
     }
+    // ========================================================================
+    // PREGNANCY AS A PROJECTED BAND (not a raw percentage)
+    // ========================================================================
+    // Every other stat reaches the models as behavior (affectionTier,
+    // arousalTier); pregnancy alone used to leak "2nd Trimester stage, 60%
+    // developed" — a chart reading no woman would think in, leaving the model
+    // to invent what 60% feels like.
+    //
+    // COMPOSED, NOT ENUMERATED. kind (3) × stage (7) × count (5 buckets) is
+    // 105 combinations, and eight cold soulgems at overdue is genuinely a
+    // different experience from one egg at mid-term — but 5 vs 6 children is
+    // not, so counts collapse into buckets. Each band is built from a stage
+    // core (21) + a burden clause when she carries more than one (5 tiers) +
+    // a per-kind multiple-sensation. Templates carry {she}/{her}/{is} tokens
+    // so one set of text serves both third person (what others perceive) and
+    // second person (her own reunion briefing).
+    const PREG_NOUNS = {
+        live: { one: 'child', many: 'children' },
+        egg: { one: 'egg', many: 'eggs' },
+        crystal: { one: 'soulgem', many: 'soulgems' },
+    };
+    // What several of them FEEL like together — the sensation that only exists
+    // when she is carrying more than one.
+    const PREG_MULTI_SENSE = {
+        live: 'their kicks collide and answer one another',
+        egg: 'the shells grind and clack against each other',
+        crystal: 'the facets chime and tingle and grate as they shift',
+    };
+    const PREG_STAGE_CORE = {
+        live: [
+            `Something has just taken root in {her} — too new to feel and too new to show; if {she} {knows} at all, it is by instinct or by counting days.`,
+            `It has settled into {her} womb, and the first true signs have arrived: a tenderness in {her} breasts, queasiness at odd hours, and a tiredness sleep does not touch.`,
+            `There is no mistaking it now: {her} waist has thickened past anything close-fitting, and {her} appetite and moods keep their own counsel.`,
+            `{Her} belly has begun to round in earnest, visible and undeniable. {She} {tires} easily, {moves} with new care, and {her} body increasingly sets the pace of {her} day.`,
+            `{She} {is} plainly, roundly pregnant, and {she} {feels} movement from within — flutters that have become kicks — with a hand drifting often to the curve of {her} belly.`,
+            `{She} {is} heavily pregnant and near {her} time: sleep is difficult, breath is short, {her} back aches without pause, and the weight in front of {her} governs every way {she} {moves}.`,
+            `{She} {is} past due and {her} body knows it — heavy, aching, restless, braced for pains that cannot be far off. {She} {cannot} travel far, work hard, or think about much else.`,
+        ],
+        egg: [
+            `Something has just taken inside {her} — far too early to feel; only instinct or the count of days would tell {her}.`,
+            `The clutch has set inside {her}: a low unfamiliar fullness, a heat beneath {her} ribs, and a hunger that has begun to outrun {her} meals.`,
+            `The shells are forming — {she} {can} feel the shape of them low in {her} body, firm where {she} used to be soft, and it changes how {she} {sits}.`,
+            `{Her} middle has swelled with the clutch, firm and rounded. They shift when {she} {moves}, and {she} {has} begun to favor warm places without deciding to.`,
+            `{She} {is} visibly gravid, {her} belly taut and heavy with shells. {She} {feels} each one settle and press, and the urge to find somewhere dark and warm to nest has begun to nag at {her}.`,
+            `{She} {is} swollen near to bursting, the shells hard and unmistakable beneath {her} skin. Moving is awkward, resting is worse, and the nesting urge has become difficult to ignore.`,
+            `{She} {is} ready to lay and long past ready — the shells sitting low and grinding, {her} body clenching in waves that come and go, every instinct in {her} demanding a nest.`,
+        ],
+        crystal: [
+            `Something has just taken inside {her} — nothing to feel yet beyond a faint chill {she} might blame on the weather.`,
+            `What has rooted in {her} is not flesh: a cold weight low in {her} belly, and the wrong, hardening sensation of stone where softness should be.`,
+            `The growths have set — hard, cold, and utterly still. {She} {feels} mass but no life in them, and the absence of movement is its own dread.`,
+            `{Her} belly has swelled around the crystals. They are cold from within and they tingle faintly against {her} nerves, chiming when {she} {moves} — a sound {she} {has} learned to dread.`,
+            `{She} {is} visibly heavy with soulgems: icy, motionless, and audible when {she} {moves}. No kick, no flutter — only a dull click of stone on stone and a cold that tingles through {her}.`,
+            `{She} {is} grossly swollen with crystal, {her} skin stretched over hard angles that press outward. Nothing in {her} lives; nothing in {her} moves except when {she} {does}. The cold has settled into {her} bones.`,
+            `{She} {is} past due to be delivered of them — the crystals grinding, cold and immense, {her} body laboring to be rid of what was never alive. {She} {can} think of little else.`,
+        ],
+    };
+    // Burden of carrying MULTIPLES, scaled by how far along she is. Stages
+    // where nothing is detectable yet get no clause at all — eight of them at
+    // implantation still feels like nothing.
+    const PREG_BURDEN = {
+        unfelt: null,
+        // `n` arrives as a complete phrase ("twins", "8 soulgems"), so these
+        // must read correctly with a plural subject and never re-count it
+        // ("twins of them" / "8 soulgems of them"). Verbs whose subject is a
+        // body part rather than the woman stay literal — {is} would conjugate
+        // to "your body are".
+        early: (n, sense) => `Carrying ${n} at once, {she} {is} already swollen past what a single would explain.`,
+        showing: (n, sense) => `${n} crowd {her} at once — ${sense} — and {she} {is} plainly bigger than any single pregnancy would leave {her}.`,
+        heavy: (n, sense) => `With ${n} inside {her}, {she} {is} enormous, stretched far past what one alone would ever have done: no position is comfortable, breath comes shallow, and ${sense}.`,
+        overdue: (n, sense) => `${n}, all past due, make a monstrous load — ${sense}, and {her} body is at the very end of what it can hold.`,
+    };
+    function pregStageIdx(pct) {
+        const p = Number(pct) || 0;
+        if (p < 10) return 0;
+        if (p < 25) return 1;
+        if (p < 35) return 2;
+        if (p < 60) return 3;
+        if (p < 80) return 4;
+        if (p < 100) return 5;
+        return 6;
+    }
+    const PREG_BURDEN_TIER = ['unfelt', 'unfelt', 'early', 'early', 'showing', 'heavy', 'overdue'];
+    // 5 and 6 are not materially different experiences; 1, 2, 3, a handful, and
+    // a great many are.
+    const NUM_WORDS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve'];
+    function pregCountWord(kind, n) {
+        if (n <= 1) return kind === 'live' ? 'one child' : `one ${PREG_NOUNS[kind].one}`;
+        if (n === 2) return kind === 'live' ? 'twins' : `two ${PREG_NOUNS[kind].many}`;
+        if (n === 3) return kind === 'live' ? 'triplets' : `three ${PREG_NOUNS[kind].many}`;
+        // Spelled out — the phrase can open a sentence in the burden clause.
+        return `${NUM_WORDS[n] || n} ${PREG_NOUNS[kind].many}`;
+    }
+    const PREG_TOKENS = {
+        third: { She: 'She', she: 'she', Her: 'Her', her: 'her', is: 'is', has: 'has', knows: 'knows', feels: 'feels', moves: 'moves', tires: 'tires', sits: 'sits', does: 'does', can: 'can', cannot: 'cannot' },
+        second: { She: 'You', she: 'you', Her: 'Your', her: 'your', is: 'are', has: 'have', knows: 'know', feels: 'feel', moves: 'move', tires: 'tire', sits: 'sit', does: 'do', can: 'can', cannot: 'cannot' },
+    };
+    function renderPregPerson(text, person) {
+        const map = PREG_TOKENS[person] || PREG_TOKENS.third;
+        return String(text).replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
+    }
+    /**
+     * The projected pregnancy band. `person`: 'third' (others perceive her) or
+     * 'second' (she reads it about herself).
+     * Returns null when she carries nothing.
+     */
+    function pregnancyBand(npcName, person = 'third') {
+        const rel = getRelationship(npcName);
+        const count = Math.max(0, Number(rel.pregnancies) || 0);
+        if (!count) return null;
+        const kind = ['live', 'egg', 'crystal'].includes(rel.conceptionKind) ? rel.conceptionKind : 'live';
+        const pct = Number(rel.pregnancy_progress) || 0;
+        const idx = pregStageIdx(pct);
+        const countWord = pregCountWord(kind, count);
+        const parts = [PREG_STAGE_CORE[kind][idx]];
+        if (count >= 2) {
+            const burden = PREG_BURDEN[PREG_BURDEN_TIER[idx]];
+            // The clause opens a sentence, and the count phrase may lead it
+            // ("twins, all past due…"), so it has to be capitalized.
+            if (burden) { const c = burden(countWord, PREG_MULTI_SENSE[kind]); parts.push(c.charAt(0).toUpperCase() + c.slice(1)); }
+        }
+        return {
+            label: `${PREGNANCY_STAGES[idx].name} · ${countWord}`,
+            stage: PREGNANCY_STAGES[idx].name,
+            count, kind, pct, countWord,
+            band: renderPregPerson(parts.join(' '), person),
+        };
+    }
+
     // Called on every Increment Time event — grows each active pregnancy 5%.
     function advancePregnancies(quiet = false) {
         const rd = getPlayerRpgData(); if (!rd) return;
@@ -5833,7 +5966,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // NPC's offer, a bargain, a handed-over item), not travel/time/sheet noise.
         const lines = chat.filter(isStoryMessage)
             .slice(-12)                                          // doubled from 6
-            .map(m => `${m.is_user ? 'Player' : m.name}: ${String(m.mes).replace(/\s+/g, ' ').slice(0, 400)}`);
+            .map(m => `${m.is_user ? 'Player' : m.name}: ${String(m.mes).replace(/\s+/g, ' ').slice(0, 800)}`);
         return lines.length ? lines.join('\n') : '(scene just beginning)';
     }
 
@@ -6700,6 +6833,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         giveItem: (name) => addItem({ id: `${String(name).toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`, name, desc: '' }),
         useItemNamed: (name) => useItemByName(name),
         conceptionKind: (n) => resolveConceptionKind(n),
+        pregBand: (n, person) => pregnancyBand(n, person || 'third'),
         castForm: (w, n) => openCastForm(w, n, { quick: true }),
         lorebook: async () => await loadWorldInfo(RPG_LOREBOOK_NAME),
         gmWorld: () => (context.characters || []).find(c => c.avatar === 'Game Master.png')?.data?.extensions?.world,
