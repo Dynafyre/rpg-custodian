@@ -3433,13 +3433,15 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 char.avatar === 'Game Master.png'
             );
 
-            if (gameMaster && !cardHasGreeting(gameMaster) && Number(gameMaster.talkativeness) === 0) {
+            const GM_CARD_VERSION = '2.1';   // bump when templates/Game Master.json changes
+            const liveVersion = gameMaster?.data?.extensions?.rpg_custodian?.card_version;
+            if (gameMaster && !cardHasGreeting(gameMaster) && Number(gameMaster.talkativeness) === 0 && liveVersion === GM_CARD_VERSION) {
                 console.log('RPG Custodian: Game Master character already exists');
                 return;
             }
 
             console.log(gameMaster
-                ? 'RPG Custodian: Game Master card needs normalizing (greeting/talkativeness), recreating...'
+                ? `RPG Custodian: Game Master card out of date (${liveVersion || 'unversioned'} → ${GM_CARD_VERSION}), recreating...`
                 : 'RPG Custodian: Game Master not found, creating from template...');
             await createGameMasterFromTemplate();
 
