@@ -155,6 +155,10 @@ jQuery(async () => {
 
         // Drive the Intent Analyzer off every player message
         context.eventSource.on(context.eventTypes.MESSAGE_SENT, onUserMessage);
+        // …and catch character replies vanilla ST produced on its own (continue
+        // button, swipe arrows, send-with-empty-field) so they still mark her
+        // as having seen him and still face the reaction judge.
+        context.eventSource.on(context.eventTypes.MESSAGE_RECEIVED, onNpcMessageLanded);
 
         // Single-card migration: fold legacy RPGC_ copies into their originals
         // (groups re-pointed, copies deleted). Idempotent; no-ops when clean.
@@ -1981,9 +1985,20 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
 
     /**
      * Recompute NPC presence and apply it as group mute state.
-     * Present NPCs are un-muted; everyone else (except the GM) is muted.
-     * The Game Master stays enabled but has talkativeness 0, so it only speaks
-     * when @mentioned or triggered by a game function call.
+     * Present NPCs are un-muted; EVERYONE else is muted — the Game Master
+     * included.
+     *
+     * The GM used to stay enabled on the theory that talkativeness 0 kept it
+     * quiet. It does not. Sending an empty message is not user input, and ST's
+     * MANUAL strategy answers that with
+     *     shuffle(enabledMembers).slice(0, 1)
+     * — one enabled member picked AT RANDOM, talkativeness ignored entirely
+     * (group-chats.js). With the GM enabled it could be the one drafted, and
+     * it would free-narrate a scene the engine never resolved, which is the
+     * one thing the GM must never do. Muting costs nothing: GM messages are
+     * pushed straight into the chat by sendGameMasterMessage, never generated
+     * through the group, and a deliberate trigger passes force_chid, which ST
+     * honors ahead of the enabled list.
      */
     async function syncPresence() {
         if (!currentGameState.isActive || !currentGameState.groupId) return;
@@ -1996,8 +2011,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         const presentAvatars = getNpcsAt(currentGameState.currentLocation).map(npc => castCharFor(npc.name)?.avatar || `${npc.name}.png`);
         const disabled = [];
         for (const avatar of group.members) {
-            if (avatar === 'Game Master.png') continue;        // GM never muted
-            if (!presentAvatars.includes(avatar)) disabled.push(avatar);
+            if (!presentAvatars.includes(avatar)) disabled.push(avatar);   // GM included — see above
         }
         group.disabled_members = disabled;
         group.activation_strategy = group_activation_strategy.MANUAL;   // self-heal older NATURAL groups
@@ -4446,8 +4460,21 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
 
     const STATUS_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS';
+    // The when/where ground truth, injected SEPARATELY at depth 0 — immediately
+    // adjacent to the generation point, in every generation path (trigger,
+    // swipe, regenerate, continue). The big status block below rides at depth
+    // 4, which in a verbose scene puts it thousands of tokens above the reply
+    // being written: far enough that models invented their own day of the week
+    // rather than reading ours. Facts that must never be confabulated live
+    // here, short enough to stay salient and not invite fixation.
+    const SCENE_PROMPT_KEY = 'RPG_CUSTODIAN_SCENE';
+    function sceneGroundTruth() {
+        const period = TIME_PERIODS[currentGameState.currentTime];
+        return `[NOW — ${weekdayName()}, ${period ? period.name.toLowerCase() : 'day'} of day ${currentGameState.dayCount}. Place: ${locName(currentGameState.currentLocation)}. This is the true day, time, and place; anything said or thought about them matches it.]`;
+    }
     function projectPlayerStatus() {
         const rd = currentGameState.isActive ? getPlayerRpgData() : null;
+        context.setExtensionPrompt(SCENE_PROMPT_KEY, rd ? sceneGroundTruth() : '', 1, 0);
         if (!rd) { context.setExtensionPrompt(STATUS_PROMPT_KEY, '', 1, 4); return; }
         const s = rd.stats;
         const name = context.powerUserSettings.personas?.[playerAvatar()] || 'The adventurer';
@@ -6351,6 +6378,8 @@ Narrate the result briefly, grounded in this location and the story's current be
             savePlayer();
         }
         // Her reply is on the page — read it against her bands (reaction judge).
+        // Stamp the index so the out-of-band handler can't judge it twice.
+        getRelationship(npcName).lastJudgedMesId = preReplyLen;
         await judgeNpcReaction(npcName, preReplyLen);
     }
 
@@ -6516,6 +6545,41 @@ Narrate the result briefly, grounded in this location and the story's current be
             .catch(e => console.error('RPG Custodian: orchestration chain error', e));
     }
 
+    // Vanilla SillyTavern can make a character speak WITHOUT a player message:
+    // the ▶ continue button, swipe arrows, and send-with-empty-field all
+    // generate straight from ST, bypassing orchestration entirely. The scene
+    // context still reaches them (extension prompts are global and persist),
+    // but the POST-reply systems used to be skipped — so a reply produced that
+    // way never moved affection and never marked her as having seen the player,
+    // which later mis-fired the reunion note. Catch those replies here.
+    //
+    // Judged strictly once per chat index (monotonic): a swipe re-rolls the
+    // SAME index, so re-rolling can never farm affection, while a genuinely new
+    // utterance always lands.
+    async function onNpcMessageLanded(mesId) {
+        try {
+            if (!currentGameState.isActive) return;
+            if (currentGameState.rpgOrchestrating) return;       // our own path already handles these
+            if (getCtx().groupId !== currentGameState.groupId) return;
+            const chat = getCtx().chat || [];
+            const idx = typeof mesId === 'number' ? mesId : chat.length - 1;
+            const msg = chat[idx];
+            if (!msg || msg.is_user || msg.is_system) return;
+            const name = msg.name;
+            if (!name || name === 'Game Master') return;
+            if (!(currentGameState.npcRoster || []).some(n => n.name === name)) return;
+
+            const rel = getRelationship(name);
+            if ((rel.lastJudgedMesId ?? -1) >= idx) return;      // swipe/continue of an already-judged line
+            rel.lastJudgedMesId = idx;
+            noteSeen(name);                                      // she HAS just spoken with him
+            savePlayer();
+            await judgeNpcReaction(name, idx);
+        } catch (e) {
+            console.error('RPG Custodian: out-of-band reply handling failed', e);
+        }
+    }
+
     // Every player message in an active session flows through here.
     function onUserMessage(mesId) {
         try {
@@ -6643,6 +6707,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         setPreg: (n, count, pct, kind) => { const r = getRelationship(n); r.pregnancies = count; r.pregnancy_progress = pct; if (kind) r.conceptionKind = kind; savePlayer(); return r; },
         tokens: () => getPlayerRpgData()?.stats.power_tokens,
         statusText: () => { projectPlayerStatus(); const ep = getCtx().extensionPrompts || context.extensionPrompts || {}; return ep[STATUS_PROMPT_KEY]?.value || '(none)'; },
+        sceneText: () => { projectPlayerStatus(); const ep = getCtx().extensionPrompts || context.extensionPrompts || {}; const e = ep[SCENE_PROMPT_KEY]; return e ? { value: e.value, position: e.position, depth: e.depth, role: e.role } : '(none)'; },
         hurt: (target, amt) => (target && target !== 'player') ? spendNpcStamina(target, amt || 1) : spendStamina(amt || 1),
         examineSelf: () => examineSelf(),
         examineNpc: (n) => examineNpc(n),
