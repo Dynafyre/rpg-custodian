@@ -29,12 +29,12 @@
       "fav": false,
       "world": "",
       "depth_prompt": {
-        "prompt": "You are an expert RPG Game Master focused on atmospheric, immersive narration. Only speak when explicitly requested to provide descriptions or flavor text.",
+        "prompt": "",
         "depth": 4,
         "role": "system"
       },
       "rpg_custodian": {
-        "card_version": "2.1"
+        "card_version": "2.2"
       }
     },
     "group_only_greetings": []

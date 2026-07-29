@@ -115,7 +115,12 @@ jQuery(async () => {
      */
     async function init() {
         console.log('RPG Custodian: Initializing extension');
-        
+
+        // The character list loads asynchronously at app boot — everything
+        // below (GM ensure, migration) reads it, so fetch it FIRST. Without
+        // this the GM was 'not found' on every cold load and re-created.
+        try { await context.getCharacters(); } catch (e) { console.warn('RPG Custodian: character list fetch at init failed', e); }
+
         // Load registered worlds
         await loadRegisteredWorlds();
 
@@ -267,6 +272,10 @@ jQuery(async () => {
             const loadedWorlds = [];
             
             for (const worldName of registeredWorlds) {
+                // An authored world with the same id SHADOWS the shipped one —
+                // otherwise the menu lists "prototype-town" twice and which
+                // copy loads becomes list-order luck.
+                if (authoredWorlds()[worldName]) continue;
                 try {
                     const worldPath = `scripts/extensions/third-party/rpg-custodian/game-worlds/fresh-worlds/${worldName}/${worldName}.json`;
                     const response = await fetch(worldPath);
@@ -3380,13 +3389,20 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             currentGameState.offspring = [];
             currentGameState.timeStep = 0;
 
-            // Check if current persona has RPG data with a saved location
+            // A NEW game ALWAYS starts at the world's starting location.
+            // (Legacy code resumed the persona's last spot in this world —
+            // replaying a world spawned you wherever you last stood, e.g. a
+            // secret prison with no visible exits, while the banner printed
+            // the starting room. Resuming is Continue's job, never New Game's.)
+            currentGameState.currentLocation = worldData.startingLocation;
             const rpgData = getCurrentRPGData();
-            if (rpgData?.world_state?.current_location && worldData.locations[rpgData.world_state.current_location]) {
-                currentGameState.currentLocation = rpgData.world_state.current_location;
-                console.log(`RPG Custodian: Loaded character location "${currentGameState.currentLocation}" from RPG data`);
-            } else {
-                currentGameState.currentLocation = worldData.startingLocation;
+            if (rpgData) {
+                updateCurrentRPGData({
+                    world_state: {
+                        current_location: worldData.startingLocation,
+                        visited_locations: [worldData.startingLocation],
+                    },
+                });
             }
 
             // Make sure the world's NPC cast exists and build the presence roster
@@ -3495,7 +3511,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 char.avatar === 'Game Master.png'
             );
 
-            const GM_CARD_VERSION = '2.1';   // bump when templates/Game Master.json changes
+            const GM_CARD_VERSION = '2.2';   // bump when templates/Game Master.json changes
             const liveVersion = gameMaster?.data?.extensions?.rpg_custodian?.card_version;
             if (gameMaster && !cardHasGreeting(gameMaster) && Number(gameMaster.talkativeness) === 0 && liveVersion === GM_CARD_VERSION) {
                 console.log('RPG Custodian: Game Master character already exists');
