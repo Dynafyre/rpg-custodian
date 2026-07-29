@@ -5003,36 +5003,41 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // when she is carrying more than one.
     const PREG_MULTI_SENSE = {
         live: 'their kicks collide and answer one another',
-        egg: 'the shells grind and clack against each other',
-        crystal: 'the facets chime and tingle and grate as they shift',
+        egg: 'the shells click and clack against one another',
+        crystal: 'the facets chime and tingle together like a pocketful of little bells',
     };
+    // Stage cores. Tokens come in two families: PERSON ({she}/{her}/{is} —
+    // third person for what others perceive, second for her own briefing) and
+    // NUMBER ({TheYoung}/{They}/{isare}/{shifts} — one egg must never be
+    // "shells"). Crystals are deliberately written light: cool, chiming,
+    // faintly musical curiosities, not body horror. This is a warm game.
     const PREG_STAGE_CORE = {
         live: [
-            `Something has just taken root in {her} — too new to feel and too new to show; if {she} {knows} at all, it is by instinct or by counting days.`,
-            `It has settled into {her} womb, and the first true signs have arrived: a tenderness in {her} breasts, queasiness at odd hours, and a tiredness sleep does not touch.`,
-            `There is no mistaking it now: {her} waist has thickened past anything close-fitting, and {her} appetite and moods keep their own counsel.`,
+            `Something has just taken root in {herO} — too new to feel and too new to show; if {she} {knows} at all, it is by instinct or by counting days.`,
+            `{Her} womb has taken, and the first true signs have arrived: a tenderness in {her} breasts, queasiness at odd hours, and a tiredness sleep does not touch.`,
+            `There is no mistaking it now: {her} waist has thickened past anything close-fitting, and {her} appetite and moods do as they please.`,
             `{Her} belly has begun to round in earnest, visible and undeniable. {She} {tires} easily, {moves} with new care, and {her} body increasingly sets the pace of {her} day.`,
             `{She} {is} plainly, roundly pregnant, and {she} {feels} movement from within — flutters that have become kicks — with a hand drifting often to the curve of {her} belly.`,
-            `{She} {is} heavily pregnant and near {her} time: sleep is difficult, breath is short, {her} back aches without pause, and the weight in front of {her} governs every way {she} {moves}.`,
+            `{She} {is} heavily pregnant and near {her} time: sleep comes hard, breath comes short, {her} back aches without pause, and the weight in front of {herO} governs how {she} {moves}.`,
             `{She} {is} past due and {her} body knows it — heavy, aching, restless, braced for pains that cannot be far off. {She} {cannot} travel far, work hard, or think about much else.`,
         ],
         egg: [
-            `Something has just taken inside {her} — far too early to feel; only instinct or the count of days would tell {her}.`,
-            `The clutch has set inside {her}: a low unfamiliar fullness, a heat beneath {her} ribs, and a hunger that has begun to outrun {her} meals.`,
-            `The shells are forming — {she} {can} feel the shape of them low in {her} body, firm where {she} used to be soft, and it changes how {she} {sits}.`,
-            `{Her} middle has swelled with the clutch, firm and rounded. They shift when {she} {moves}, and {she} {has} begun to favor warm places without deciding to.`,
-            `{She} {is} visibly gravid, {her} belly taut and heavy with shells. {She} {feels} each one settle and press, and the urge to find somewhere dark and warm to nest has begun to nag at {her}.`,
-            `{She} {is} swollen near to bursting, the shells hard and unmistakable beneath {her} skin. Moving is awkward, resting is worse, and the nesting urge has become difficult to ignore.`,
-            `{She} {is} ready to lay and long past ready — the shells sitting low and grinding, {her} body clenching in waves that come and go, every instinct in {her} demanding a nest.`,
+            `Something has just taken inside {herO} — far too early to feel; only instinct or the count of days would tell {herO}.`,
+            `Something is forming inside {herO}: a low unfamiliar fullness, a warmth beneath {her} ribs, and a hunger that has begun to outrun {her} meals.`,
+            `{TheYoung} {isare} taking shape — {she} {can} feel the curve of {them} low in {her} body, firm where {she} used to be soft, and {they} {changes} how {she} {sits}.`,
+            `{Her} middle has swelled, firm and smoothly rounded. {TheYoung} {shifts} when {she} {moves}, and {she} {has} begun to favor warm places without deciding to.`,
+            `{She} {is} visibly gravid, {her} belly taut and heavy. {She} {feels} {theYoung} settle and press, and the urge to find somewhere dark and warm to nest has begun to nag at {herO}.`,
+            `{She} {is} swollen near to bursting, {theYoung} hard and unmistakable beneath {her} skin. Moving is awkward, resting is worse, and the nesting urge has become difficult to ignore.`,
+            `{She} {is} ready to lay and long past ready — {theYoung} sitting low and heavy, {her} body clenching in waves that come and go, every instinct in {herO} demanding a nest.`,
         ],
         crystal: [
-            `Something has just taken inside {her} — nothing to feel yet beyond a faint chill {she} might blame on the weather.`,
-            `What has rooted in {her} is not flesh: a cold weight low in {her} belly, and the wrong, hardening sensation of stone where softness should be.`,
-            `The growths have set — hard, cold, and utterly still. {She} {feels} mass but no life in them, and the absence of movement is its own dread.`,
-            `{Her} belly has swelled around the crystals. They are cold from within and they tingle faintly against {her} nerves, chiming when {she} {moves} — a sound {she} {has} learned to dread.`,
-            `{She} {is} visibly heavy with soulgems: icy, motionless, and audible when {she} {moves}. No kick, no flutter — only a dull click of stone on stone and a cold that tingles through {her}.`,
-            `{She} {is} grossly swollen with crystal, {her} skin stretched over hard angles that press outward. Nothing in {her} lives; nothing in {her} moves except when {she} {does}. The cold has settled into {her} bones.`,
-            `{She} {is} past due to be delivered of them — the crystals grinding, cold and immense, {her} body laboring to be rid of what was never alive. {She} {can} think of little else.`,
+            `Something has just taken inside {herO} — nothing to feel yet beyond a faint, pleasant coolness {she} might blame on the weather.`,
+            `What has rooted in {herO} is not quite flesh: a cool, oddly comfortable weight low in {her} belly, and the faint sense of something smooth taking shape.`,
+            `{TheYoung} {isare} setting — smooth, cool, and perfectly still. {She} {feels} no kicking, only a curious weight and, now and then, the faintest hum beneath {her} palm.`,
+            `{Her} belly has rounded around {theYoung}. {They} {isare} cool from within and {tingles} pleasantly when {she} {moves}, chiming faint and clear as glass touched with a fingernail.`,
+            `{She} {is} visibly heavy with {theYoung}: cool, glimmering, and softly musical. No kick, no flutter — only a bright little chime when {she} {moves}, and a tingle that runs agreeably up {her} spine.`,
+            `{She} {is} round and heavy with crystal, {her} skin taut over smooth curves that catch the light. {She} {feels} no movement, only cool weight and the faint singing of {theYoung} whenever {she} {moves}.`,
+            `{She} {is} past due to be delivered of {them} — {theYoung} cool and chiming and gloriously heavy, {her} body ready to be rid of the weight. {She} {can} think of little else, though it troubles {herO} less than {she} expected.`,
         ],
     };
     // Burden of carrying MULTIPLES, scaled by how far along she is. Stages
@@ -5045,10 +5050,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // ("twins of them" / "8 soulgems of them"). Verbs whose subject is a
         // body part rather than the woman stay literal — {is} would conjugate
         // to "your body are".
-        early: (n, sense) => `Carrying ${n} at once, {she} {is} already swollen past what a single would explain.`,
-        showing: (n, sense) => `${n} crowd {her} at once — ${sense} — and {she} {is} plainly bigger than any single pregnancy would leave {her}.`,
-        heavy: (n, sense) => `With ${n} inside {her}, {she} {is} enormous, stretched far past what one alone would ever have done: no position is comfortable, breath comes shallow, and ${sense}.`,
-        overdue: (n, sense) => `${n}, all past due, make a monstrous load — ${sense}, and {her} body is at the very end of what it can hold.`,
+        early: (n, sense) => `Carrying ${n} at once, {she} {is} already swollen past what a single {oneYoung} would explain.`,
+        showing: (n, sense) => `${n} crowd {herO} at once — ${sense} — and {she} {is} plainly bigger than any single pregnancy would leave {herO}.`,
+        // No breath detail here — the live 3rd-trimester stage sentence already
+        // says "breath comes short", and the two together read as a stutter.
+        heavy: (n, sense) => `With ${n} inside {herO}, {she} {is} enormous, stretched far past what one alone would ever have done: no position is comfortable, every movement is a negotiation, and ${sense}.`,
+        overdue: (n, sense) => `${n}, all past due, make an enormous load — ${sense}, and {her} body is at the very end of what it can hold.`,
     };
     function pregStageIdx(pct) {
         const p = Number(pct) || 0;
@@ -5071,12 +5078,28 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Spelled out — the phrase can open a sentence in the burden clause.
         return `${NUM_WORDS[n] || n} ${PREG_NOUNS[kind].many}`;
     }
+    // PERSON tokens — always a woman (this is a hetero romance game); the only
+    // thing that varies is whether the text describes her to others or to her.
+    //
+    // {her} and {herO} are BOTH "her" in third person and must not be merged:
+    // English collapses the possessive and the object form, but the second
+    // person does not. "her belly" → "your belly" (possessive, {her}), while
+    // "rooted in her" → "rooted in you" (object, {herO}). Using {her} for an
+    // object produced "taken root in your", which is broken.
     const PREG_TOKENS = {
-        third: { She: 'She', she: 'she', Her: 'Her', her: 'her', is: 'is', has: 'has', knows: 'knows', feels: 'feels', moves: 'moves', tires: 'tires', sits: 'sits', does: 'does', can: 'can', cannot: 'cannot' },
-        second: { She: 'You', she: 'you', Her: 'Your', her: 'your', is: 'are', has: 'have', knows: 'know', feels: 'feel', moves: 'move', tires: 'tire', sits: 'sit', does: 'do', can: 'can', cannot: 'cannot' },
+        third: { She: 'She', she: 'she', Her: 'Her', her: 'her', herO: 'her', is: 'is', has: 'has', knows: 'knows', feels: 'feels', moves: 'moves', tires: 'tires', sits: 'sits', does: 'does', can: 'can', cannot: 'cannot' },
+        second: { She: 'You', she: 'you', Her: 'Your', her: 'your', herO: 'you', is: 'are', has: 'have', knows: 'know', feels: 'feel', moves: 'move', tires: 'tire', sits: 'sit', does: 'do', can: 'can', cannot: 'cannot' },
     };
-    function renderPregPerson(text, person) {
-        const map = PREG_TOKENS[person] || PREG_TOKENS.third;
+    // NUMBER tokens — one egg is a shell, not "shells". {oneYoung} stays
+    // singular regardless of count (for "what a single egg would explain").
+    function pregNumberTokens(kind, count) {
+        const n = PREG_NOUNS[kind];
+        return count === 1
+            ? { TheYoung: `The ${n.one}`, theYoung: `the ${n.one}`, They: 'It', they: 'it', them: 'it', isare: 'is', shifts: 'shifts', tingles: 'tingles', changes: 'changes', young: n.one, oneYoung: n.one }
+            : { TheYoung: `The ${n.many}`, theYoung: `the ${n.many}`, They: 'They', they: 'they', them: 'them', isare: 'are', shifts: 'shift', tingles: 'tingle', changes: 'change', young: n.many, oneYoung: n.one };
+    }
+    function renderPregTokens(text, person, kind, count) {
+        const map = { ...(PREG_TOKENS[person] || PREG_TOKENS.third), ...pregNumberTokens(kind, count) };
         return String(text).replace(/\{(\w+)\}/g, (m, k) => (k in map ? map[k] : m));
     }
     /**
@@ -5099,11 +5122,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             // ("twins, all past due…"), so it has to be capitalized.
             if (burden) { const c = burden(countWord, PREG_MULTI_SENSE[kind]); parts.push(c.charAt(0).toUpperCase() + c.slice(1)); }
         }
+        const band = renderPregTokens(parts.join(' '), person, kind, count);
         return {
             label: `${PREGNANCY_STAGES[idx].name} · ${countWord}`,
             stage: PREGNANCY_STAGES[idx].name,
-            count, kind, pct, countWord,
-            band: renderPregPerson(parts.join(' '), person),
+            count, kind, pct, countWord, band,
         };
     }
 

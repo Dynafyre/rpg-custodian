@@ -83,9 +83,16 @@ try {
             [/\b(twins|triplets|\d+ \w+) of them\b/i, 'double-counted subject ("twins of them")'],
             [/\b(body|belly|skin|weight|cold) are\b/i, 'verb agreeing with the wrong subject ("your body are")'],
             [/\b(twins|triplets|\d+ \w+), all past due, is\b/i, 'singular verb on a plural count'],
-            [/\byou (is|has|feels|moves|knows|tires|sits)\b/i, 'third-person verb in the second-person render'],
+            // "in you is not quite flesh" is correct — the verb belongs to an
+            // earlier subject, so skip a "you" that is a preposition's object.
+            [/(?<!\b(?:in|inside|at|of|to|with|for|from|on|upon|through|past|around|beneath|beside|near|behind|before|between|toward|towards|into|onto|off)\s)\byou (is|has|feels|moves|knows|tires|sits)\b/i, 'third-person verb in the second-person render'],
             [/\bshe (are|have|feel|move|know|tire|sit)\b/i, 'second-person verb in the third-person render'],
             [/\.\s+[a-z]/, 'sentence starting lowercase (uncapitalized burden clause)'],
+            [/\b(The|the) (egg|child|soulgem) (are|shift)\b/, 'plural verb on a singular carried thing'],
+            [/\b(The|the) (eggs|children|soulgems) (is|shifts)\b/, 'singular verb on plural carried things'],
+            // "her" is possessive AND object; only the possessive becomes "your"
+            [/\b(in|inside|at|of|tell|troubles|crowd|leave|through|up|past|around|beneath|with)\s+your\b(?!\s+[a-z])/i, 'possessive "your" where the object pronoun "you" belongs'],
+            [/\byour\s*[—.,;:]/i, 'dangling possessive "your" with no noun after it'],
         ];
         for (const kind of ['live', 'egg', 'crystal'])
             for (const pct of [5, 15, 30, 45, 70, 90, 110])
@@ -98,6 +105,80 @@ try {
         return bad;
     });
     check('no grammar smells across the whole combination space', grammar.length === 0, grammar.slice(0, 3).join(' | '));
+
+    // number agreement: one egg is a shell, not "shells"
+    const singles = await page.evaluate(() => {
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [5, 15, 30, 45, 70, 90, 110]) {
+                window.rpgCustodianDebug.setPreg('Bryony', 1, pct, kind);
+                const b = window.rpgCustodianDebug.pregBand('Bryony', 'third');
+                if (/\b(shells|eggs|children|soulgems|crystals|growths|clutch)\b/i.test(b.band)) bad.push(`${kind}/${pct}: ${b.band}`);
+            }
+        return bad;
+    });
+    check('carrying ONE never uses plural nouns for it', singles.length === 0, singles.slice(0, 2).join(' | '));
+
+    // …and the mirror: carrying several must not leave a singular pronoun
+    // dangling with no antecedent ("the eggs … and it changes how she sits").
+    const plurals = await page.evaluate(() => {
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [5, 15, 30, 45, 70, 90, 110])
+                for (const n of [2, 8]) {
+                    window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                    const b = window.rpgCustodianDebug.pregBand('Bryony', 'third');
+                    if (/\band it (changes|shifts|settles|presses)\b/i.test(b.band)) bad.push(`${kind}/${pct}/${n}: ${b.band}`);
+                }
+        return bad;
+    });
+    check('carrying SEVERAL leaves no dangling singular pronoun', plurals.length === 0, plurals.slice(0, 2).join(' | '));
+
+    // no detail stated twice across the stage/burden seam
+    const seam = await page.evaluate(() => {
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [70, 90, 110])
+                for (const n of [2, 8]) {
+                    window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                    const b = window.rpgCustodianDebug.pregBand('Bryony', 'third');
+                    if ((b.band.match(/breath/gi) || []).length > 1) bad.push(`${kind}/${pct}/${n}: breath mentioned twice`);
+                }
+        return bad;
+    });
+    check('stage and burden sentences do not restate the same detail', seam.length === 0, seam.slice(0, 2).join(' | '));
+
+    // lighthearted tone: crystals are a curiosity, not body horror
+    const grim = await page.evaluate(() => {
+        const bad = [];
+        const BLEAK = /dread|grotesque|grossly|horror|never alive|nothing in (her|you) lives|wrong|icy|laboring to be rid of what|monstrous|corpse|dead/i;
+        for (const pct of [5, 15, 30, 45, 70, 90, 110])
+            for (const n of [1, 2, 8]) {
+                window.rpgCustodianDebug.setPreg('Bryony', n, pct, 'crystal');
+                const b = window.rpgCustodianDebug.pregBand('Bryony', 'third');
+                const m = b.band.match(BLEAK);
+                if (m) bad.push(`${pct}/${n}: "${m[0]}"`);
+            }
+        return bad;
+    });
+    check('crystal bands stay lighthearted (no dread/horror language)', grim.length === 0, grim.slice(0, 3).join(' | '));
+
+    // dump every render for a human/agent prose review
+    const dump = await page.evaluate(() => {
+        const out = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [5, 15, 30, 45, 70, 90, 110])
+                for (const n of [1, 2, 3, 5, 8])
+                    for (const person of ['third', 'second']) {
+                        window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                        const b = window.rpgCustodianDebug.pregBand('Bryony', person);
+                        out.push(`### ${kind} | ${pct}% (${b.stage}) | count ${n} | ${person}\n${b.label}\n${b.band}`);
+                    }
+        return out.join('\n\n');
+    });
+    const { writeFileSync } = await import('node:fs');
+    writeFileSync(process.env.PREG_DUMP || '/tmp/pregnancy-bands.md', dump);
+    console.log(`\n(dumped ${dump.split('###').length - 1} renders to ${process.env.PREG_DUMP || '/tmp/pregnancy-bands.md'})`);
 
     // ── read the corner cases ────────────────────────────────────────────
     console.log('\n──────── what the models actually read ────────');
