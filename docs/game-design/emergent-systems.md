@@ -357,18 +357,24 @@ stakes_, keep the arithmetic and the plumbing out of its face.
 
 ---
 
-## 9. The current effect vocabulary (the contract, as of 2026-07-25)
+## 9. The current effect vocabulary (the contract, as of 2026-07-28)
 
-World/pacing: `move` · `advance_time` · `rest` · `examine`
+World/pacing: `move` · `event_teleport` (story-driven translocation; reaches
+node-isolated places) · `advance_time` · `rest` · `examine` · `whereabouts`
 Party: `add_party` · `remove_party`
 Economy/items: `add_item` · `remove_item` · `buy_item` · `use_item` ·
 `equip_item` · `unequip_item` · `adjust_gold`
-Quests: `add_objective` (bespoke, engine-judged — the pre-authored card-quest
-verbs `accept_quest`/`complete_quest`/`turnin_quest` were demolished 2026-07-25
-after colliding with an emergent job; ALL quests are add_objective now)
-Social/romance: `adjust_affection` · `adjust_arousal` · `orgasm` · `birth`
+Quests: `add_objective` (bespoke, engine-judged, PLAYER-only — the pre-authored
+card-quest verbs `accept_quest`/`complete_quest`/`turnin_quest` were demolished
+2026-07-25 after colliding with an emergent job; ALL quests are add_objective
+now. A promise an NPC makes is `add_status` kind `vow` on HER, not an objective)
+Social/romance: `adjust_affection` · `adjust_arousal` (both lane-narrowed to
+external/magical causes — conversational warmth belongs to the reaction judge,
+see `romance-redesign.md`) · `orgasm` · `birth`
 Health/resource: `damage` · `heal` · `restore_mana`
-Effects: `add_status` · `remove_status` · `adjust_stat`
+Effects: `add_status` (mods, cap mods, affection/arousal mods, narrative-only,
+`immobilizes` pins, vows — see the IMPOSED STATES doctrine) · `remove_status` ·
+`adjust_stat`
 Curses: `apply_curse` · `lift_curse`
 
 Every one of these is a promise the engine keeps deterministically, and a lever
