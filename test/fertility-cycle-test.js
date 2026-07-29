@@ -63,18 +63,18 @@ try {
         return { step: d.cycle('Bryony').step, txt: d.statusText() };
     });
     check('reached full-moon peak', peakInfo.step === 4, `step ${peakInfo.step}`);
-    check('peak note in her context block', peakInfo.txt.includes('full-moon peak of its fertile cycle'), '');
-    check('low affection → guarded phrasing', peakInfo.txt.includes('keep from a man she barely trusts'), '');
+    check('peak note in her context block (plain, no emoji/moon)', peakInfo.txt.includes('Today happens to be the peak of her fertility cycle') && !/[🌑🌒🌓🌔🌕🌖🌗🌘]/u.test(peakInfo.txt.split('\n').find(l => l.includes('fertility cycle')) || ''), '');
+    check('low affection → keeps-it-private clause', peakInfo.txt.includes(`something she'd keep to herself`), '');
     const openInfo = await page.evaluate(() => {
         window.rpgCustodianDebug.player().relationships['Bryony'].affection = 7;
         return window.rpgCustodianDebug.statusText();
     });
-    check('high affection → open phrasing', openInfo.includes('may speak of it or act on it as she wishes'), '');
+    check('high affection → bare fact only', openInfo.includes('peak of her fertility cycle.') && !openInfo.includes('keep to herself'), '');
     const ebbInfo = await page.evaluate(() => {
-        window.rpgCustodianDebug.tick(4 * 4);    // 4 more days: 🌕 → 🌑
+        window.rpgCustodianDebug.tick(4 * 4);    // 4 more days: peak → anti-peak
         return { step: window.rpgCustodianDebug.cycle('Bryony').step, txt: window.rpgCustodianDebug.statusText() };
     });
-    check('anti-peak (dark-moon) note appears', ebbInfo.step === 0 && ebbInfo.txt.includes('dark-moon ebb'), `step ${ebbInfo.step}`);
+    check('anti-peak safe-day note appears', ebbInfo.step === 0 && ebbInfo.txt.includes(`unfertile "safe day`), `step ${ebbInfo.step} | ${(ebbInfo.txt.split('\n').find(l => l.startsWith('Bryony (')) || ebbInfo.txt.slice(0, 200)).slice(-160)}`);
 
     // 6. overdue nag EVERY step
     await page.evaluate(() => window.rpgCustodianDebug.setPreg('Bryony', 1, 100, 'live'));

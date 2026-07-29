@@ -4484,18 +4484,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             let d = `${npc.name} (${t.label}${isInParty(npc.name) ? ', travelling with you' : ''}): ${npc.name} ${t.band}`;
             if (getNpcArousal(npc.name) >= 3) d += ` Physically (${a.label}): ${a.band}`;
             if (rel.pregnancies > 0) d += ` She is carrying ${rel.pregnancies} of your ${rel.pregnancies === 1 ? 'child' : 'children'} — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} stage, ${rel.pregnancy_progress || 0}% developed.`;
-            // Cycle extremes only (peak / dark-moon), and only when not already
-            // carrying: she knows her own body and may use it — or keep it to
-            // herself when she barely trusts him.
+            // Cycle extremes only (peak / anti-peak), and only when not already
+            // carrying. Deliberately terse and unflavored: a plain fact she
+            // knows, small enough that she won't fixate on it unprompted —
+            // each character flavors it her own way IF it comes up.
             if (!(rel.pregnancies > 0)) {
                 const step = cycleStep(npc.name);
                 const guarded = getNpcAffection(npc.name) <= 4;
                 if (step === 4) d += guarded
-                    ? ` Her body is at the full-moon peak of its fertile cycle — she feels that heat keenly, though it is a private matter she would sooner keep from a man she barely trusts; it colors her mood all the same.`
-                    : ` Her body is at the full-moon peak of its fertile cycle — she knows it, feels the warmth of it, and may speak of it or act on it as she wishes.`;
-                else if (step === 0) d += guarded
-                    ? ` Her body is at the dark-moon ebb of its cycle — barren today, a private certainty she keeps to herself.`
-                    : ` Her body is at the dark-moon ebb of its cycle — barren today, and she knows it; she may mention it or not as she pleases.`;
+                    ? ` Today happens to be the peak of her fertility cycle — something she'd keep to herself around him.`
+                    : ` Today happens to be the peak of her fertility cycle.`;
+                else if (step === 0) d += ` Today is her unfertile "safe day."`;
             }
             const npcFx = npcActiveEffects(npc.name);
             if (npcFx.length) d += ` Under effects (she KNOWS her own condition, and any physical, magical, or social constraint stated in them BINDS what she can actually do and say — a bound woman cannot walk, a silenced one cannot speak, a promise made weighs on her): ${npcFx.map(e => e.selfNote ? `${e.name} — ${e.selfNote}` : effectDetailLine(e)).join(' | ')}`;
