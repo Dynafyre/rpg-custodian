@@ -1098,9 +1098,20 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                         <label>Age <input id="cf-age" type="text"></label>
                     </div>
                     <div class="cf-row">
-                        <label>Fertility % <input id="cf-fert" type="number" min="0" max="100"></label>
+                        <label>Fertility mod (%) <input id="cf-fert" type="number" min="-40" max="100"></label>
                         <label>Ruggedness <input id="cf-rug" type="number" min="1" max="10"></label>
                     </div>
+                    <div id="cf-fert-calc" class="cf-fert-calc"></div>
+                    <div class="cf-row">
+                        <label>Womb type <select id="cf-womb">
+                            <option value="">Auto (by race)</option>
+                            <option value="live">Baby (live birth)</option>
+                            <option value="egg">Egg</option>
+                            <option value="crystal">Crystal</option>
+                        </select></label>
+                        <label>Pregnancies carried <input id="cf-pregs" type="number" min="0" max="20"></label>
+                    </div>
+                    <label>Pregnancy progress % (5 conception → 100 term, 150 max) <input id="cf-prog" type="number" min="0" max="150"></label>
                     <div class="cf-row">
                         <label>Initial affection (0–10) <input id="cf-aff" type="number" min="0" max="10"></label>
                         <label>Initial arousal (0–10) <input id="cf-aro" type="number" min="0" max="10"></label>
@@ -1124,10 +1135,24 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         $('#cf-role').val(rc.role || '');
         $('#cf-race').val(rc.race || '');
         $('#cf-age').val(rc.age || '');
-        $('#cf-fert').val(rc.fertility ?? 30);
+        $('#cf-fert').val(rc.fertility ?? 10);
         $('#cf-rug').val(rc.ruggedness ?? 2);
+        $('#cf-womb').val(['live', 'egg', 'crystal'].includes(rc.womb_type) ? rc.womb_type : '');
+        $('#cf-pregs').val(rc.base_stats?.pregnancies ?? 0);
+        $('#cf-prog').val(rc.base_stats?.pregnancy_progress ?? 0);
         $('#cf-aff').val(rc.base_stats?.affection ?? 0);
         $('#cf-aro').val(rc.base_stats?.arousal ?? 0);
+        // Live cycle preview: the mod is on top of the 8-step moon cycle —
+        // show what it buys (fertile days per cycle + peak) before saving.
+        const fertCalc = () => {
+            const mod = Number($('#cf-fert').val()) || 0;
+            const days = MOON_CYCLE.filter(p => Math.max(0, Math.min(100, p.pct + mod)) > 0).length;
+            const peak = Math.max(0, Math.min(100, 40 + mod));
+            $('#cf-fert-calc').text(`🌱 ${days} of 8 cycle days fertile · peak ${peak}% at 🌕 (cycle 🌑0 🌒10 🌓20 🌔30 🌕40 🌖30 🌗20 🌘10 + mod)`);
+        };
+        let fertTimer = null;
+        $('#cf-fert').on('input', () => { clearTimeout(fertTimer); fertTimer = setTimeout(fertCalc, 350); });
+        fertCalc();
         // Current stamina is per-save state: only meaningful with a running
         // session in this world that has her on stage.
         {
@@ -1194,16 +1219,19 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 role: String($('#cf-role').val() || '').trim(),
                 race: String($('#cf-race').val() || '').trim(),
                 age: String($('#cf-age').val() || '').trim(),
-                fertility: Math.max(0, Math.min(100, Number($('#cf-fert').val()) || 0)),
+                fertility: Math.max(-40, Math.min(100, Number($('#cf-fert').val()) || 0)),
                 ruggedness: Math.max(1, Math.min(10, Number($('#cf-rug').val()) || 2)),
+                womb_type: ['live', 'egg', 'crystal'].includes($('#cf-womb').val()) ? $('#cf-womb').val() : undefined,
                 home_location: $('#cf-home').val(),
                 schedule,
                 secret: getToggle($('#cf-secret')) || undefined,
                 shop: String($('#cf-shop').val() || '').trim() || undefined,
                 base_stats: {
-                    ...(prev.base_stats || { familiarity: 0, pregnancies: 0, pregnancy_progress: 0 }),
+                    ...(prev.base_stats || { familiarity: 0 }),
                     affection: Math.max(0, Math.min(10, Number($('#cf-aff').val()) || 0)),
                     arousal: Math.max(0, Math.min(10, Number($('#cf-aro').val()) || 0)),
+                    pregnancies: Math.max(0, Math.min(20, Number($('#cf-pregs').val()) || 0)),
+                    pregnancy_progress: Math.max(0, Math.min(150, Number($('#cf-prog').val()) || 0)),
                 },
                 card_version: ((parseFloat(prev.card_version || '1.0') || 1.0) + 0.1).toFixed(1),
             };
@@ -1222,9 +1250,11 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     const rel = getRelationship(name);
                     rel.affection = rc2.base_stats.affection;
                     rel.arousal = rc2.base_stats.arousal;
+                    rel.pregnancies = rc2.base_stats.pregnancies || 0;
+                    rel.pregnancy_progress = rc2.base_stats.pregnancy_progress || 0;
                     const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
                     if (npc) {
-                        Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats });
+                        Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats, wombType: rc2.womb_type || null });
                         // Current stamina (after the roster update so the new
                         // ruggedness sets the cap). Direct set — KO/wake flags
                         // follow, no post-coital valve.
@@ -1238,9 +1268,15 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     } else {
                         wmToast(`${name} is new to this cast — she takes the stage fully on the next Continue.`, 'info');
                     }
+                    // Pregnancy coherence AFTER the roster update (kind
+                    // resolution reads her authored womb type).
+                    if ((rel.pregnancies || 0) > 0) {
+                        if ((rel.pregnancy_progress || 0) <= 0) rel.pregnancy_progress = 5;
+                        rel.conceptionKind = ['live', 'egg', 'crystal'].includes(rc2.womb_type) ? rc2.womb_type : (rel.conceptionKind || resolveConceptionKind(name));
+                    } else { rel.conceptionKind = null; rel.pregnancy_progress = 0; }
                     savePlayer(); saveCurrentState();
                     syncPresence(); projectPlayerStatus();
-                    wmToast(`${name}'s current-game state updated (affection ${rel.affection}, arousal ${rel.arousal}${rel.npcStamina != null ? `, stamina ${rel.npcStamina}/${npcMaxStamina(name)}` : ''}).`, 'success');
+                    wmToast(`${name}'s current-game state updated (affection ${rel.affection}, arousal ${rel.arousal}${rel.npcStamina != null ? `, stamina ${rel.npcStamina}/${npcMaxStamina(name)}` : ''}${rel.pregnancies ? `, carrying ${rel.pregnancies} @ ${rel.pregnancy_progress}% (${rel.conceptionKind})` : ''}).`, 'success');
                 }
             }
 
@@ -3784,7 +3820,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     ruggedness: rpgMeta.ruggedness,
                     race: rpgMeta.race,
                     age: rpgMeta.age,
-                    baseStats: rpgMeta.base_stats || null,   // world-authored initial affection/arousal
+                    wombType: rpgMeta.womb_type || null,     // authored offspring kind (beats race inference)
+                    baseStats: rpgMeta.base_stats || null,   // world-authored initial affection/arousal/pregnancy
                 });
 
                 // Create if missing, or refresh in place if the on-disk card is
@@ -3890,7 +3927,13 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         parts.push(`💗 Disposition: **${affectionTier(getNpcAffection(npcName)).label}** (affection ${getNpcAffection(npcName)}/10)`);
         parts.push(`🔥 Arousal: **${arousalTier(getNpcArousal(npcName)).label}** (${getNpcArousal(npcName)}/10)`);
         parts.push(`❤️ Stamina: ${rel.npcStamina ?? npcMaxStamina(npcName)}/${npcMaxStamina(npcName)}${rel.npcUnconscious ? ' — UNCONSCIOUS' : ''}`);
-        if (npc?.fertility != null) parts.push(`🌱 Fertility: ${fertilityPercent(npcName)}%`);
+        {
+            // Mechanical readout only — the cycle must never flavor the LLM
+            // appearance blurb below (it reads body state, not the calendar).
+            const ph = cyclePhase(npcName);
+            const mod = (Number(npc?.fertility) || 0) + npcStatMod(npcName, 'fertility');
+            parts.push(`🌱 Fertility: ${fertilityPercent(npcName)}% — ${ph.emoji} ${ph.label} (cycle ${ph.pct}%${mod ? `, mod ${mod > 0 ? '+' : ''}${mod}%` : ''})`);
+        }
         if (npc?.wrestle) parts.push(`🤼 Contest DC: ${npc.wrestle.difficulty}`);
         if ((rel.pregnancies || 0) > 0) parts.push(`🤰 Pregnancy: ${rel.pregnancies} carried — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} (${rel.pregnancy_progress || 0}%)`);
         for (const e of npcActiveEffects(npcName)) parts.push(effectDetailLine(e));
@@ -4441,6 +4484,19 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             let d = `${npc.name} (${t.label}${isInParty(npc.name) ? ', travelling with you' : ''}): ${npc.name} ${t.band}`;
             if (getNpcArousal(npc.name) >= 3) d += ` Physically (${a.label}): ${a.band}`;
             if (rel.pregnancies > 0) d += ` She is carrying ${rel.pregnancies} of your ${rel.pregnancies === 1 ? 'child' : 'children'} — ${pregnancyStage(rel.pregnancy_progress) || 'newly conceived'} stage, ${rel.pregnancy_progress || 0}% developed.`;
+            // Cycle extremes only (peak / dark-moon), and only when not already
+            // carrying: she knows her own body and may use it — or keep it to
+            // herself when she barely trusts him.
+            if (!(rel.pregnancies > 0)) {
+                const step = cycleStep(npc.name);
+                const guarded = getNpcAffection(npc.name) <= 4;
+                if (step === 4) d += guarded
+                    ? ` Her body is at the full-moon peak of its fertile cycle — she feels that heat keenly, though it is a private matter she would sooner keep from a man she barely trusts; it colors her mood all the same.`
+                    : ` Her body is at the full-moon peak of its fertile cycle — she knows it, feels the warmth of it, and may speak of it or act on it as she wishes.`;
+                else if (step === 0) d += guarded
+                    ? ` Her body is at the dark-moon ebb of its cycle — barren today, a private certainty she keeps to herself.`
+                    : ` Her body is at the dark-moon ebb of its cycle — barren today, and she knows it; she may mention it or not as she pleases.`;
+            }
             const npcFx = npcActiveEffects(npc.name);
             if (npcFx.length) d += ` Under effects (she KNOWS her own condition, and any physical, magical, or social constraint stated in them BINDS what she can actually do and say — a bound woman cannot walk, a silenced one cannot speak, a promise made weighs on her): ${npcFx.map(e => e.selfNote ? `${e.name} — ${e.selfNote}` : effectDetailLine(e)).join(' | ')}`;
             if (isCrystalCursed(npc.name)) d += ` She bears the CRYSTAL CURSE — any child she births comes as an inert soulgem (until broken by magic).`;
@@ -4631,8 +4687,16 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             rd.relationships[npcName] = {
                 affection: Math.max(0, Math.min(10, Number(bs.affection) || 0)),
                 arousal: Math.max(0, Math.min(10, Number(bs.arousal) || 0)),
-                familiarity: 0, pregnancies: 0, pregnancy_progress: 0,
+                familiarity: 0,
+                pregnancies: Math.max(0, Number(bs.pregnancies) || 0),
+                pregnancy_progress: Math.max(0, Math.min(150, Number(bs.pregnancy_progress) || 0)),
             };
+            // Record assigned FIRST — resolveConceptionKind reads relationships
+            // (curse check) and must find this one instead of recursing.
+            if (rd.relationships[npcName].pregnancies > 0) {
+                rd.relationships[npcName].conceptionKind = resolveConceptionKind(npcName);
+                if (rd.relationships[npcName].pregnancy_progress <= 0) rd.relationships[npcName].pregnancy_progress = 5;
+            }
         }
         return rd.relationships[npcName];
     }
@@ -4833,9 +4897,37 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
 
     // === Breeding: internal orgasm → fertilization roll(s) (core-mechanics §6) ===
+    // 8-day fertility cycle, one step per new day, visualized as moon phases.
+    // The CYCLE is the base fertility; the card's fertility value is a flat
+    // MOD on top of it (author-tuned by age/race), plus timed status effects.
+    const MOON_CYCLE = [
+        { emoji: '🌑', pct: 0, label: 'dark-moon ebb' },
+        { emoji: '🌒', pct: 10, label: 'waxing crescent' },
+        { emoji: '🌓', pct: 20, label: 'first quarter' },
+        { emoji: '🌔', pct: 30, label: 'waxing gibbous' },
+        { emoji: '🌕', pct: 40, label: 'full-moon peak' },
+        { emoji: '🌖', pct: 30, label: 'waning gibbous' },
+        { emoji: '🌗', pct: 20, label: 'last quarter' },
+        { emoji: '🌘', pct: 10, label: 'waning crescent' },
+    ];
+    // Her start position is a stable pseudo-random seed from who she is
+    // (age + name): no stored state, survives every save, and same-age
+    // characters still land on different days.
+    function cycleSeedOf(npc) {
+        const s = `${npc?.name || ''}|${npc?.age || ''}`;
+        let h = 0;
+        for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+        return h % MOON_CYCLE.length;
+    }
+    function cycleStep(npcName, day = currentGameState.dayCount) {
+        const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName) || { name: npcName };
+        return (cycleSeedOf(npc) + Math.max(1, day || 1) - 1) % MOON_CYCLE.length;
+    }
+    function cyclePhase(npcName) { return MOON_CYCLE[cycleStep(npcName)]; }
     function fertilityPercent(npcName) {
         const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName);
-        return Math.max(0, (npc?.fertility ?? 25) + npcStatMod(npcName, 'fertility'));   // base % + timed buffs
+        const mod = (Number(npc?.fertility) || 0) + npcStatMod(npcName, 'fertility');
+        return Math.max(0, Math.min(100, cyclePhase(npcName).pct + mod));
     }
 
     // Pregnancy stages by total progress %. Progress rises 5% per time step
@@ -4861,16 +4953,24 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const rd = getPlayerRpgData(); if (!rd) return;
         for (const [name, rel] of Object.entries(rd.relationships || {})) {
             // Any NPC carrying (pregnancies > 0) grows, even if progress was still 0.
+            let announced = false;
             if ((rel.pregnancies || 0) > 0 && (rel.pregnancy_progress || 0) < OVERDUE_SOLO_BIRTH_PCT) {
                 const before = rel.pregnancy_progress || 0;
                 rel.pregnancy_progress = Math.min(OVERDUE_SOLO_BIRTH_PCT, before + 5);
                 const s0 = pregnancyStage(before), s1 = pregnancyStage(rel.pregnancy_progress);
                 if (!quiet && s1 && s1 !== s0) {
+                    announced = true;
                     const carry = rel.pregnancies > 1 ? ` (${rel.pregnancies} fetuses)` : '';
                     sendGhostMessage(`🤰 ${name}'s pregnancy${carry} enters the **${s1}** stage — ${rel.pregnancy_progress}%.` +
                         (s1 === 'Fetal' ? ' She can no longer conceive further until this pregnancy ends.' :
                             s1 === 'Birth Overdue' ? ' She is at term and ready to give birth!' : ''));
                 }
+            }
+            // Overdue mothers NAG every time step (not just the stage
+            // transition) until the birth actually happens.
+            if (!quiet && !announced && (rel.pregnancies || 0) > 0 && (rel.pregnancy_progress || 0) >= 100) {
+                const carry = rel.pregnancies > 1 ? ` (carrying ${rel.pregnancies})` : '';
+                sendGhostMessage(`🤰 ${name} is **overdue**${carry} — ${rel.pregnancy_progress}%. She needs to give birth!`);
             }
             // Severely overdue and you never came to help: she births ALONE,
             // off-screen, wherever she is (logged for the reunion). If she's
@@ -4948,6 +5048,8 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // The Crystal Curse (on either partner) overrides all — the issue is soulgems.
         if (isCrystalCursed('player') || isCrystalCursed(npcName)) return 'crystal';
         const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName);
+        // Authored womb type beats race inference (cast editor).
+        if (['live', 'egg', 'crystal'].includes(npc?.wombType)) return npc.wombType;
         if (EGG_RACE.test(npc?.race || '')) return 'egg';
         if (/soul[\s-]?crystal|soulshard|soul[\s-]?mage|soul[\s-]?wizard|necromancer|\blich\b|soulforge/i.test(playerPersonaText())) return 'crystal';
         return 'live';
@@ -6482,6 +6584,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         avatar: () => playerAvatar(),
         state: () => currentGameState,
         weekday: (day) => weekdayName(day),
+        cycle: (n, day) => ({ step: cycleStep(n, day), ...MOON_CYCLE[cycleStep(n, day)], fert: fertilityPercent(n) }),
         gold: () => getGold(),
         effectiveStat: (s) => effectiveStat(s),
         createCharacter: () => createRPGCharacterCommand(),
@@ -6534,6 +6637,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         giveItem: (name) => addItem({ id: `${String(name).toLowerCase().replace(/\s+/g, '-')}-${Date.now()}`, name, desc: '' }),
         useItemNamed: (name) => useItemByName(name),
         conceptionKind: (n) => resolveConceptionKind(n),
+        castForm: (w, n) => openCastForm(w, n, { quick: true }),
         lorebook: async () => await loadWorldInfo(RPG_LOREBOOK_NAME),
         gmWorld: () => (context.characters || []).find(c => c.avatar === 'Game Master.png')?.data?.extensions?.world,
         offspring: () => currentGameState.offspring || [],

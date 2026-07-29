@@ -252,6 +252,7 @@ code {
 .rpg-form-panel .cf-sched { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .rpg-form-panel .mp-check { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; }
 .rpg-form-panel .mp-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
+.rpg-form-panel .cf-fert-calc { font-size: 12px; opacity: 0.75; margin-top: -4px; }
 .rpg-form-panel .cast-warn {
     background: rgba(180, 120, 20, 0.2); border: 1px solid rgba(230, 170, 60, 0.5);
     border-radius: 8px; padding: 8px; font-size: 12.5px;
