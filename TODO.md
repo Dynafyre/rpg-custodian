@@ -14,6 +14,10 @@ Scale (§6a)** and **NPC levels (§3)** are load-bearing inputs to several other
 possibly need this turn. The engine already knows the answers to most of the
 branches the prompt currently asks the model to evaluate.
 
+**➡️ PLANNED — full plan in `docs/game-design/prompt-assembly.md`** (2026-07-30,
+awaiting Dyna's review; staged rollout, fail-open predicates, verb-reachability
+harness, single rollback flag).
+
 **Measured 2026-07-30:** the analyzer prompt is 30.8k chars (~7.7k tokens),
 95 lines, **28 effect verbs taught every single call**, **19 conditional
 clauses the model must evaluate itself**, and **zero code-side conditional
