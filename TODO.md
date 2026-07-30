@@ -8,6 +8,42 @@ Scale (§6a)** and **NPC levels (§3)** are load-bearing inputs to several other
 
 ---
 
+## 0. Situational prompt assembly (Custodian slimming) ✂️ — TOP PRIORITY
+
+**Goal:** stop sending the Custodian ~7,700 tokens of vocabulary it cannot
+possibly need this turn. The engine already knows the answers to most of the
+branches the prompt currently asks the model to evaluate.
+
+**Measured 2026-07-30:** the analyzer prompt is 30.8k chars (~7.7k tokens),
+95 lines, **28 effect verbs taught every single call**, **19 conditional
+clauses the model must evaluate itself**, and **zero code-side conditional
+assembly** — it is one static template. On a turn where the player is alone in
+a forest it still reads the Crystal Curse contest rules, birth detection,
+merchant purchasing, proposition/consent logic and companion triggers.
+
+Contrast the GM narrator, which is already correct: its system prompt is 180
+static tokens and the code hands it exactly ONE tier instruction and at most
+one luck instruction, chosen by `TIER_NOTE[check.tier]` / `swingNote`. That is
+the shape to copy.
+
+- [ ] **Gate each verb/section on engine state.** No NPC present → drop the
+      proposition, affection, arousal, orgasm, party and whereabouts blocks.
+      Nobody carrying → drop `birth`. No merchant here → drop `buy_item`.
+      Nothing cursed and no caster → drop the curse contest. No party → drop
+      `remove_party`. Estimated 30-40% cut on a typical turn, with no extra LLM
+      call and no new failure mode (pure code branching).
+- [ ] **Write the recipe for state-aware verbs** in HANDOFF §2 alongside the
+      existing "adding an effect verb" recipe: every new verb declares WHEN it
+      is relevant (a predicate over engine state), so the vocabulary stays
+      self-pruning as it grows instead of accreting forever.
+- [ ] **Re-measure after**: tokens per turn, and whether DC/verb misfires drop.
+- [ ] Only if that is not enough, revisit the reasoning **sub-Custodian router**
+      (HANDOFF §10) — its own stated trigger is "observing the single Custodian
+      miss or misfire verbs due to breadth", which the DC-16-to-hold-hands bug
+      arguably was.
+
+---
+
 ## 1. Romance & relationship feel pass 💕
 
 **➡️ DESIGNED — full plan in `docs/game-design/romance-redesign.md`** (audit
