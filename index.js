@@ -1126,6 +1126,18 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     </label>
                     <label>Home <select id="cf-home">${locOptions}</select></label>
                     <div class="cf-sched">${periods.map(p => `<label>${p} <select class="cf-period" data-p="${p}">${locOptions}</select></label>`).join('')}</div>
+                    <button type="button" id="cf-weekly" class="rpg-toggle" title="For cast with a job or a school week. Dragons and hermits keep the simple daily routine above.">📅 Day-specific weekly timetable: <b>No</b></button>
+                    <div id="cf-week" class="cf-week" style="display:none">
+                        <div class="cf-week-hint">Overrides the daily routine above, per weekday. The note (max 30 chars) is what she'll say she was doing — <i>"folding laundry"</i>, <i>minding the counter</i>.</div>
+                        ${WEEKDAYS.map(d => `<details class="cf-day"><summary>${d}</summary>
+                            ${periods.map(p => `<div class="cf-wrow">
+                                <span class="cf-wp">${p}</span>
+                                <select class="cf-wloc" data-d="${d}" data-p="${p}">${locOptions}</select>
+                                <input class="cf-wnote" data-d="${d}" data-p="${p}" type="text" maxlength="30" placeholder="doing what? (optional)">
+                            </div>`).join('')}
+                            <button type="button" class="cf-copyday rpg-map-btn" data-d="${d}">⧉ copy this day to the whole week</button>
+                        </details>`).join('')}
+                    </div>
                     <button type="button" id="cf-secret" class="rpg-toggle">🕵️ Secret (unknown to other NPCs): <b>No</b></button>
                     <label>Shop category (if merchant) <input id="cf-shop" type="text" placeholder="alchemist, smith, general…"></label>
                     <div class="mp-buttons">
@@ -1192,7 +1204,41 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         });
         $('#cf-home').val(rc.home_location && world.locations[rc.home_location] ? rc.home_location : world.startingLocation);
         for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
-        $('#cf-home').on('change', function () { for (const p of periods) $(`.cf-period[data-p="${p}"]`).val(this.value); });
+        // Changing Home no longer rewrites the whole schedule (it used to wipe
+        // a carefully authored routine on a single tap). Home seeds the slots
+        // only when they have nothing of their own, above.
+
+        // Weekly timetable: hidden accordion, one <details> per weekday.
+        const wk = rc.schedule_weekly || {};
+        for (const d of WEEKDAYS) for (const p of periods) {
+            const slot = wk[d]?.[p] || {};
+            const loc = slot.loc && world.locations[slot.loc] ? slot.loc : (rc.schedule?.[p] && world.locations[rc.schedule[p]] ? rc.schedule[p] : $('#cf-home').val());
+            $(`.cf-wloc[data-d="${d}"][data-p="${p}"]`).val(loc);
+            $(`.cf-wnote[data-d="${d}"][data-p="${p}"]`).val(slot.note || '');
+        }
+        setToggle($('#cf-weekly'), !!rc.weekly_enabled);
+        $('#cf-week').toggle(!!rc.weekly_enabled);
+        $('#cf-weekly').on('click', function (e) {
+            e.stopPropagation();
+            setToggle($(this), !getToggle($(this)));
+            $('#cf-week').toggle(getToggle($(this)));
+        });
+        // Authoring 28 slots by hand is miserable; this is an explicit opt-in
+        // copy (unlike the Home behavior removed above, it never fires on its own).
+        $('.cf-copyday').on('click', function (e) {
+            e.stopPropagation();
+            const from = $(this).data('d');
+            for (const p of periods) {
+                const loc = $(`.cf-wloc[data-d="${from}"][data-p="${p}"]`).val();
+                const note = $(`.cf-wnote[data-d="${from}"][data-p="${p}"]`).val();
+                for (const d of WEEKDAYS) {
+                    if (d === from) continue;
+                    $(`.cf-wloc[data-d="${d}"][data-p="${p}"]`).val(loc);
+                    $(`.cf-wnote[data-d="${d}"][data-p="${p}"]`).val(note);
+                }
+            }
+            wmToast(`${from}'s timetable copied to every day.`, 'success');
+        });
         setToggle($('#cf-secret'), !!rc.secret);
         $('#cf-shop').val(rc.shop || '');
         // Portrait → full screen (the vanilla avatar-zoom behavior, relocated
@@ -1229,6 +1275,20 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 home_location: $('#cf-home').val(),
                 schedule,
                 secret: getToggle($('#cf-secret')) || undefined,
+                weekly_enabled: getToggle($('#cf-weekly')) || undefined,
+                schedule_weekly: getToggle($('#cf-weekly')) ? (() => {
+                    const wkOut = {};
+                    for (const d of WEEKDAYS) {
+                        wkOut[d] = {};
+                        for (const p of periods) {
+                            wkOut[d][p] = {
+                                loc: $(`.cf-wloc[data-d="${d}"][data-p="${p}"]`).val(),
+                                note: String($(`.cf-wnote[data-d="${d}"][data-p="${p}"]`).val() || '').trim().slice(0, 30) || undefined,
+                            };
+                        }
+                    }
+                    return wkOut;
+                })() : undefined,
                 shop: String($('#cf-shop').val() || '').trim() || undefined,
                 base_stats: {
                     ...(prev.base_stats || { familiarity: 0 }),
@@ -1258,7 +1318,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     rel.pregnancy_progress = rc2.base_stats.pregnancy_progress || 0;
                     const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
                     if (npc) {
-                        Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats, wombType: rc2.womb_type || null });
+                        Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats, wombType: rc2.womb_type || null, weeklyEnabled: !!rc2.weekly_enabled, weeklySchedule: rc2.schedule_weekly || null });
                         // Current stamina (after the roster update so the new
                         // ruggedness sets the cap). Direct set — KO/wake flags
                         // follow, no post-coital valve.
@@ -3835,6 +3895,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     race: rpgMeta.race,
                     age: rpgMeta.age,
                     wombType: rpgMeta.womb_type || null,     // authored offspring kind (beats race inference)
+                    weeklyEnabled: !!rpgMeta.weekly_enabled,          // day-specific routine (job/school)
+                    weeklySchedule: rpgMeta.schedule_weekly || null,  // {Weekday: {Period: {loc, note}}}
                     baseStats: rpgMeta.base_stats || null,   // world-authored initial affection/arousal/pregnancy
                 });
 
@@ -3893,15 +3955,59 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             // ensnared…) is pinned where it took hold until the status ends.
             const pin = (rel?.customEffects || []).find(e => e.active !== false && e.immobilizes && e.pinnedAt);
             if (pin) return locationId === pin.pinnedAt;
-            return (npc.schedule?.[period] ?? npc.homeLocation) === locationId;
+            return npcSlotFor(npc, currentGameState.dayCount, period).loc === locationId;
         });
     }
     function isInParty(name) { return (currentGameState.party || []).includes(name); }
+
+    // ── Schedules: the simple 4-slot day, and the optional weekly one ───────
+    // Most cast keep one daily rhythm (a dragon in her grotto, a hermit in her
+    // woods). Anyone with a job or a school week can instead declare a
+    // 7-day × 4-slot table, each slot carrying a location AND a short note on
+    // what she is doing there — so she can answer "I was just folding
+    // laundry!" instead of merely being in the right room.
+    // ONE resolver, so presence, travel, reunions and self-knowledge can never
+    // disagree about where she is.
+    function npcSlotFor(npc, day = currentGameState.dayCount, periodName = TIME_PERIODS[currentGameState.currentTime].name) {
+        const fallback = npc?.schedule?.[periodName] ?? npc?.homeLocation ?? null;
+        if (npc?.weeklyEnabled && npc.weeklySchedule) {
+            const slot = npc.weeklySchedule[weekdayName(day)]?.[periodName];
+            if (slot) return { loc: slot.loc || fallback, note: String(slot.note || '').trim() };
+        }
+        return { loc: fallback, note: '' };
+    }
+    function npcSlotByName(name, day, periodName) {
+        const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
+        return npc ? npcSlotFor(npc, day, periodName) : { loc: null, note: '' };
+    }
     // Where an NPC's schedule places her at the current time (her "own" spot).
     function scheduledLocationFor(name) {
-        const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
-        const period = TIME_PERIODS[currentGameState.currentTime].name;
-        return npc?.schedule?.[period] ?? npc?.homeLocation ?? null;
+        return npcSlotByName(name).loc;
+    }
+    /** Absolute period index, so we can walk backwards through an absence. */
+    function absPeriodNow() { return ((currentGameState.dayCount || 1) - 1) * 4 + (currentGameState.currentTime || 0); }
+    function dayPeriodAt(abs) {
+        const a = Math.max(0, abs);
+        return { day: Math.floor(a / 4) + 1, periodName: TIME_PERIODS[a % 4].name };
+    }
+    /**
+     * What she was doing while the player was away — walks her schedule across
+     * the absence and collects the distinct activity notes, newest last, so the
+     * reunion can say where she has actually been rather than "living her life".
+     */
+    function absencePursuits(npc, elapsedPeriods, max = 3) {
+        if (!npc?.weeklyEnabled || !npc.weeklySchedule) return [];
+        const now = absPeriodNow();
+        const span = Math.min(Math.max(1, elapsedPeriods), 12);   // cap the walk
+        const seen = [];
+        for (let i = span; i >= 1; i--) {
+            const { day, periodName } = dayPeriodAt(now - i);
+            const slot = npcSlotFor(npc, day, periodName);
+            if (!slot.note) continue;
+            const phrase = `${slot.note} at ${locName(slot.loc)}`;
+            if (seen[seen.length - 1] !== phrase && !seen.includes(phrase)) seen.push(phrase);
+        }
+        return seen.slice(-max);
     }
 
     // Decide which present NPC(s) the player is talking to, from their words —
@@ -4207,11 +4313,27 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     // A readable summary of an NPC's routine + home, grouped by location. Used
     // both for her own self-knowledge (status block) and the reunion note.
     function scheduleSummary(npc) {
+        const home = npc.homeLocation ? locName(npc.homeLocation) : null;
+        const periods = ['Morning', 'Day', 'Evening', 'Night'];
+        // A weekly NPC's routine differs by day, so summarize TODAY (with what
+        // she is doing, if authored) and say plainly that the week varies —
+        // listing all seven days would swamp the status block.
+        if (npc.weeklyEnabled && npc.weeklySchedule) {
+            const today = weekdayName();
+            const parts = periods.map(p => {
+                const slot = npcSlotFor(npc, currentGameState.dayCount, p);
+                if (!slot.loc) return null;
+                return `${p.toLowerCase()} at ${locName(slot.loc)}${slot.note ? ` (${slot.note})` : ''}`;
+            }).filter(Boolean);
+            let s = parts.length ? `${today}s go — ${parts.join(', ')}` : 'no fixed routine';
+            s += '; her week runs to a set timetable, so different days take her elsewhere';
+            if (home) s += `; home is ${home}`;
+            return s + '.';
+        }
         const sched = npc.schedule || {};
         const byLoc = {};
-        for (const p of ['Morning', 'Day', 'Evening', 'Night']) { const l = sched[p]; if (!l) continue; (byLoc[l] = byLoc[l] || []).push(p.toLowerCase()); }
+        for (const p of periods) { const l = sched[p]; if (!l) continue; (byLoc[l] = byLoc[l] || []).push(p.toLowerCase()); }
         const clauses = Object.entries(byLoc).map(([loc, ps]) => `${locName(loc)} (${ps.join('/')})`);
-        const home = npc.homeLocation ? locName(npc.homeLocation) : null;
         let s = clauses.length ? `usual haunts — ${clauses.join(', ')}` : 'no fixed routine';
         if (home) s += `; home is ${home}`;
         return s + '.';
@@ -4457,7 +4579,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 : (b.count > 1 ? `gave birth to ${b.count} of his children` : `gave birth to his child`);
             circumstance += ` MAJOR: while ${player} was away and never came to help, you ${what} ALONE at ${locName(b.at)}. You went through it without him — react with the weight of that (hurt, pride, exhaustion, longing, anger, or love, as fits you). ${b.kind === 'egg' ? 'The eggs/young are back at your home.' : b.kind === 'crystal' ? 'The inert crystals unsettle you.' : 'The child(ren) are back at your home.'}`;
         }
-        return `[SCENE CONTINUITY for ${npcName}${role} — read this before you reply. You have NOT seen ${player} for about ${dur}. You spent that time APART, living your own life — ${scheduleSummary(npc)}${circumstance} React to his RETURN across that gap: you are aware time has passed and that you did NOT spend it with him, so greet/acknowledge the reunion rather than picking the last scene back up as if he never left. You may carry your own news, changes, or feelings about the time apart. Your standing with him: ${t.label} — ${npcName} ${t.desc}.${preg} If he asks where you have been or what you do, answer honestly from your routine above.]`;
+        // Concrete things she actually did during the gap, walked from her
+        // weekly timetable — far better than "you lived your own life".
+        const pursuits = absencePursuits(npc, elapsed);
+        const didText = pursuits.length
+            ? ` In that time your timetable had you ${pursuits.join(', then ')} — these are real things you did while he was gone, and you may mention them.`
+            : '';
+        return `[SCENE CONTINUITY for ${npcName}${role} — read this before you reply. You have NOT seen ${player} for about ${dur}. You spent that time APART, living your own life — ${scheduleSummary(npc)}${didText}${circumstance} React to his RETURN across that gap: you are aware time has passed and that you did NOT spend it with him, so greet/acknowledge the reunion rather than picking the last scene back up as if he never left. You may carry your own news, changes, or feelings about the time apart. Your standing with him: ${t.label} — ${npcName} ${t.desc}.${preg} If he asks where you have been or what you do, answer honestly from your routine above.]`;
     }
 
     const STATUS_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS';
@@ -4527,6 +4655,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                     : ` Today happens to be the peak of her fertility cycle.`;
                 else if (step === 0) d += ` Today is her unfertile "safe day."`;
             }
+            // What her timetable has her doing at this very hour, so she can
+            // answer for herself ("Oh, young master! I was just folding laundry!").
+            const doing = npcSlotFor(npc).note;
+            if (doing) d += ` Right now she is ${doing} — that is what she was occupied with when the player came upon her.`;
             const npcFx = npcActiveEffects(npc.name);
             if (npcFx.length) d += ` Under effects (she KNOWS her own condition, and any physical, magical, or social constraint stated in them BINDS what she can actually do and say — a bound woman cannot walk, a silenced one cannot speak, a promise made weighs on her): ${npcFx.map(e => e.selfNote ? `${e.name} — ${e.selfNote}` : effectDetailLine(e)).join(' | ')}`;
             if (isCrystalCursed(npc.name)) d += ` She bears the CRYSTAL CURSE — any child she births comes as an inert soulgem (until broken by magic).`;
@@ -6895,6 +7027,9 @@ Narrate the result briefly, grounded in this location and the story's current be
         useItemNamed: (name) => useItemByName(name),
         conceptionKind: (n) => resolveConceptionKind(n),
         pregBand: (n, person) => pregnancyBand(n, person || 'third'),
+        slot: (n, day, period) => npcSlotByName(n, day, period),
+        pursuits: (n, elapsed) => absencePursuits((currentGameState.npcRoster || []).find(x => x.name === n), elapsed ?? 8),
+        schedSummary: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         castForm: (w, n) => openCastForm(w, n, { quick: true }),
         lorebook: async () => await loadWorldInfo(RPG_LOREBOOK_NAME),
         gmWorld: () => (context.characters || []).find(c => c.avatar === 'Game Master.png')?.data?.extensions?.world,

@@ -80,6 +80,9 @@ try {
     check('world-authored initial affection/arousal saved', rc.base_stats?.affection === 5 && rc.base_stats?.arousal === 2);
 
     // ---- the world plays with her ----
+    // base_stats seeding is FIRST-MEETING behavior, so this must start from no
+    // relationship record — earlier suites in the same account leave one behind.
+    await page.evaluate(() => { const rd = window.rpgCustodianDebug.player(); if (rd?.relationships) delete rd.relationships['Trizel']; });
     await page.evaluate(() => window.rpgCustodianDebug.newGame('castlandia')); await wait(25000);
     const roster = await page.evaluate(() => (window.rpgCustodianDebug.state().npcRoster || []).map(n => `${n.name}:${n.role}`));
     console.log('roster:', JSON.stringify(roster));

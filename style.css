@@ -253,6 +253,19 @@ code {
 .rpg-form-panel .mp-check { flex-direction: row; align-items: center; gap: 8px; font-size: 13px; }
 .rpg-form-panel .mp-buttons { display: flex; gap: 8px; justify-content: flex-end; margin-top: 4px; }
 .rpg-form-panel .cf-fert-calc { font-size: 12px; opacity: 0.75; margin-top: -4px; }
+/* Weekly timetable accordion (7 days × 4 slots) — must stay usable at 390px */
+.rpg-form-panel .cf-week { display: flex; flex-direction: column; gap: 6px; }
+.rpg-form-panel .cf-week-hint { font-size: 12px; opacity: 0.75; }
+.rpg-form-panel .cf-day {
+    border: 1px solid rgba(255,255,255,0.18); border-radius: 8px; padding: 6px 8px;
+    background: rgba(120,120,130,0.10);
+}
+.rpg-form-panel .cf-day > summary { cursor: pointer; font-size: 14px; padding: 4px 2px; }
+.rpg-form-panel .cf-wrow { display: grid; grid-template-columns: 62px 1fr; gap: 4px 6px; align-items: center; margin: 4px 0; }
+.rpg-form-panel .cf-wp { font-size: 12px; opacity: 0.8; }
+.rpg-form-panel .cf-wrow .cf-wnote { grid-column: 2; }
+.rpg-form-panel .cf-wrow select, .rpg-form-panel .cf-wrow input { min-width: 0; width: 100%; font-size: 13px; padding: 6px; }
+.rpg-form-panel .cf-copyday { font-size: 12px; margin-top: 4px; }
 .rpg-form-panel .cast-warn {
     background: rgba(180, 120, 20, 0.2); border: 1px solid rgba(230, 170, 60, 0.5);
     border-radius: 8px; padding: 8px; font-size: 12.5px;
