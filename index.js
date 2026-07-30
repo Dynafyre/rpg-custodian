@@ -6725,7 +6725,18 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 failure: 'FAILURE — it does not work.',
                 fumble: 'CRITICAL FAILURE — it goes badly, comically, or dangerously wrong. Make it COST him something beyond the failure itself.',
             };
-            outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${TIER_NOTE[check.tier] || (check.success ? 'SUCCESS' : 'FAILURE')}`;
+            // Doubles are the world's thumb on the scale, so they get narrated
+            // as something OUTSIDE him — luck, not skill. A plain success on
+            // double sixes is the sweetest case: it only worked by a whisker of
+            // fortune, so name the small miracle that carried it.
+            const swingNote = check.swing > 0
+                ? (check.tier === 'success'
+                    ? ' DOUBLE SIXES — this only came off by a small MIRACLE. Name the unlikely piece of luck, outside his control, that carried it: a gust at the right instant, a loose stone holding, someone glancing away, the light falling kindly. Make clear it was fortune, not his skill.'
+                    : ' DOUBLE SIXES — some unexpected externality swung his way and AIDED the attempt. Name that stroke of luck briefly as part of the outcome; it came from the world, not from him.')
+                : check.swing < 0
+                    ? ' SNAKE EYES — some unexpected externality went against him at the worst possible moment and HARMED the attempt. Name that piece of bad luck briefly (footing that betrays him, a shout from somewhere, a strap giving way, an ill-timed interruption); it came from the world, not from a lack of trying.'
+                    : '';
+            outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${TIER_NOTE[check.tier] || (check.success ? 'SUCCESS' : 'FAILURE')}${swingNote}`;
         }
         else if (intent?.mechanical) outcome = 'The action succeeds automatically (no roll needed).';
         else outcome = 'A minor, unremarkable action — just narrate the moment briefly.';
@@ -7077,6 +7088,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         effectiveStat: (s) => effectiveStat(s),
         analyze: (t) => analyzeIntent(t),                       // DC calibration probes
         rest: () => doRest(),
+        narrate: (intent, check) => narrateResult(intent?.narration_hint || 'an action', intent, check),
         awardXp: (c) => awardCheckXp(c),
         levelUp: () => openLevelUp(),
         renderBar: () => renderActionBar(),
