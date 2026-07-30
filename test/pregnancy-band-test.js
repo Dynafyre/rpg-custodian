@@ -43,8 +43,10 @@ try {
     // multiples clause only once anything can be FELT
     const early2 = await band(4, 15, 'live');
     check('four at implantation: no burden clause (nothing detectable yet)', !/crowd|enormous|monstrous|swollen past/.test(early2.band), early2.band.slice(0, 70));
+    // phrasing-agnostic: a burden clause is a whole extra sentence naming the count
     const showing4 = await band(4, 70, 'live');
-    check('four at 2nd trimester: burden clause present', /crowd/.test(showing4.band), '');
+    const one4 = await band(1, 70, 'live');
+    check('four at 2nd trimester: burden clause present', showing4.band.length > one4.band.length && /four/i.test(showing4.band), '');
 
     // kind differentiation at the same stage+count
     const eLive = await band(1, 90, 'live'), eEgg = await band(1, 90, 'egg'), eCry = await band(1, 90, 'crystal');
@@ -90,8 +92,6 @@ try {
             [/\.\s+[a-z]/, 'sentence starting lowercase (uncapitalized burden clause)'],
             [/\b(The|the) (egg|child|soulgem) (are|shift)\b/, 'plural verb on a singular carried thing'],
             [/\b(The|the) (eggs|children|soulgems) (is|shifts)\b/, 'singular verb on plural carried things'],
-            // "her" is possessive AND object; only the possessive becomes "your"
-            [/\b(in|inside|at|of|tell|troubles|crowd|leave|through|up|past|around|beneath|with)\s+your\b(?!\s+[a-z])/i, 'possessive "your" where the object pronoun "you" belongs'],
             [/\byour\s*[—.,;:]/i, 'dangling possessive "your" with no noun after it'],
         ];
         for (const kind of ['live', 'egg', 'crystal'])
@@ -105,6 +105,30 @@ try {
         return bad;
     });
     check('no grammar smells across the whole combination space', grammar.length === 0, grammar.slice(0, 3).join(' | '));
+
+    // "her" is possessive AND object; only the possessive may become "your".
+    // A preposition list kept missing cases ("about her" → "about your",
+    // "makes her catch" → "makes your catch"), so instead assert against the
+    // CLOSED set of nouns these templates ever put after a possessive: any
+    // other word following "your" means an object pronoun was mis-tokenized.
+    const POSSESSABLE = ['belly', 'body', 'womb', 'hips', 'breasts', 'areolae', 'ribs', 'meals', 'skin', 'spine', 'palm', 'pelvis', 'cervix', 'date', 'time', 'waist', 'middle', 'appetite', 'muscles', 'day', 'back', 'breath', 'oviduct'];
+    const possessive = await page.evaluate((ok) => {
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [5, 15, 30, 45, 70, 90, 110])
+                for (const n of [1, 2, 8]) {
+                    window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                    const b = window.rpgCustodianDebug.pregBand('Bryony', 'second');
+                    // adjectives may intervene ("your whole body"), so accept a
+                    // possessable noun anywhere in the next three words
+                    for (const m of b.band.matchAll(/\byour\s+((?:[a-z-]+\s+){0,2}[a-z-]+)/gi)) {
+                        const words = m[1].toLowerCase().split(/\s+/);
+                        if (!words.some(w => ok.includes(w))) bad.push(`${kind}/${pct}/${n}: "your ${m[1]}"`);
+                    }
+                }
+        return bad;
+    }, POSSESSABLE);
+    check('every "your" is followed by something she can possess', possessive.length === 0, possessive.slice(0, 3).join(' | '));
 
     // number agreement: one egg is a shell, not "shells"
     const singles = await page.evaluate(() => {
@@ -147,6 +171,52 @@ try {
         return bad;
     });
     check('stage and burden sentences do not restate the same detail', seam.length === 0, seam.slice(0, 2).join(' | '));
+
+    // The recurring failure mode: a distinctive word spent by the stage
+    // sentence and then reused by the burden clause (skin/belly/singing/
+    // negotiation all shipped this way). Flag any notable word appearing twice
+    // in one description.
+    const echoes = await page.evaluate(() => {
+        const STOP = new Set('a an the and or but of in on at to for with without her she you your it they them is are has have was were be been not no nor as that this these those than then so if when while whenever every all more most much many one two three some any own from into onto up down out off over under about across against along around before after low high fast slow like now yet still just already begun begins begin does do done can cannot could would will shall may might must there here what which who whom whose how why where'.split(' '));
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [70, 90, 110])
+                for (const n of [2, 8]) {
+                    window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                    const b = window.rpgCustodianDebug.pregBand('Bryony', 'third');
+                    // naming what she carries more than once is natural, not an echo
+                    const KIND_NOUNS = new Set(['egg', 'eggs', 'child', 'children', 'soulgem', 'soulgems', 'crystal', 'crystals', 'shell', 'shells', 'twins', 'triplets']);
+                    // Compare ACROSS the seam only: repetition inside one
+                    // sentence can be deliberate ("ready to lay and long past
+                    // ready"); the defect is the burden clause reusing a word
+                    // the stage sentences already spent.
+                    const sentences = b.band.split(/(?<=\.)\s+/);
+                    const burden = (sentences.pop() || '').toLowerCase();
+                    const stage = sentences.join(' ').toLowerCase();
+                    const words = s => new Set((s.match(/[a-z][a-z-]{3,}/g) || []).filter(w => !STOP.has(w) && !KIND_NOUNS.has(w)));
+                    const stageW = words(stage);
+                    const dupes = [...words(burden)].filter(w => stageW.has(w));
+                    if (dupes.length) bad.push(`${kind}/${pct}/${n}: ${dupes.join(',')}`);
+                }
+        return bad;
+    });
+    check('no distinctive word is spent twice in one description', echoes.length === 0, echoes.slice(0, 4).join(' | '));
+
+    // The multiples sensation must EVOLVE across the arc — one fixed clause per
+    // womb type made a whole twin pregnancy describe itself identically.
+    const senseVariety = await page.evaluate(() => {
+        const out = {};
+        for (const kind of ['live', 'egg', 'crystal']) {
+            const seen = new Set();
+            for (const pct of [70, 90, 110]) {
+                window.rpgCustodianDebug.setPreg('Bryony', 3, pct, kind);
+                seen.add(window.rpgCustodianDebug.pregBand('Bryony', 'third').band.split('. ').pop());
+            }
+            out[kind] = seen.size;
+        }
+        return out;
+    });
+    check('multiples sensation differs at each stage (no repeated kick clause)', Object.values(senseVariety).every(v => v === 3), JSON.stringify(senseVariety));
 
     // lighthearted tone: crystals are a curiosity, not body horror
     const grim = await page.evaluate(() => {
