@@ -4386,7 +4386,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (!check) read = 'His words land easily — nothing in them strains belief, and she takes them at face value.';
         else if (check.tier === 'critical') read = 'His words land better than he could have hoped — she believes him completely, and finds herself genuinely moved by how he put it.';
         else if (check.tier === 'success') read = 'She reads him as sincere and sees it his way — she is inclined to go along with what he said or asked.';
-        else if (check.tier === 'mixed') read = 'She HALF-believes him — wants to, but something rings uncertain; she hedges, tests him, or grants only part of it.';
+        else if (check.tier === 'mixed') read = 'She does NOT go along with it — but only barely. Something in her wavered; she declines, deflects, or puts it off, yet the refusal is softer than it might have been and she may hint at what would change her mind.';
+        else if (check.tier === 'fumble') read = 'It lands BADLY — clumsy, ill-timed, or presumptuous. She is put off, embarrassed for him, or genuinely affronted, and reacts to that.';
         else read = 'She is NOT persuaded — she sees straight through the framing to what she actually perceives underneath, and reacts to THAT truth however her nature dictates: amusement, suspicion, pity, or open delight at catching him. Being unconvinced does not have to mean being cold — her feelings are her own, and her disposition still applies.';
         return `[How she received ${player}'s last words — play this reading in your reply:] ${read}`;
     }
@@ -4734,32 +4735,41 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const eff = effectiveStat(statName);
         const boost = eff - base;   // combined bonus from all active effects/gear
         const d1 = rollDie(), d2 = rollDie();
-        const total = d1 + d2 + eff;
+        // The dice themselves carry the drama: boxcars swing +3 and snake eyes
+        // −3, so doubles tend to land in the critical bands on their own rather
+        // than needing a special-case tier rule.
+        const swing = (d1 === 6 && d2 === 6) ? 3 : (d1 === 1 && d2 === 1) ? -3 : 0;
+        const total = d1 + d2 + eff + swing;
         let tier;
         if (total >= difficulty + 4) tier = 'critical';
         else if (total >= difficulty) tier = 'success';
-        else if (total >= difficulty - 3) tier = 'mixed';
-        else tier = 'failure';
-        return { statName, base, boost, eff, d1, d2, dice: d1 + d2, total, difficulty, tier, success: total >= difficulty };
+        else if (total >= difficulty - 2) tier = 'mixed';       // a 2-wide near miss — still a failure
+        else if (total >= difficulty - 6) tier = 'failure';
+        else tier = 'fumble';
+        return { statName, base, boost, eff, d1, d2, dice: d1 + d2, swing, total, difficulty, tier, success: total >= difficulty };
     }
     // Chance that 2d6 + mod clears a DC. The whole difficulty system is a
     // probability claim, so print the probability: a miscalibrated DC (the
     // DC-16 charm check to hold hands) is invisible as a bare number and
     // obvious as "0%".
-    const TWO_D6_AT_LEAST = { 2: 100, 3: 97, 4: 92, 5: 83, 6: 72, 7: 58, 8: 42, 9: 28, 10: 17, 11: 8, 12: 3 };
+    // Enumerated rather than tabulated, so it can never drift from skillCheck —
+    // it applies the same doubles swing the dice do.
     function successChance(mod, dc) {
-        const need = dc - mod;                  // required 2d6 total
-        if (need <= 2) return 100;
-        if (need > 12) return 0;
-        return TWO_D6_AT_LEAST[need] ?? 0;
+        let wins = 0;
+        for (let a = 1; a <= 6; a++) for (let b = 1; b <= 6; b++) {
+            const swing = (a === 6 && b === 6) ? 3 : (a === 1 && b === 1) ? -3 : 0;
+            if (a + b + mod + swing >= dc) wins++;
+        }
+        return Math.round(wins / 36 * 100);
     }
     function skillCheckLine(check, label) {
         const boostStr = check.boost ? ` +${check.boost} boost` : '';
-        const icon = { critical: '🌟', success: '✅', mixed: '➖', failure: '❌' }[check.tier];
+        const swingStr = check.swing > 0 ? ` **+${check.swing} DOUBLE SIXES!**` : check.swing < 0 ? ` **${check.swing} snake eyes!**` : '';
+        const icon = { critical: '🌟', success: '✅', mixed: '➖', failure: '❌', fumble: '💥' }[check.tier];
         const odds = successChance((check.base || 0) + (check.boost || 0), check.difficulty);
         const oddsStr = odds === 0 ? ' — **beyond you at this level**' : ` — ${odds}% for you`;
         return `🎲 **${label}** — ${check.statName} check (DC ${check.difficulty}${oddsStr})\n` +
-            `Rolled 2d6 [${check.d1}+${check.d2}=${check.dice}] + ${check.base}${boostStr} = **${check.total}** → ${icon} **${check.tier.toUpperCase()}**`;
+            `Rolled 2d6 [${check.d1}+${check.d2}=${check.dice}] + ${check.base}${boostStr}${swingStr} = **${check.total}** → ${icon} **${check.tier === 'fumble' ? 'CRITICAL FAILURE' : check.tier.toUpperCase()}**`;
     }
 
     // --- Quests (player-side state stored in rpg_data.quests keyed by quest id) ---
@@ -6707,7 +6717,16 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
     async function narrateResult(playerText, intent, check) {
         const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences, narrate the RESULT of the player's action from the mechanical outcome given. Keep it grounded in WHERE the scene is happening (the stated location) — do not drift the action to another place. Narrate only the world and the player's action/outcome. You NEVER give a named NPC dialogue, expressions, gestures, reactions, or movements — not one spoken word, not a frozen smirk, not a turn away. Each NPC responds for HERSELF after you; your narration must END before any NPC reacts, covering only the player's side and the ambient scene. If you need to reason first, do it inside <think></think> tags; the narration itself is pure prose. Be concise.`;
         let outcome;
-        if (check) outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${check.success ? 'SUCCESS' : 'FAILURE'}.`;
+        if (check) {
+            const TIER_NOTE = {
+                critical: 'CRITICAL SUCCESS — it works better than he dared hope; give him something extra.',
+                success: 'SUCCESS — it works.',
+                mixed: 'NEAR MISS — this is a FAILURE, not a partial win: he does NOT get what he wanted. Narrate it as "no, but…" — he falls just short, and only some small consolation or opening survives. Never award the thing he was reaching for.',
+                failure: 'FAILURE — it does not work.',
+                fumble: 'CRITICAL FAILURE — it goes badly, comically, or dangerously wrong. Make it COST him something beyond the failure itself.',
+            };
+            outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${TIER_NOTE[check.tier] || (check.success ? 'SUCCESS' : 'FAILURE')}`;
+        }
         else if (intent?.mechanical) outcome = 'The action succeeds automatically (no roll needed).';
         else outcome = 'A minor, unremarkable action — just narrate the moment briefly.';
         const effList = check ? (check.success ? intent.effects_on_success : intent.effects_on_failure) : (intent?.effects_on_success || []);
