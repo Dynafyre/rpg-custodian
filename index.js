@@ -3966,7 +3966,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         if (!rel.npcUnconscious && stamNow < npcMaxStamina(npcName)) {
             flavor.push(stamNow <= npcMaxStamina(npcName) / 3 ? 'utterly spent, barely upright' : 'worn and tired');
         }
-        if ((rel.pregnancies || 0) > 0) { const pb = pregnancyBand(npcName, 'third'); if (pb) flavor.push(`carrying ${pb.countWord} (${pb.stage}) — ${pb.band}`); }
+        if ((rel.pregnancies || 0) > 0) { const pb = pregnancyBand(npcName, 'third'); if (pb) flavor.push(`pregnant with ${pb.countWord} of the player's, ${pb.stage} — ${pb.band}`); }
         for (const e of npcActiveEffects(npcName)) flavor.push(e.selfNote ? `under the effect of ${e.name}: ${e.selfNote}` : `under the effect of ${e.name}${e.desc ? ` (${e.desc})` : ''}`);
         const t = affectionTier(getNpcAffection(npcName));
         // Positive framing beats negation: telling the model to "ignore her
@@ -4436,7 +4436,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const role = npc?.role ? ` (${aOrAn(npc.role)})` : '';
         const pregBand = rel.pregnancies > 0 ? pregnancyBand(npcName, 'second') : null;
         const preg = pregBand
-            ? ` You have carried ${pregBand.countWord} of his through this absence, and it has moved on without him: ${pregBand.band}`
+            ? ` YOUR PREGNANCY — you have carried ${pregBand.countWord} of his through this absence and it progressed without him (${pregBand.stage}): ${pregBand.band}`
             : '';
         // If the last thing that happened was being left unconscious, that colors
         // the whole reunion — she remembers passing out / being left, not a
@@ -4513,7 +4513,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (getNpcArousal(npc.name) >= 3) d += ` Physically (${a.label}): ${a.band}`;
             if (rel.pregnancies > 0) {
                 const pb = pregnancyBand(npc.name, 'third');
-                if (pb) d += ` Carrying ${pb.countWord} of his (${pb.stage}): ${pb.band}`;
+                if (pb) d += ` HER PREGNANCY — she is pregnant with ${pb.countWord} of his, ${pb.stage}, and it is progressing as follows: ${pb.band}`;
             }
             // Cycle extremes only (peak / anti-peak), and only when not already
             // carrying. Deliberately terse and unflavored: a plain fact she
@@ -4999,6 +4999,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         egg: { one: 'egg', many: 'eggs' },
         crystal: { one: 'soulgem', many: 'soulgems' },
     };
+    // Where she carries them. EVERY sentence that places the young in space
+    // must name a body part: "eight soulgems jostling inside her" reads just
+    // as easily as a satchel of gems, and a model given that will happily play
+    // her hauling them around. {carrier} keeps the pregnancy inescapable.
+    const PREG_CARRIER = { live: 'womb', egg: 'belly', crystal: 'womb' };
     // What several of them FEEL like together. Keyed by burden tier, not just
     // by kind — one fixed sensation per womb type meant a whole twin pregnancy
     // described itself with the same kicks-collide clause every time. These
@@ -5011,7 +5016,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         live: {
             showing: 'elbows and heels mapping themselves across the taut curve of {her} middle',
             heavy: 'a slow constant shifting as they trade places inside {herO}',
-            overdue: 'a steady press in every direction at once',
+            overdue: 'a steady press outward against the walls of {her} womb',
         },
         egg: {
             showing: 'the shells clicking softly whenever {she} {turns}',
@@ -5021,7 +5026,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         crystal: {
             showing: 'their smooth flanks nudging and settling against one another',
             heavy: 'a cool tingling as the facets graze together',
-            overdue: 'a pocketful of little bells shifting low inside {herO}',
+            overdue: 'a muffled peal of little bells shifting low in {her} pelvis',
         },
     };
     // Stage cores. Tokens come in two families: PERSON ({she}/{her}/{is} —
@@ -5040,21 +5045,21 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             `{She} {is} past {her} date and {her} body knows it: the weight has dropped low into {her} pelvis, {her} cervix has begun to soften and open, and the tightenings come in waves that mean business. {She} {cannot} travel far or think about much else, and {she} {is} thoroughly finished being patient about it.`,
         ],
         egg: [
-            `Something has just taken inside {herO} — far too early to feel; only instinct, or the count of days, or a certain private smugness would tell {herO}.`,
-            `Something is forming inside {herO}: a low unfamiliar fullness, a pleasant heat banked beneath {her} ribs, and a hunger that has begun to badly outrun {her} meals.`,
+            `Something has just settled in {her} womb — far too early to feel; only instinct, or the count of days, or a certain private smugness would tell {herO} that {she} {is} gravid at all.`,
+            `Something is forming low in {her} belly: an unfamiliar fullness, a pleasant heat banked beneath {her} ribs, and a hunger that has begun to badly outrun {her} meals.`,
             `{TheYoung} {isare} taking shape in {her} oviduct — {she} {can} feel the curve of {them} sitting low and firm where {she} used to be soft, and {they} {changes} how {she} {sits}, how {she} {moves}, and how often {she} {needs} to stretch.`,
             `{Her} middle has swelled smooth and taut, and {she} {has} gone warm all over with it. {TheYoung} {shifts} when {she} {moves}, {her} hips have loosened, and {she} {has} begun to favor warm dark corners without quite deciding to.`,
             `{She} {is} splendidly gravid, {her} belly heavy and drum-tight. {She} {feels} {theYoung} settle and press against {her} pelvis, {her} whole body has gone sensitive and slick-warm, and the urge to build a nest has stopped being subtle.`,
-            `{She} {is} swollen near to bursting, {theYoung} hard and unmistakable beneath {her} skin. {Her} hips ache, {her} body has begun to slacken and slicken in preparation, and the nesting urge has become an itch {she} {cannot} scratch sitting still.`,
+            `{Her} belly is swollen near to bursting, {theYoung} hard and unmistakable beneath the skin of it. {Her} hips ache, {her} body has begun to slacken and slicken in preparation, and the nesting urge has become an itch {she} {cannot} scratch sitting still.`,
             `{She} {is} ready to lay and long past ready — {theYoung} riding low against {her} pelvis, {her} muscles clenching in slow deliberate waves, {her} body open and eager to be rid of the weight. Every instinct in {herO} is bellowing for a nest, and {she} {is} well beyond caring who watches.`,
         ],
         crystal: [
-            `Something has just taken inside {herO} — nothing to feel yet beyond a faint, pleasant coolness {she} might blame on the weather.`,
+            `Something has just settled in {her} womb — nothing to feel yet beyond a faint, pleasant coolness low in {her} belly that {she} might blame on the weather.`,
             `What has rooted in {herO} is not quite flesh: a cool, oddly comfortable weight low in {her} belly, and the faint sense of something smooth taking shape.`,
-            `{TheYoung} {isare} setting — smooth, cool, and perfectly still. {She} {feels} no kicking, only a curious weight and, now and then, the faintest hum beneath {her} palm.`,
+            `{TheYoung} {isare} setting in {her} womb — smooth, cool, and perfectly still. {She} {feels} no kicking, only a curious weight low in {her} belly and, now and then, the faintest hum under a palm laid against it.`,
             `{Her} belly has rounded around {theYoung}. {They} {isare} cool from within and {tingles} pleasantly when {she} {moves}, chiming faint and clear as glass touched with a fingernail.`,
-            `{She} {is} visibly heavy with {theYoung}: cool, glimmering, and softly musical. No kick, no flutter — only a bright little chime when {she} {moves}, and a tingle that runs agreeably up {her} spine.`,
-            `{She} {is} round and heavy with crystal, {her} skin taut over smooth curves that catch the light. Nothing in there stirs on its own — only a dense chill weight, and the faint singing of {theYoung} whenever {she} {moves}.`,
+            `{Her} pregnancy shows plainly now, {her} belly heavy with {theYoung}: cool, glimmering, and softly musical. No kick, no flutter — only a bright little chime when {she} {moves}, and a tingle that runs agreeably up {her} spine.`,
+            `{Her} belly is round and heavy with crystal, the skin of it taut over smooth curves that catch the light. Nothing in there stirs on its own — only a dense chill weight, and the faint singing of {theYoung} whenever {she} {moves}.`,
             `{She} {is} past due to be delivered of {them} — {theYoung} cool and chiming and gloriously heavy, {her} body ready to be rid of them. {She} {can} think of scarcely anything else, though it troubles {herO} far less than {she} expected.`,
         ],
     };
@@ -5070,14 +5075,14 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // to "your body are".
         // Each tier gets its OWN framing. Earlier drafts rang four changes on
         // "more than one would explain" and the repetition showed badly.
-        early: (n, sense) => `And there {isare} ${n} in there — {she} {is} already showing more than {she} {has} any right to this early.`,
-        rising: (n, sense) => `${n} at once have {herO} rounding fast: {she} {is} already the size a woman carrying one would not reach for another month or two.`,
-        showing: (n, sense) => `${n} jostle for room inside {herO}, ${sense}, and {she} {looks} months further along than {she} truly {is}.`,
+        early: (n, sense) => `And there {isare} ${n} in {her} {carrier} — {she} {is} already showing more than {she} {has} any right to this early.`,
+        rising: (n, sense) => `${n} at once have {her} belly rounding fast: {she} {is} already the size a woman carrying one would not reach for another month or two.`,
+        showing: (n, sense) => `${n} jostle for room in {her} {carrier}, ${sense}, and {she} {looks} months further along than {she} truly {is}.`,
         // The sensations are noun phrases, so they need a verb to hang on in a
         // list of clauses ("…every movement is a negotiation, and a slow
         // constant shifting" breaks the parallel) or a parenthetical of their own.
-        heavy: (n, sense) => `With ${n} aboard {she} {is} magnificently, absurdly huge — no position lasts a minute, standing up is a project of its own, and {she} {feels} ${sense}.`,
-        overdue: (n, sense) => `${n}, all of them overdue, make for a frankly ridiculous load — ${sense} — and {she} {is} at the absolute limit of what {she} {can} hold.`,
+        heavy: (n, sense) => `With ${n} packed into {her} {carrier} {she} {is} magnificently, absurdly huge — no position lasts a minute, standing up is a project of its own, and {she} {feels} ${sense}.`,
+        overdue: (n, sense) => `${n}, all of them overdue, make a frankly ridiculous load for one {carrier} — ${sense} — and {she} {is} at the absolute limit of what {she} {can} hold.`,
     };
     function pregStageIdx(pct) {
         const p = Number(pct) || 0;
@@ -5118,9 +5123,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // singular regardless of count (for "what a single egg would explain").
     function pregNumberTokens(kind, count) {
         const n = PREG_NOUNS[kind];
+        const carrier = PREG_CARRIER[kind] || 'womb';
         return count === 1
-            ? { TheYoung: `The ${n.one}`, theYoung: `the ${n.one}`, They: 'It', they: 'it', them: 'it', isare: 'is', shifts: 'shifts', tingles: 'tingles', changes: 'changes', young: n.one, oneYoung: n.one }
-            : { TheYoung: `The ${n.many}`, theYoung: `the ${n.many}`, They: 'They', they: 'they', them: 'them', isare: 'are', shifts: 'shift', tingles: 'tingle', changes: 'change', young: n.many, oneYoung: n.one };
+            ? { carrier, TheYoung: `The ${n.one}`, theYoung: `the ${n.one}`, They: 'It', they: 'it', them: 'it', isare: 'is', shifts: 'shifts', tingles: 'tingles', changes: 'changes', young: n.one, oneYoung: n.one }
+            : { carrier, TheYoung: `The ${n.many}`, theYoung: `the ${n.many}`, They: 'They', they: 'they', them: 'them', isare: 'are', shifts: 'shift', tingles: 'tingle', changes: 'change', young: n.many, oneYoung: n.one };
     }
     function renderPregTokens(text, person, kind, count) {
         const map = { ...(PREG_TOKENS[person] || PREG_TOKENS.third), ...pregNumberTokens(kind, count) };

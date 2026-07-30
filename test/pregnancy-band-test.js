@@ -111,7 +111,7 @@ try {
     // "makes her catch" → "makes your catch"), so instead assert against the
     // CLOSED set of nouns these templates ever put after a possessive: any
     // other word following "your" means an object pronoun was mis-tokenized.
-    const POSSESSABLE = ['belly', 'body', 'womb', 'hips', 'breasts', 'areolae', 'ribs', 'meals', 'skin', 'spine', 'palm', 'pelvis', 'cervix', 'date', 'time', 'waist', 'middle', 'appetite', 'muscles', 'day', 'back', 'breath', 'oviduct'];
+    const POSSESSABLE = ['belly', 'body', 'womb', 'hips', 'breasts', 'areolae', 'ribs', 'meals', 'skin', 'spine', 'palm', 'pelvis', 'cervix', 'date', 'time', 'waist', 'middle', 'appetite', 'muscles', 'day', 'back', 'breath', 'oviduct', 'pregnancy', 'navel', 'skin'];
     const possessive = await page.evaluate((ok) => {
         const bad = [];
         for (const kind of ['live', 'egg', 'crystal'])
@@ -185,7 +185,9 @@ try {
                     window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
                     const b = window.rpgCustodianDebug.pregBand('Bryony', 'third');
                     // naming what she carries more than once is natural, not an echo
-                    const KIND_NOUNS = new Set(['egg', 'eggs', 'child', 'children', 'soulgem', 'soulgems', 'crystal', 'crystals', 'shell', 'shells', 'twins', 'triplets']);
+                    const KIND_NOUNS = new Set(['egg', 'eggs', 'child', 'children', 'soulgem', 'soulgems', 'crystal', 'crystals', 'shell', 'shells', 'twins', 'triplets',
+                        // anatomy must be named for the pregnancy anchor; repetition is expected
+                        'womb', 'belly', 'pelvis', 'hips', 'skin', 'body', 'middle', 'uterus', 'oviduct']);
                     // Compare ACROSS the seam only: repetition inside one
                     // sentence can be deliberate ("ready to lay and long past
                     // ready"); the defect is the burden clause reusing a word
@@ -232,6 +234,30 @@ try {
         return bad;
     });
     check('crystal bands stay lighthearted (no dread/horror language)', grim.length === 0, grim.slice(0, 3).join(' | '));
+
+    // Every band must be unmistakably about a PREGNANCY. "Eight soulgems
+    // jostling inside her" reads just as well as a satchel of gems, and a model
+    // handed that will play her hauling them around — so each description has
+    // to name the body carrying them.
+    const ANCHORS = /womb|belly|pelvis|uterus|oviduct|abdomen|pregnan|gravid|cervix|navel|hips|waist|middle|delivered|to lay|nest/i;
+    const unanchored = await page.evaluate((src) => {
+        const re = new RegExp(src, 'i');
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [5, 15, 30, 45, 70, 90, 110])
+                for (const n of [1, 8])
+                    for (const person of ['third', 'second']) {
+                        window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                        const b = window.rpgCustodianDebug.pregBand('Bryony', person);
+                        if (!re.test(b.band)) bad.push(`${kind}/${pct}/${n}/${person}: whole band unanchored`);
+                        // the burden sentence is the bag-of-gems risk: it names a
+                        // COUNT of objects, so it must name the body holding them
+                        // a burden clause only exists once the count is detectable (Fetal+)
+                        if (n >= 2 && pct >= 25) { const last = b.band.split(/(?<=\.)\s+/).pop() || ''; if (!re.test(last)) bad.push(`${kind}/${pct}/${n}/${person}: burden "${last.slice(0, 60)}"`); }
+                    }
+        return bad;
+    }, ANCHORS.source);
+    check('every sentence names the body carrying them (not a bag of gems)', unanchored.length === 0, unanchored.slice(0, 3).join(' | '));
 
     // dump every render for a human/agent prose review
     const dump = await page.evaluate(() => {
