@@ -4742,10 +4742,23 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         else tier = 'failure';
         return { statName, base, boost, eff, d1, d2, dice: d1 + d2, total, difficulty, tier, success: total >= difficulty };
     }
+    // Chance that 2d6 + mod clears a DC. The whole difficulty system is a
+    // probability claim, so print the probability: a miscalibrated DC (the
+    // DC-16 charm check to hold hands) is invisible as a bare number and
+    // obvious as "0%".
+    const TWO_D6_AT_LEAST = { 2: 100, 3: 97, 4: 92, 5: 83, 6: 72, 7: 58, 8: 42, 9: 28, 10: 17, 11: 8, 12: 3 };
+    function successChance(mod, dc) {
+        const need = dc - mod;                  // required 2d6 total
+        if (need <= 2) return 100;
+        if (need > 12) return 0;
+        return TWO_D6_AT_LEAST[need] ?? 0;
+    }
     function skillCheckLine(check, label) {
         const boostStr = check.boost ? ` +${check.boost} boost` : '';
         const icon = { critical: '🌟', success: '✅', mixed: '➖', failure: '❌' }[check.tier];
-        return `🎲 **${label}** — ${check.statName} check (DC ${check.difficulty})\n` +
+        const odds = successChance((check.base || 0) + (check.boost || 0), check.difficulty);
+        const oddsStr = odds === 0 ? ' — **beyond you at this level**' : ` — ${odds}% for you`;
+        return `🎲 **${label}** — ${check.statName} check (DC ${check.difficulty}${oddsStr})\n` +
             `Rolled 2d6 [${check.d1}+${check.d2}=${check.dice}] + ${check.base}${boostStr} = **${check.total}** → ${icon} **${check.tier.toUpperCase()}**`;
     }
 
@@ -6066,6 +6079,8 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                     stat: { type: 'string', enum: ['ruggedness', 'charm', 'craftiness', 'virility'] },
                     difficulty: { type: 'integer' },
                     reason: { type: 'string' },
+                    social_read: { type: 'string' },   // charm only: what kind of person she is socially
+                    per_hundred: { type: 'integer' },  // how many of 100 ordinary people could do this
                 },
             },
             effects_on_success: { type: 'array', items: { type: 'object' } },
@@ -6183,10 +6198,19 @@ If the player's action pursues one of his ACTIVE OBJECTIVES (listed below), roll
 - Buying an item, using/consuming an item you HOLD, accepting or turning in a quest → deterministic, "check": null.
 - Pure talk, greetings, emoting, questions with no stakes → "mechanical": false — but STILL set target_npc so the addressed NPC replies.
 
-=== DIFFICULTY (2d6 + stat vs DC; stat 3 = average novice) ===
-STAT SCALE: 1-2 feeble, 3 novice, 4-5 capable, 6-7 skilled, 8-9 exceptional, 10+ legendary.
-LADDER (absolute difficulty): Easy 8, Moderate 10, Hard 12, Very Hard 14, Legendary 16, Near-impossible 18. Use an NPC's or quest's authored difficulty EXACTLY when given.
-Only roll if uncertain for THIS character: roughly (DC − their stat) between 5 and 11. If (DC − stat) ≤ 4 they can't really fail — skip the roll and apply the effect. "reason" reads like a GM's aside on why the moment is worth a roll.
+=== DIFFICULTY — ONE continuous ladder; every DC comes from a PERCENTAGE, never a vibe ===
+STAT SCALE: 1-2 feeble, 3 = ORDINARY (the baseline person), 4-5 capable, 6-7 skilled, 8-9 exceptional, 10+ godlike.
+A DC rates THE DEED ITSELF, never the person attempting it. The same number is hopeless for a novice and routine for a hero, and that gap IS this game's progression — so rate the deed honestly and let the character's stat decide whether it is within reach. Never soften a DC because the player is weak, and never inflate one because he is strong.
+Work in order:
+1. READ THE OPPOSITION. For a CHARM check, first answer "what kind of person is she, socially?" in a few words and put it in "social_read" — trusting / eager / impressionable makes an ordinary ask nearly automatic, while guarded / cynical / a schemer herself makes the same ask genuinely hard. Her disposition toward the player is part of this: a fond or devoted woman is not an obstacle. For a PHYSICAL check against someone, KEEPING UP with a powerful being is far easier than OVERPOWERING her — the same opponent sits bands apart depending on what is attempted.
+2. ASK THE ONLY QUESTION THAT SETS THE NUMBER: out of 100 ORDINARY people (stat 3), how many would pull THIS off, HERE, against THIS person? Answer honestly — most things people actually try are things most people can do.
+3. CONVERT. This is the ONLY permitted way to choose a DC:
+   95-100 of them → NO ROLL AT ALL (set "check": null and just apply the effects)
+   90 → 7 | 83 → 8 | 72 → 9 | 58 → 10 (an even coin flip) | 42 → 11 | 28 → 12 | 17 → 13 | 8 → 14 | 3 → 15
+   NONE of them → the deed is superhuman, and the DC says HOW superhuman: 16 (a stat-4 hero has a chance) · 18 (stat 6) · 20 (stat 8) · 22+ (stat 10, godlike). Tearing an ancient oak from the earth bare-handed is an 18 — no ordinary man does it, a demigod does. These are real, reachable targets for a grown hero, not decoration.
+THE ONE ERROR THAT RUINS THIS SYSTEM is draping a legendary number over an ordinary ask. A fond girlfriend asked to hold hands is 99 in 100 → NO ROLL. It is never a 16.
+CALIBRATION: asking a friendly stranger for directions → no roll. Coaxing a guarded woman into a first kiss ≈ 42 → 11. Talking a loyal guard into deserting his post ≈ 8 → 14. Out-wrestling a big man ≈ 3 → 15. Out-wrestling a dragon → nobody ordinary could → 18.
+Roll ONLY when the outcome is genuinely uncertain for THIS character: (DC − their stat) between 5 and 11. If (DC − stat) ≤ 4 they can hardly fail — skip the roll and apply the effect. Use an NPC's or quest's AUTHORED difficulty exactly when one is given. "reason" reads like a GM's aside on why the moment is worth a roll.
 
 === EFFECTS ("effects_on_success"/"effects_on_failure": arrays of {type,...}) ===
 A single message often contains SEVERAL effects — a look taken while talking, a job accepted while setting off, a place entered while greeting someone. Emit ALL of them, in narrative order. NEVER let one effect crowd out another: dialogue does not cancel a travel, a travel does not cancel an acceptance, a look does not replace a move.
@@ -6976,6 +7000,9 @@ Narrate the result briefly, grounded in this location and the story's current be
         cycle: (n, day) => ({ step: cycleStep(n, day), ...MOON_CYCLE[cycleStep(n, day)], fert: fertilityPercent(n) }),
         gold: () => getGold(),
         effectiveStat: (s) => effectiveStat(s),
+        analyze: (t) => analyzeIntent(t),                       // DC calibration probes
+        checkLine: (c, label) => skillCheckLine(c, label || 'probe'),
+        odds: (mod, dc) => successChance(mod, dc),
         createCharacter: () => createRPGCharacterCommand(),
         newGame: (w) => newGame(w),
         continueGame: (w) => continueGame(w),
