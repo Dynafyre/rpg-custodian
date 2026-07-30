@@ -6729,12 +6729,20 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
             // as something OUTSIDE him — luck, not skill. A plain success on
             // double sixes is the sweetest case: it only worked by a whisker of
             // fortune, so name the small miracle that carried it.
+            // No example list here, deliberately. An earlier draft offered "a
+            // gust at the right instant" as the first of four examples and got
+            // a gust in every single sample — the model reaches for whatever it
+            // is handed. State the CATEGORY and the constraint instead, and
+            // require the luck to come from what this scene already contains,
+            // which is also what stops it inventing props that make no sense
+            // (a ledger being written on during a spoken request).
+            const LUCK_RULE = 'The thing that intervenes must ALREADY EXIST in this scene — this place, this hour, someone else present, an object actually in use, his own body or gear — and it must act at the precise instant that matters. Name that specific thing and exactly what it did.';
             const swingNote = check.swing > 0
                 ? (check.tier === 'success'
-                    ? ' DOUBLE SIXES — this only came off by a small MIRACLE. Name the unlikely piece of luck, outside his control, that carried it: a gust at the right instant, a loose stone holding, someone glancing away, the light falling kindly. Make clear it was fortune, not his skill.'
-                    : ' DOUBLE SIXES — some unexpected externality swung his way and AIDED the attempt. Name that stroke of luck briefly as part of the outcome; it came from the world, not from him.')
+                    ? ` DOUBLE SIXES — by rights this should NOT have worked; only luck carried it. ${LUCK_RULE} The credit belongs to the world, not to him, and the prose should leave that unmistakable.`
+                    : ` DOUBLE SIXES — fortune intervened on his side. ${LUCK_RULE}`)
                 : check.swing < 0
-                    ? ' SNAKE EYES — some unexpected externality went against him at the worst possible moment and HARMED the attempt. Name that piece of bad luck briefly (footing that betrays him, a shout from somewhere, a strap giving way, an ill-timed interruption); it came from the world, not from a lack of trying.'
+                    ? ` SNAKE EYES — misfortune intervened against him; this was luck turning, not a lack of effort or skill. ${LUCK_RULE}`
                     : '';
             outcome = `${check.statName} check (DC ${check.difficulty}): rolled ${check.total} → ${TIER_NOTE[check.tier] || (check.success ? 'SUCCESS' : 'FAILURE')}${swingNote}`;
         }
