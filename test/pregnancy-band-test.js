@@ -259,6 +259,25 @@ try {
     }, ANCHORS.source);
     check('every sentence names the body carrying them (not a bag of gems)', unanchored.length === 0, unanchored.slice(0, 3).join(' | '));
 
+    // "belly" is fine describing her SHAPE ("her belly has rounded") but never
+    // as the container: "five eggs packed into her belly" reads as breakfast,
+    // and "a weight low in her belly" reads as swallowed gems. Containers are
+    // the womb or the pelvis.
+    const digestive = await page.evaluate(() => {
+        const bad = [];
+        for (const kind of ['live', 'egg', 'crystal'])
+            for (const pct of [5, 15, 30, 45, 70, 90, 110])
+                for (const n of [1, 5])
+                    for (const person of ['third', 'second']) {
+                        window.rpgCustodianDebug.setPreg('Bryony', n, pct, kind);
+                        const b = window.rpgCustodianDebug.pregBand('Bryony', person);
+                        const m = b.band.match(/\b(in|into|inside|packed into|down)\s+(her|your)\s+(belly|stomach|gut|tummy)\b/i);
+                        if (m) bad.push(`${kind}/${pct}/${n}/${person}: "${m[0]}"`);
+                    }
+        return bad;
+    });
+    check('nothing is ever carried IN her belly (that is a big breakfast)', digestive.length === 0, digestive.slice(0, 3).join(' | '));
+
     // dump every render for a human/agent prose review
     const dump = await page.evaluate(() => {
         const out = [];

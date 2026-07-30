@@ -5003,7 +5003,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // must name a body part: "eight soulgems jostling inside her" reads just
     // as easily as a satchel of gems, and a model given that will happily play
     // her hauling them around. {carrier} keeps the pregnancy inescapable.
-    const PREG_CARRIER = { live: 'womb', egg: 'belly', crystal: 'womb' };
+    const PREG_CARRIER = { live: 'womb', egg: 'womb', crystal: 'womb' };
     // What several of them FEEL like together. Keyed by burden tier, not just
     // by kind — one fixed sensation per womb type meant a whole twin pregnancy
     // described itself with the same kicks-collide clause every time. These
@@ -5046,7 +5046,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         ],
         egg: [
             `Something has just settled in {her} womb — far too early to feel; only instinct, or the count of days, or a certain private smugness would tell {herO} that {she} {is} gravid at all.`,
-            `Something is forming low in {her} belly: an unfamiliar fullness, a pleasant heat banked beneath {her} ribs, and a hunger that has begun to badly outrun {her} meals.`,
+            `Something is forming low in {her} womb: an unfamiliar fullness, a pleasant heat banked beneath {her} ribs, and a hunger that has begun to badly outrun {her} meals.`,
             `{TheYoung} {isare} taking shape in {her} oviduct — {she} {can} feel the curve of {them} sitting low and firm where {she} used to be soft, and {they} {changes} how {she} {sits}, how {she} {moves}, and how often {she} {needs} to stretch.`,
             `{Her} middle has swelled smooth and taut, and {she} {has} gone warm all over with it. {TheYoung} {shifts} when {she} {moves}, {her} hips have loosened, and {she} {has} begun to favor warm dark corners without quite deciding to.`,
             `{She} {is} splendidly gravid, {her} belly heavy and drum-tight. {She} {feels} {theYoung} settle and press against {her} pelvis, {her} whole body has gone sensitive and slick-warm, and the urge to build a nest has stopped being subtle.`,
@@ -5054,9 +5054,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             `{She} {is} ready to lay and long past ready — {theYoung} riding low against {her} pelvis, {her} muscles clenching in slow deliberate waves, {her} body open and eager to be rid of the weight. Every instinct in {herO} is bellowing for a nest, and {she} {is} well beyond caring who watches.`,
         ],
         crystal: [
-            `Something has just settled in {her} womb — nothing to feel yet beyond a faint, pleasant coolness low in {her} belly that {she} might blame on the weather.`,
-            `What has rooted in {herO} is not quite flesh: a cool, oddly comfortable weight low in {her} belly, and the faint sense of something smooth taking shape.`,
-            `{TheYoung} {isare} setting in {her} womb — smooth, cool, and perfectly still. {She} {feels} no kicking, only a curious weight low in {her} belly and, now and then, the faintest hum under a palm laid against it.`,
+            `Something has just settled in {her} womb — nothing to feel yet beyond a faint, pleasant coolness low in {her} womb that {she} might blame on the weather.`,
+            `What has rooted in {herO} is not quite flesh: a cool, oddly comfortable weight low in {her} womb, and the faint sense of something smooth taking shape.`,
+            `{TheYoung} {isare} setting in {her} womb — smooth, cool, and perfectly still. {She} {feels} no kicking, only a curious weight low in {her} pelvis and, now and then, the faintest hum under a palm laid against it.`,
             `{Her} belly has rounded around {theYoung}. {They} {isare} cool from within and {tingles} pleasantly when {she} {moves}, chiming faint and clear as glass touched with a fingernail.`,
             `{Her} pregnancy shows plainly now, {her} belly heavy with {theYoung}: cool, glimmering, and softly musical. No kick, no flutter — only a bright little chime when {she} {moves}, and a tingle that runs agreeably up {her} spine.`,
             `{Her} belly is round and heavy with crystal, the skin of it taut over smooth curves that catch the light. Nothing in there stirs on its own — only a dense chill weight, and the faint singing of {theYoung} whenever {she} {moves}.`,
