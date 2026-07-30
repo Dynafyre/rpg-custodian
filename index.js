@@ -4839,12 +4839,57 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
 
     // Emergent XP: harder successful checks are worth more (bard experience —
     // besting a dragon eclipses finding a stick). See core-mechanics §5.
+    // XP = 1 per PERCENT the roll you just made would have failed. Scraping a
+    // 17% chance is worth 83; a near-certainty is worth almost nothing. The
+    // reward is exactly the improbability of what you pulled off, so it needs
+    // no separate difficulty table and it can never drift from the odds.
     function awardCheckXp(check) {
         if (!check?.success) return 0;
-        const xp = Math.max(1, (check.difficulty - 5)) * 10; // DC6→10 … DC14→90 … DC16→110
+        const mod = (check.base || 0) + (check.boost || 0);
+        const xp = Math.max(1, 100 - successChance(mod, check.difficulty));
         const rd = getPlayerRpgData();
         if (rd) { rd.stats.experience = (rd.stats.experience || 0) + xp; savePlayer(); }
         return xp;
+    }
+
+    // ── Level up: offered only after a rest, until you move on ──────────────
+    const LEVEL_UP_XP = 500;         // one point in a primary stat
+    const TOKEN_TO_XP = 100;         // a Power Token converts to this much XP
+    const LEVEL_UP_STATS = ['ruggedness', 'charm', 'craftiness', 'virility'];
+    function openLevelUp() {
+        const rd = getPlayerRpgData();
+        if (!rd) return;
+        const xp = rd.stats.experience || 0;
+        const tokens = rd.stats.power_tokens || 0;
+        const items = LEVEL_UP_STATS.map(stat => ({
+            icon: xp >= LEVEL_UP_XP ? '⬆️' : '🔒',
+            label: `${stat.charAt(0).toUpperCase() + stat.slice(1)} ${baseStat(stat)} → ${baseStat(stat) + 1}`,
+            sub: xp >= LEVEL_UP_XP ? `spend ${LEVEL_UP_XP} XP (you have ${xp})` : `needs ${LEVEL_UP_XP} XP — you have ${xp}`,
+            action: () => {
+                const d = getPlayerRpgData();
+                if ((d.stats.experience || 0) < LEVEL_UP_XP) { sendGhostMessage(`❌ Not enough XP — ${LEVEL_UP_XP} needed, you have ${d.stats.experience || 0}.`); return; }
+                d.stats.experience -= LEVEL_UP_XP;
+                d.stats[stat] = (d.stats[stat] || 0) + 1;
+                d.stats.level = (d.stats.level || 1) + 1;
+                savePlayer(); renderActionBar();
+                sendGhostMessage(`⭐ **Level up!** ${stat.charAt(0).toUpperCase() + stat.slice(1)} is now **${d.stats[stat]}** (−${LEVEL_UP_XP} XP, ${d.stats.experience} left). You are level ${d.stats.level}.`);
+            },
+        }));
+        items.push({
+            icon: tokens > 0 ? '⭐' : '🔒',
+            label: `Spend a Power Token → ${TOKEN_TO_XP} XP`,
+            sub: tokens > 0 ? `you hold ${tokens}` : 'you hold none',
+            action: () => {
+                const d = getPlayerRpgData();
+                if ((d.stats.power_tokens || 0) < 1) { sendGhostMessage('❌ You have no Power Tokens.'); return; }
+                d.stats.power_tokens -= 1;
+                d.stats.experience = (d.stats.experience || 0) + TOKEN_TO_XP;
+                savePlayer(); renderActionBar();
+                sendGhostMessage(`⭐ A Power Token burns away into experience — +${TOKEN_TO_XP} XP (now ${d.stats.experience}), ${d.stats.power_tokens} token(s) left.`);
+                openLevelUp();   // stay open so several can be spent in a row
+            },
+        });
+        openActionPopup(`⭐ Rested — spend your experience (${xp} XP · ${tokens} token${tokens === 1 ? '' : 's'})`, items);
     }
 
     // Relationships live in the PLAYER'S persona (hidden rpg_data.relationships,
@@ -5007,7 +5052,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     async function doRest() {
         restoreEveryoneStamina();
         sendGhostMessage('😴 You rest and recover — everyone\'s Stamina restored to full.');
+        // A rest is when you take stock: the Level Up button appears in the
+        // action bar and stays there until you leave this place.
+        currentGameState.levelUpAt = currentGameState.currentLocation;
         await advanceTimeBy(1);
+        renderActionBar();
     }
 
     // NPC combat/sex stamina, tracked on the relationship record.
@@ -6050,6 +6099,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }));
         bar.append(mkBtn('⏳ Wait', () => waitCommand({}, '')));
         bar.append(mkBtn(`🎒 Items${getGold() ? ` (${getGold()}g)` : ''}`, () => openInventory()));
+        // Offered after a rest, and only while you are still where you rested.
+        if (currentGameState.levelUpAt && currentGameState.levelUpAt === currentGameState.currentLocation) {
+            const xpNow = getPlayerRpgData()?.stats?.experience || 0;
+            bar.append(mkBtn(`⭐ Level Up (${xpNow} XP)`, () => openLevelUp()));
+        }
         // No per-NPC mechanical buttons (shop/wrestle/quest) — those are handled
         // through natural language via the Intent Analyzer. The bar stays to the
         // simple, always-useful verbs only.
@@ -6549,6 +6603,8 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
     /** Arrival machinery shared by every way of changing location: state,
      *  persona world_state, background, presence, notice, save. */
     async function arriveAt(targetId, notice) {
+        // Travelling ends the post-rest level-up window.
+        if (currentGameState.levelUpAt && currentGameState.levelUpAt !== targetId) currentGameState.levelUpAt = null;
         currentGameState.currentLocation = targetId;
         const rpgData = getCurrentRPGData();
         if (rpgData) {
@@ -7001,6 +7057,11 @@ Narrate the result briefly, grounded in this location and the story's current be
         gold: () => getGold(),
         effectiveStat: (s) => effectiveStat(s),
         analyze: (t) => analyzeIntent(t),                       // DC calibration probes
+        rest: () => doRest(),
+        awardXp: (c) => awardCheckXp(c),
+        levelUp: () => openLevelUp(),
+        renderBar: () => renderActionBar(),
+        save: () => savePlayer(),
         checkLine: (c, label) => skillCheckLine(c, label || 'probe'),
         odds: (mod, dc) => successChance(mod, dc),
         createCharacter: () => createRPGCharacterCommand(),
