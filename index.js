@@ -6536,23 +6536,27 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         return lines.length ? lines.reverse().join('\n') : '(scene just beginning)';
     }
 
-    function clipForAnalyzer(text, max = 800) {
-        if (text.length <= max) return text;
-        const head = Math.floor(max * 0.4), tail = max - head;
-        return `${text.slice(0, head)} […] ${text.slice(-tail)}`;
-    }
+    // The Custodian reads WHOLE messages. Clipping them cost real detections —
+    // a message resolves at its close, and 19% of Dyna's ran past the old
+    // 800-char slice. The only limit now is a total budget on the window, spent
+    // NEWEST-FIRST so the freshest turns always arrive intact and only the
+    // oldest context is dropped when a scene is enormous.
+    const ANALYZER_WINDOW_CHARS = 24000;   // ~6k tokens of story
     function recentSceneForAnalyzer() {
         const chat = getCtx().chat || [];
         // A wide, spam-filtered window: the Custodian spends its whole story budget
         // on actual narrative + dialogue (the set-up for the player's action — an
         // NPC's offer, a bargain, a handed-over item), not travel/time/sheet noise.
-        const lines = chat.filter(isStoryMessage)
-            .slice(-12)                                          // doubled from 6
-            // Keep the END, not just the beginning: a message RESOLVES at its
-            // close (she finally comes apart, he finally gives in), and cutting
-            // the tail meant the analyzer read the build-up and never the
-            // outcome. Long messages keep a head for context plus the payoff.
-            .map(m => `${m.is_user ? 'Player' : m.name}: ${clipForAnalyzer(String(m.mes).replace(/\s+/g, ' '))}`);
+        const recent = chat.filter(isStoryMessage).slice(-12);
+        const lines = [];
+        let budget = ANALYZER_WINDOW_CHARS;
+        for (let i = recent.length - 1; i >= 0; i--) {       // newest first
+            const m = recent[i];
+            const line = `${m.is_user ? 'Player' : m.name}: ${String(m.mes).replace(/\s+/g, ' ')}`;
+            if (line.length > budget) break;                 // older context falls away, whole messages survive
+            budget -= line.length;
+            lines.unshift(line);
+        }
         return lines.length ? lines.join('\n') : '(scene just beginning)';
     }
 
