@@ -1100,6 +1100,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     })()}
                     ${warns.length ? `<div class="cast-warn">⚠️ Location-anchored phrasing in her card description may pin her to one spot in narration: <b>${$('<i>').text(warns.join(' · ')).html()}</b> — consider rewording the card.</div>` : ''}
                     <label>Role (public identity) <input id="cf-role" type="text" placeholder="innkeeper, wandering knight, witch…"></label>
+                    <label>Nicknames — comma separated, what she also answers to <input id="cf-nick" type="text" placeholder="Ari, Sis, kitten"></label>
                     <div class="cf-row">
                         <label>Race <input id="cf-race" type="text"></label>
                         <label>Age <input id="cf-age" type="text"></label>
@@ -1152,6 +1153,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             </div>`);
         $('body').append(ov);
         $('#cf-role').val(rc.role || '');
+        $('#cf-nick').val((rc.nicknames || []).join(', '));
         $('#cf-race').val(rc.race || '');
         $('#cf-age').val(rc.age || '');
         $('#cf-fert').val(rc.fertility ?? 10);
@@ -1270,6 +1272,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 ...prev,
                 version: prev.version || '1.0',
                 role: String($('#cf-role').val() || '').trim(),
+                nicknames: String($('#cf-nick').val() || '').split(',').map(x => x.trim()).filter(Boolean),
                 race: String($('#cf-race').val() || '').trim(),
                 age: String($('#cf-age').val() || '').trim(),
                 fertility: Math.max(-40, Math.min(100, Number($('#cf-fert').val()) || 0)),
@@ -1321,7 +1324,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     rel.pregnancy_progress = rc2.base_stats.pregnancy_progress || 0;
                     const npc = (currentGameState.npcRoster || []).find(n => n.name === name);
                     if (npc) {
-                        Object.assign(npc, { role: rc2.role, race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats, wombType: rc2.womb_type || null, weeklyEnabled: !!rc2.weekly_enabled, weeklySchedule: rc2.schedule_weekly || null });
+                        Object.assign(npc, { role: rc2.role, nicknames: rc2.nicknames || [], race: rc2.race, age: rc2.age, fertility: rc2.fertility, ruggedness: rc2.ruggedness, secret: !!rc2.secret, homeLocation: rc2.home_location, schedule: rc2.schedule, baseStats: rc2.base_stats, wombType: rc2.womb_type || null, weeklyEnabled: !!rc2.weekly_enabled, weeklySchedule: rc2.schedule_weekly || null });
                         // Current stamina (after the roster update so the new
                         // ruggedness sets the cap). Direct set — KO/wake flags
                         // follow, no post-coital valve.
@@ -3955,6 +3958,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     ruggedness: rpgMeta.ruggedness,
                     race: rpgMeta.race,
                     age: rpgMeta.age,
+                    nicknames: rpgMeta.nicknames || [],      // what she also answers to
                     wombType: rpgMeta.womb_type || null,     // authored offspring kind (beats race inference)
                     weeklyEnabled: !!rpgMeta.weekly_enabled,          // day-specific routine (job/school)
                     weeklySchedule: rpgMeta.schedule_weekly || null,  // {Weekday: {Period: {loc, note}}}
@@ -4091,8 +4095,15 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
      * her answering. Any distinctive part of her name counts, as long as no
      * other person in the room answers to it too.
      */
+    /** Match a name with an optional plural/possessive tail — Arianna,
+     *  Arianna's, Arianna\u2019s, Ariannas. "Arianna's" already matched (the
+     *  apostrophe is a word boundary) but "Ariannas" did not. The proper-noun
+     *  rule below is what keeps this from over-matching ordinary words. */
+    function aliasPattern(alias) { return `${escRe(alias)}(?:['\u2019]s|s)?`; }
     function npcAliases(npc, present) {
-        const aliases = [npc.name];
+        // Author-given nicknames come first: "Ari", "Sis" — whatever she is
+        // actually called at the table, which no rule could infer from a card.
+        const aliases = [npc.name, ...(npc.nicknames || [])];
         for (const part of String(npc.name).split(/\s+/)) {
             // Only proper-noun parts. "Florence the Formless" answers to
             // Florence and Formless, never to "the" — otherwise "I open the
@@ -4100,11 +4111,19 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             if (!/^[A-Z]/.test(part)) continue;
             if (part.length < 3) continue;                       // skip initials
             if (part.toLowerCase() === npc.name.toLowerCase()) continue;
-            const re = new RegExp(`\\b${escRe(part)}\\b`, 'i');
-            const shared = present.some(o => o.name !== npc.name && re.test(o.name));
-            if (!shared) aliases.push(part);
+            aliases.push(part);
         }
-        return aliases;
+        // Drop anything another woman in the room also answers to — by name or
+        // by her own nickname — so an ambiguous call targets nobody.
+        return aliases.filter((a, i) => {
+            if (!a || String(a).length < 2) return false;
+            if (aliases.findIndex(x => String(x).toLowerCase() === String(a).toLowerCase()) !== i) return false;
+            if (String(a).toLowerCase() === npc.name.toLowerCase()) return true;
+            const re = new RegExp(`\\b${escRe(a)}\\b`, 'i');
+            return !present.some(o => o.name !== npc.name && (
+                re.test(o.name) || (o.nicknames || []).some(x => String(x).toLowerCase() === String(a).toLowerCase())
+            ));
+        });
     }
     /** Spoken name → the roster name, so "Evelina" finds "Evelina Celeste". */
     function resolveNpcName(spoken, pool = null) {
@@ -4128,7 +4147,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         for (const npc of present) {
             let at = -1;
             for (const alias of npcAliases(npc, present)) {
-                const m = new RegExp(`\\b${esc(alias)}\\b`, 'i').exec(t);
+                const m = new RegExp(`\\b${aliasPattern(alias)}\\b`, 'i').exec(t);
                 if (m && (at < 0 || m.index < at)) at = m.index;
             }
             if (at >= 0) hits.push({ name: npc.name, at });

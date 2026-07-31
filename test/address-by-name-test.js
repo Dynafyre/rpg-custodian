@@ -85,6 +85,35 @@ try {
     const order3 = await addressed('I ask Wren about the price, and Marta about the room.');
     check('mid-sentence mentions order by position too', JSON.stringify(order3) === JSON.stringify(['Wren', 'Marta']), JSON.stringify(order3));
 
+    // ── plural / possessive tails ─────────────────────────────────────────
+    check("possessive with an apostrophe", (await addressed("I take Bryony's bow.")).includes('Bryony'));
+    check("possessive with a curly apostrophe", (await addressed("I take Bryony\u2019s bow.")).includes('Bryony'));
+    check("bare plural/possessive 's' now matches too", (await addressed("I trip over Bryonys boots.")).includes('Bryony'), JSON.stringify(await addressed("I trip over Bryonys boots.")));
+    check("a longer word starting with her name still does NOT match", !(await addressed('The bryonyvine grows here.')).includes('Bryony'), JSON.stringify(await addressed('The bryonyvine grows here.')));
+
+    // ── nicknames ─────────────────────────────────────────────────────────
+    await page.evaluate(() => {
+        const st = window.rpgCustodianDebug.state();
+        const n = st.npcRoster.find(x => x.name === 'Marta');
+        if (n) n.nicknames = ['Mar', 'Auntie'];
+        const w = st.npcRoster.find(x => x.name === 'Wren');
+        if (w) w.nicknames = ['Birdie'];
+    });
+    check('a nickname finds her', (await addressed('Mar, another ale please.')).includes('Marta'), JSON.stringify(await addressed('Mar, another ale please.')));
+    check('a second nickname works too', (await addressed('Thanks, Auntie.')).includes('Marta'));
+    check('another woman\'s nickname finds HER, not Marta', (await addressed('Birdie, what is this worth?')).includes('Wren') && !(await addressed('Birdie, what is this worth?')).includes('Marta'), JSON.stringify(await addressed('Birdie, what is this worth?')));
+    check('nicknames take a possessive too', (await addressed("I borrow Mar's ledger.")).includes('Marta'), JSON.stringify(await addressed("I borrow Mar's ledger.")));
+    check('a real name still beats nothing', (await addressed('Marta, hello.')).includes('Marta'));
+
+    // a nickname two women share belongs to neither
+    await page.evaluate(() => {
+        const st = window.rpgCustodianDebug.state();
+        const w = st.npcRoster.find(x => x.name === 'Wren');
+        if (w) w.nicknames = ['Birdie', 'Auntie'];
+    });
+    const shared = await addressed('Auntie, over here.');
+    check('a nickname two women share targets nobody', shared.length === 0, JSON.stringify(shared));
+
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;
 } finally { await page.close(); await browser.disconnect(); }
