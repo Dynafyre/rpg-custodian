@@ -4073,15 +4073,54 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
     // Decide which present NPC(s) the player is talking to, from their words —
     // reliable where the analyzer's single-guess target_npc is not (2+ present).
+    const escRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    /**
+     * Every way the player might name her. Cast cards carry full names —
+     * "Evelina Celeste", "Florence the Formless" — but nobody types those in
+     * conversation, and requiring the whole string meant addressing "Evelina"
+     * matched NOBODY, so the turn had no target and the GM narrated instead of
+     * her answering. Any distinctive part of her name counts, as long as no
+     * other person in the room answers to it too.
+     */
+    function npcAliases(npc, present) {
+        const aliases = [npc.name];
+        for (const part of String(npc.name).split(/\s+/)) {
+            // Only proper-noun parts. "Florence the Formless" answers to
+            // Florence and Formless, never to "the" — otherwise "I open the
+            // door" would be addressing her.
+            if (!/^[A-Z]/.test(part)) continue;
+            if (part.length < 3) continue;                       // skip initials
+            if (part.toLowerCase() === npc.name.toLowerCase()) continue;
+            const re = new RegExp(`\\b${escRe(part)}\\b`, 'i');
+            const shared = present.some(o => o.name !== npc.name && re.test(o.name));
+            if (!shared) aliases.push(part);
+        }
+        return aliases;
+    }
+    /** Spoken name → the roster name, so "Evelina" finds "Evelina Celeste". */
+    function resolveNpcName(spoken, pool = null) {
+        const name = String(spoken || '').trim();
+        if (!name) return null;
+        const present = pool || getNpcsAt(currentGameState.currentLocation);
+        const exact = present.find(n => n.name.toLowerCase() === name.toLowerCase());
+        if (exact) return exact.name;
+        const hit = present.find(n => npcAliases(n, present).some(a => a.toLowerCase() === name.toLowerCase()));
+        return hit ? hit.name : null;
+    }
     function detectAddressedNpcs(text) {
         const present = getNpcsAt(currentGameState.currentLocation);
         const t = String(text || '');
-        const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const esc = escRe;
         const named = [];
         // A name at the very start = direct address ("Bryony, …").
-        for (const npc of present) if (new RegExp(`^["'*\\s]*${esc(npc.name)}\\b`, 'i').test(t)) named.push(npc.name);
+        for (const npc of present) {
+            if (npcAliases(npc, present).some(a => new RegExp(`^["'*\\s]*${esc(a)}\\b`, 'i').test(t))) named.push(npc.name);
+        }
         // Any present NPC named anywhere in the line.
-        for (const npc of present) if (!named.includes(npc.name) && new RegExp(`\\b${esc(npc.name)}\\b`, 'i').test(t)) named.push(npc.name);
+        for (const npc of present) {
+            if (named.includes(npc.name)) continue;
+            if (npcAliases(npc, present).some(a => new RegExp(`\\b${esc(a)}\\b`, 'i').test(t))) named.push(npc.name);
+        }
         if (named.length) return named;
         // Collective address → everyone present reacts.
         if (present.length > 1 && /\b(you (two|three|both|all|lot)|both of you|all of you|everyone|ladies|girls|the group|y'?all)\b/i.test(t)) {
@@ -7176,9 +7215,20 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // carry the outcome. GM narration here was speaking her
                 // reactions for her (voice-stealing) — skip it entirely.
                 const charmExchange = intent?.check?.stat === 'charm' && detectAddressedNpcs(playerText).length > 0;
-                if (!pureMove && !pureExamine && !charmExchange) {
+                // The GM narrates RESOLVED GAME ACTIONS — nothing else. Asked to
+                // narrate a turn that resolved nothing, it has no outcome to
+                // report and paints the room instead ("the scarred prep island
+                // waits between the hanging herbs…"), which reads as the
+                // narrator barging into a conversation. So it speaks only when
+                // dice were rolled or the world actually changed.
+                const SELF_ANNOUNCING = new Set(['examine', 'whereabouts']);
+                const substantive = (effects || []).filter(e => !SELF_ANNOUNCING.has(e.type));
+                const resolvedSomething = !!check || substantive.length > 0;
+                if (!pureMove && !pureExamine && !charmExchange && resolvedSomething) {
                     const gm = await narrateResult(playerText, intent, check);
                     if (gm) sendGameMasterMessage(gm);
+                } else if (!resolvedSomething) {
+                    console.log('RPG Custodian: nothing was resolved this turn — GM stays quiet.');
                 }
                 renderActionBar();
             }
@@ -7187,8 +7237,10 @@ Narrate the result briefly, grounded in this location and the story's current be
             // words (the analyzer's target_npc guess is unreliable with 2+ present):
             // a directly-named NPC, or the whole group when addressed collectively.
             const addressed = detectAddressedNpcs(playerText);
-            const targets = (addressed.length ? addressed
-                : (intent?.target_npc && getNpcsAt(currentGameState.currentLocation).some(n => n.name === intent.target_npc) ? [intent.target_npc] : []))
+            // The analyzer reports whoever it thinks was addressed; resolve that
+            // through the same alias rules so a short name still finds her.
+            const analyzerTarget = resolveNpcName(intent?.target_npc);
+            const targets = (addressed.length ? addressed : (analyzerTarget ? [analyzerTarget] : []))
                 .filter(n => !dismissedThisTurn.includes(n))    // a dismissed companion already said her goodbye
                 .filter(n => !repliedThisTurn.includes(n));     // …as has anyone who answered before we left
             if (targets.length) {
@@ -7196,10 +7248,12 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // the turn has since separated them: silence should never be the
                 // side-effect of a sequencing accident.
                 for (const name of targets) await triggerNpcReply(name, { wasAddressedHere: addressedAtStart.includes(name) });
-            } else if (intent && !intent.mechanical) {
-                const gm = await narrateResult(playerText, intent, null);
-                if (gm) sendGameMasterMessage(gm);
             }
+            // Deliberately no `else`: a line that resolved nothing and named
+            // nobody gets SILENCE. This used to fall through to GM narration,
+            // which is how the narrator ended up scene-setting over ordinary
+            // conversation. SillyTavern's own group controls are there if you
+            // want someone to speak anyway.
 
             // Now that the turn's story is on the page, let the Custodian judge
             // whether any status/curse break-condition was just satisfied.
@@ -7352,6 +7406,8 @@ Narrate the result briefly, grounded in this location and the story's current be
         effectiveStat: (s) => effectiveStat(s),
         analyze: (t) => analyzeIntent(t),                       // DC calibration probes
         rest: () => doRest(),
+        addressed: (t) => detectAddressedNpcs(t),
+        resolveNpc: (n) => resolveNpcName(n),
         rewind: () => rewindTimeStep(),
         canRewind: () => canRewindTime(),
         undoDepth: () => (currentGameState.timeUndo || []).length,
