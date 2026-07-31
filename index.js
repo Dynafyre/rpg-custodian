@@ -3238,9 +3238,10 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     // and curses, hatches eggs, wakes the unconscious and decays arousal. None
     // of that can be undone by subtracting one from the counter, so every step
     // snapshots the state it is about to change and the rewind restores it
-    // wholesale. One snapshot per STEP, so a long skip rewinds an hour at a
-    // time — which is the point: the narrator ran ahead and you want a piece
-    // of the day back, not the whole thing.
+    // wholesale. One snapshot per STEP — and a step is a QUARTER of a day
+    // (Morning/Day/Evening/Night), so a long skip rewinds one period at a
+    // time: the narrator ran ahead and you want part of the day back, not all
+    // of it. The cap is 12 steps = three full days.
     const TIME_UNDO_MAX = 12;
     function snapshotTimeState() {
         const rd = getPlayerRpgData();
@@ -3279,7 +3280,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         projectPlayerStatus(); renderActionBar(); updateTimeDisplay();
         const t = TIME_PERIODS[currentGameState.currentTime];
         sendGameMasterMessage(`⏪ **The clock steps back** — it is ${t.emoji} **${t.name}** again, ${weekdayName()}, Day ${currentGameState.dayCount}.` +
-            `${presenceLine(currentGameState.currentLocation)}\n\n_(Everything the hour changed — schedules, conditions, pregnancies — is as it was. The story already told stands; you are simply not as late as you thought.)_`);
+            `${presenceLine(currentGameState.currentLocation)}\n\n_(Everything that period changed — schedules, conditions, pregnancies — is as it was. The story already told stands; you are simply not as late as you thought.)_`);
     }
 
     function advanceTime(quiet = false) {
@@ -3288,7 +3289,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             return null;
         }
 
-        snapshotTimeState();   // before anything the hour will change
+        snapshotTimeState();   // before anything this period will change
 
         const previousTime = TIME_PERIODS[currentGameState.currentTime];
         currentGameState.currentTime = (currentGameState.currentTime + 1) % 4;
