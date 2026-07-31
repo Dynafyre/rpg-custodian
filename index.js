@@ -7061,8 +7061,15 @@ Narrate the result briefly, grounded in this location and the story's current be
         // Wait for any in-flight generation to finish before /trigger (avoids the
         // "cannot run while reply is generating" toast); quietly skip if it never
         // frees up rather than spamming an error.
-        if (!(await waitForGenerationIdle(10000))) {
+        // Be patient here: with several people answering one line, each reply is
+        // followed by a reaction-judge call, and on a slow connection the next
+        // trigger can arrive while the pipeline is still settling. Ten seconds
+        // was enough to drop the SECOND speaker in a group scene — and it did so
+        // silently, which is the worst part. Wait properly, and if it really is
+        // stuck, say so out loud instead of quietly swallowing her turn.
+        if (!(await waitForGenerationIdle(45000))) {
             console.warn('RPG Custodian: generation still busy — skipping NPC trigger for', npcName);
+            sendGhostMessage(`⏳ ${npcName} did not get a turn — the previous reply was still generating. Address her again and she will answer.`);
             return false;
         }
         // If time has passed since she last saw the player, kick-start her reply
