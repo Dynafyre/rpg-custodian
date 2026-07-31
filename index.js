@@ -153,6 +153,9 @@ jQuery(async () => {
         // Register slash commands
         registerSlashCommands();
 
+        // Witness filtering — an NPC is only ever prompted with what she saw.
+        initWitnessFiltering();
+
         // Drive the Intent Analyzer off every player message
         context.eventSource.on(context.eventTypes.MESSAGE_SENT, onUserMessage);
         // …and catch character replies vanilla ST produced on its own (continue
@@ -4660,6 +4663,93 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         } finally { syncingEngineStatuses = false; }
     }
 
+    // ========================================================================
+    // WITNESS FILTERING  (absorbed from SillyTavern-Presence, 2026-07-30)
+    // ========================================================================
+    // Each NPC may only be prompted with what she personally saw. Messages
+    // carry a `present` list of avatars; before a character is drafted to
+    // speak, everything she did not witness is flagged is_system (ST drops
+    // is_system from the prompt) and restored the moment generation ends.
+    //
+    // Absorbed because the upstream extension had a structural bug we could
+    // not fix from outside: it armed a `once` GROUP_MEMBER_DRAFTED handler
+    // from GENERATION_AFTER_COMMANDS, which fires INSIDE Generate() — i.e.
+    // AFTER group-chats.js has already emitted the draft. Every handler was
+    // therefore consumed by the FOLLOWING generation, carrying a stale `type`,
+    // and a stale 'continue'/'impersonate' took a branch that unhid the whole
+    // history. Measured on a real save: 3 of 5 unwitnessed messages visible at
+    // a draft. Here the listener is permanent and there is no type branch at
+    // all — we always filter — so the race cannot exist.
+    const UNIVERSAL_WITNESS = 'presence_universal_tracker';
+    function witnessFilteringOn() {
+        const s = context.extensionSettings[extensionName] || {};
+        return s.witnessFiltering !== false;   // default ON
+    }
+    function witnessedBy(msg, avatar) {
+        const p = msg?.present;
+        if (!Array.isArray(p)) return true;    // unstamped → visible to all (fail open)
+        return p.includes(avatar) || p.includes(UNIVERSAL_WITNESS);
+    }
+    /** Give a message its witness list if it has none. */
+    function stampWitnesses(msg) {
+        if (!msg || Array.isArray(msg.present)) return;
+        const witnesses = getNpcsAt(currentGameState.currentLocation || '')
+            .map(n => castCharFor(n.name)?.avatar || `${n.name}.png`);
+        witnesses.push('Game Master.png');
+        // a speaker always witnesses her own line, even if she has since left
+        const own = msg.original_avatar || (msg.name && !msg.is_user ? `${msg.name}.png` : null);
+        if (own && !witnesses.includes(own)) witnesses.push(own);
+        msg.present = witnesses;
+    }
+    /**
+     * Hide everything `avatar` never saw. Only messages WE hide are marked
+     * rpgHidden, so restoring can never unhide a genuinely system message —
+     * the engine's own ghost lines are is_system by design and must stay out
+     * of the prompt.
+     */
+    function hideUnwitnessed(avatar) {
+        const chat = getCtx().chat || [];
+        let hidden = 0;
+        for (const m of chat) {
+            if (!m || m.presence_manually_hidden) continue;
+            if (witnessedBy(m, avatar)) {
+                if (m.rpgHidden) { m.is_system = false; delete m.rpgHidden; }
+            } else if (!m.is_system) {
+                m.is_system = true; m.rpgHidden = true; hidden++;
+            }
+        }
+        // she can always see the line she is answering
+        const last = chat[chat.length - 1];
+        if (last?.rpgHidden) { last.is_system = false; delete last.rpgHidden; hidden--; }
+        return hidden;
+    }
+    function restoreWitnessVisibility() {
+        for (const m of (getCtx().chat || [])) {
+            if (m?.rpgHidden) { m.is_system = false; delete m.rpgHidden; }
+        }
+    }
+    /** Stand the upstream extension down — two systems fighting over is_system
+     *  would race, and ours is the one wired to the engine's own presence. */
+    function standDownPresenceExtension() {
+        const ps = context.extensionSettings['Presence'];
+        if (!ps || ps.enabled === false || !witnessFilteringOn()) return;
+        ps.enabled = false;
+        context.saveSettingsDebounced();
+        console.log('RPG Custodian: witness filtering is built in now — SillyTavern-Presence disabled to avoid two systems fighting over message visibility.');
+    }
+    function initWitnessFiltering() {
+        const ctx = getCtx();
+        standDownPresenceExtension();
+        ctx.eventSource.on(ctx.eventTypes.GROUP_MEMBER_DRAFTED, (chId) => {
+            if (!witnessFilteringOn() || !currentGameState.isActive) return;
+            const avatar = ctx.characters?.[chId]?.avatar;
+            if (avatar) hideUnwitnessed(avatar);
+        });
+        for (const ev of ['GENERATION_ENDED', 'GENERATION_STOPPED', 'CHAT_CHANGED']) {
+            if (ctx.eventTypes[ev]) ctx.eventSource.on(ctx.eventTypes[ev], restoreWitnessVisibility);
+        }
+    }
+
     const STATUS_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS';
     // The when/where ground truth, injected SEPARATELY at depth 0 — immediately
     // adjacent to the generation point, in every generation path (trigger,
@@ -7106,6 +7196,10 @@ Narrate the result briefly, grounded in this location and the story's current be
     async function onNpcMessageLanded(mesId) {
         try {
             if (!currentGameState.isActive) return;
+            {   // stamp first, whatever else we decide to do with it
+                const c = getCtx().chat || [];
+                stampWitnesses(c[typeof mesId === 'number' ? mesId : c.length - 1]);
+            }
             if (currentGameState.rpgOrchestrating) return;       // our own path already handles these
             if (getCtx().groupId !== currentGameState.groupId) return;
             const chat = getCtx().chat || [];
@@ -7135,6 +7229,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             const chat = getCtx().chat;
             const msg = (typeof mesId === 'number' && chat[mesId]) ? chat[mesId] : [...chat].reverse().find(m => m.is_user);
             if (!msg || !msg.is_user) return;
+            stampWitnesses(msg);   // who was in the room to hear him say it
             const sig = `${msg.send_date}|${(msg.mes || '').length}`;
             if (currentGameState.lastActionSig === sig) return;
             currentGameState.lastActionSig = sig;
