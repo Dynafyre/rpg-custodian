@@ -7126,6 +7126,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         // Her reply is on the page — read it against her bands (reaction judge).
         // Stamp the index so the out-of-band handler can't judge it twice.
         getRelationship(npcName).lastJudgedMesId = preReplyLen;
+        currentGameState.lastReplier = npcName;   // she holds the conversation
         await judgeNpcReaction(npcName, preReplyLen);
         return true;
     }
@@ -7284,7 +7285,17 @@ Narrate the result briefly, grounded in this location and the story's current be
             // The analyzer reports whoever it thinks was addressed; resolve that
             // through the same alias rules so a short name still finds her.
             const analyzerTarget = resolveNpcName(intent?.target_npc);
-            const targets = (addressed.length ? addressed : (analyzerTarget ? [analyzerTarget] : []))
+            // Last resort: whoever he was already talking to. Mid-conversation
+            // you stop using her name, and an ambiguous call ("Auntie", when
+            // two women answer to it) is far more likely meant for the woman
+            // already speaking than for nobody at all. She must still be here
+            // and awake to take it.
+            const stillHere = (n) => n && getNpcsAt(currentGameState.currentLocation).some(x => x.name === n)
+                && !getRelationship(n).npcUnconscious;
+            const holdingTheFloor = stillHere(currentGameState.lastReplier) ? currentGameState.lastReplier : null;
+            const targets = (addressed.length ? addressed
+                : analyzerTarget ? [analyzerTarget]
+                : holdingTheFloor ? [holdingTheFloor] : [])
                 .filter(n => !dismissedThisTurn.includes(n))    // a dismissed companion already said her goodbye
                 .filter(n => !repliedThisTurn.includes(n));     // …as has anyone who answered before we left
             if (targets.length) {
