@@ -4020,6 +4020,15 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         });
     }
     function isInParty(name) { return (currentGameState.party || []).includes(name); }
+    /**
+     * Nobody here who could answer — so the GM is the only voice the scene has.
+     * An unconscious woman does not count as company: she cannot speak, move or
+     * react, and a room containing only her is, for narrative purposes, empty.
+     */
+    function aloneHere() {
+        return getNpcsAt(currentGameState.currentLocation)
+            .every(n => getRelationship(n.name).npcUnconscious);
+    }
 
     // ── Schedules: the simple 4-slot day, and the optional weekly one ───────
     // Most cast keep one daily rhythm (a dragon in her grotto, a hermit in her
@@ -7034,24 +7043,24 @@ Narrate the result briefly, grounded in this location and the story's current be
     }
 
     async function triggerNpcReply(npcName, opts = {}) {
-        if (!npcName) return;
+        if (!npcName) return false;
         const present = getNpcsAt(currentGameState.currentLocation).map(n => n.name);
         // Normally only someone in the room may speak. The exception is someone
         // the player addressed while they WERE in the room, whom the turn's own
         // effects have since moved apart from — she answers rather than vanishing.
-        if (!present.includes(npcName) && !opts.wasAddressedHere) return;
+        if (!present.includes(npcName) && !opts.wasAddressedHere) return false;
         // A KO'd NPC can't respond — skip her generation (the KO-aware GM
         // narration covers the scene); log a quiet note.
         if (getRelationship(npcName).npcUnconscious) {
             sendGhostMessage(`💤 ${npcName} is unconscious and cannot respond.`);
-            return;
+            return false;
         }
         // Wait for any in-flight generation to finish before /trigger (avoids the
         // "cannot run while reply is generating" toast); quietly skip if it never
         // frees up rather than spamming an error.
         if (!(await waitForGenerationIdle(10000))) {
             console.warn('RPG Custodian: generation still busy — skipping NPC trigger for', npcName);
-            return;
+            return false;
         }
         // If time has passed since she last saw the player, kick-start her reply
         // with a reunion note (relationship, elapsed time, what she's been up to).
@@ -7089,6 +7098,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         // Stamp the index so the out-of-band handler can't judge it twice.
         getRelationship(npcName).lastJudgedMesId = preReplyLen;
         await judgeNpcReaction(npcName, preReplyLen);
+        return true;
     }
 
     // Poll until no generation is in progress (or timeout).
@@ -7223,7 +7233,12 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // dice were rolled or the world actually changed.
                 const SELF_ANNOUNCING = new Set(['examine', 'whereabouts']);
                 const substantive = (effects || []).filter(e => !SELF_ANNOUNCING.has(e.type));
-                const resolvedSomething = !!check || substantive.length > 0;
+                // ALONE is the exception. With nobody here to answer, the GM is
+                // the only voice the world has — making camp, picking through a
+                // ruin, listening at a door all deserve prose. The restraint
+                // above exists to stop it talking OVER people, not to leave a
+                // solitary scene silent.
+                const resolvedSomething = !!check || substantive.length > 0 || aloneHere();
                 if (!pureMove && !pureExamine && !charmExchange && resolvedSomething) {
                     const gm = await narrateResult(playerText, intent, check);
                     if (gm) sendGameMasterMessage(gm);
@@ -7247,13 +7262,28 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // Someone addressed while present still gets to answer even if
                 // the turn has since separated them: silence should never be the
                 // side-effect of a sequencing accident.
-                for (const name of targets) await triggerNpcReply(name, { wasAddressedHere: addressedAtStart.includes(name) });
+                let anySpoke = false;
+                for (const name of targets) {
+                    if (await triggerNpcReply(name, { wasAddressedHere: addressedAtStart.includes(name) })) anySpoke = true;
+                }
+                // Everyone he spoke to is out cold: the room has no voice but
+                // the narrator's, so give the moment its due rather than
+                // leaving it on a bare "she is unconscious" line.
+                if (!anySpoke && aloneHere() && intent && !intent.mechanical) {
+                    const gm = await narrateResult(playerText, intent, null);
+                    if (gm) sendGameMasterMessage(gm);
+                }
+            } else if (intent && !intent.mechanical && aloneHere()) {
+                // Solitary beat: nobody is here to react, so the narrator gives
+                // the moment its due.
+                const gm = await narrateResult(playerText, intent, null);
+                if (gm) sendGameMasterMessage(gm);
             }
-            // Deliberately no `else`: a line that resolved nothing and named
-            // nobody gets SILENCE. This used to fall through to GM narration,
-            // which is how the narrator ended up scene-setting over ordinary
-            // conversation. SillyTavern's own group controls are there if you
-            // want someone to speak anyway.
+            // Note the absence of a broader `else`: with people PRESENT, a line
+            // that resolved nothing and named nobody gets SILENCE. That fallback
+            // is how the narrator used to scene-set over ordinary conversation.
+            // SillyTavern's own group controls are there if you want someone to
+            // speak anyway.
 
             // Now that the turn's story is on the page, let the Custodian judge
             // whether any status/curse break-condition was just satisfied.

@@ -59,6 +59,56 @@ try {
     const rolled = tail.some(m => /🎲/.test(m.mes)) || gmProse(tail).length > 0;
     check('a physical feat still gets narrated', rolled, gmProse(tail).map(m => m.mes.slice(0, 70)).join(' | ') || 'nothing');
 
+    // ── ALONE: the GM is the only voice the scene has ─────────────────────
+    // Somewhere with nobody in it — solitary beats must still be narrated.
+    const empty = await page.evaluate(() => {
+        const d = window.rpgCustodianDebug, st = d.state();
+        const occupied = new Set();
+        for (const id of Object.keys(st.worldData.locations)) {
+            // crude: check each location for scheduled NPCs at this hour
+        }
+        return Object.keys(st.worldData.locations).find(id => {
+            const saved = st.currentLocation;
+            st.currentLocation = id;
+            const n = (st.npcRoster || []).filter(x => (x.schedule?.[['Morning','Day','Evening','Night'][st.currentTime]] ?? x.homeLocation) === id).length;
+            st.currentLocation = saved;
+            return n === 0;
+        });
+    });
+    console.log(`\nempty location for the solitary test: ${empty}`);
+    await page.evaluate((loc) => window.rpgCustodianDebug.teleport(loc), empty); await wait(1800);
+    const alone = await page.evaluate(() => window.rpgCustodianDebug.state().npcRoster.length && window.rpgCustodianDebug.statusText());
+    tail = await turn(`I gather deadfall, scrape out a fire pit, and start setting up camp for the night.`);
+    for (const m of tail) console.log(`   [${m.who}] ${m.mes.slice(0, 130)}`);
+    check('ALONE: a solitary beat IS narrated', gmProse(tail).length > 0, gmProse(tail).map(m => m.mes.slice(0, 80)).join(' | ') || 'silence');
+
+    tail = await turn(`I sit back against a tree and listen to the woods for a while.`);
+    for (const m of tail) console.log(`   [${m.who}] ${m.mes.slice(0, 130)}`);
+    check('ALONE: even an idle beat gets the narrator', gmProse(tail).length > 0, gmProse(tail).map(m => m.mes.slice(0, 80)).join(' | ') || 'silence');
+
+    // ── only company is UNCONSCIOUS: still effectively alone ──────────────
+    await page.evaluate(() => window.rpgCustodianDebug.teleport('outskirts')); await wait(1600);
+    await page.evaluate(() => {
+        const d = window.rpgCustodianDebug;
+        for (const n of d.state().npcRoster) {
+            const here = (n.schedule?.[['Morning','Day','Evening','Night'][d.state().currentTime]] ?? n.homeLocation) === d.state().currentLocation;
+            if (here) d.hurt(n.name, 99);          // out cold
+        }
+    }); await wait(1500);
+    const ko = await page.evaluate(() => {
+        const d = window.rpgCustodianDebug;
+        return (d.state().npcRoster || []).filter(n => d.player().relationships[n.name]?.npcUnconscious).map(n => n.name);
+    });
+    console.log(`\nknocked out here: ${JSON.stringify(ko)}`);
+    tail = await turn(`I drag a blanket over her, build the fire back up, and settle in to keep watch.`);
+    for (const m of tail) console.log(`   [${m.who}] ${m.mes.slice(0, 130)}`);
+    check('only unconscious company: the beat IS narrated', gmProse(tail).length > 0, gmProse(tail).map(m => m.mes.slice(0, 80)).join(' | ') || 'silence');
+
+    tail = await turn(`"Bryony? Can you hear me?"`);
+    for (const m of tail) console.log(`   [${m.who}] ${m.mes.slice(0, 130)}`);
+    check('speaking to someone out cold is not answered by her', !tail.some(m => m.who === 'Bryony'), '');
+    check('…but the moment still gets narrated', gmProse(tail).length > 0 || tail.some(m => /💤/.test(m.mes)), gmProse(tail).map(m => m.mes.slice(0, 80)).join(' | ') || 'silence');
+
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;
 } finally { await page.close(); await browser.disconnect(); }
