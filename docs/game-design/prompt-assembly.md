@@ -1,6 +1,40 @@
 # Situational Custodian Prompt Assembly — plan
 
-_Drafted 2026-07-30. Status: PLAN, awaiting Dyna's review. Nothing implemented._
+_Drafted 2026-07-30. Status: **DEFERRED by Dyna, deliberately.** Nothing
+implemented. Keep for when the trigger below actually fires._
+
+## WHEN to do this (decided 2026-07-30)
+
+**Not now.** Dyna's verdict after heavy play: _"The Custodian has been rocking
+everything I throw at it… mostly it hasn't missed a beat."_ HANDOFF §10's own
+trigger — observing the Custodian **miss or misfire verbs because of breadth** —
+is NOT met. The one wobble he reported (multi-action sequencing) turned out to
+be an engine bug in the NPC-reply stage, not Custodian confusion. Adding gating
+today would buy tokens we do not need at the price of a silent-regression class
+we do not have.
+
+**Do it immediately BEFORE the next big system** (spellcasting / combat /
+economy), and in two halves:
+
+1. **The restructure, which is the expensive part.** The prompt is a single
+   ~31k-char template literal; the real work is turning it into a REGISTRY of
+   entries that can carry metadata (including a relevance predicate). This has a
+   hard safety proof available: assert the assembled string is **byte-identical**
+   to the current one. If it matches exactly, behaviour is unchanged by
+   construction and only extensibility has moved.
+2. **The gating itself is then a one-line filter**, switched on only when a real
+   misfire appears.
+
+Doing the restructure just before the next system means combat's and
+spellcasting's verbs are BORN declaring their own relevance, instead of being
+retrofitted. Doing it later means retrofitting 40+ verbs instead of 28; doing it
+now means designing predicates against three systems that do not exist yet, and
+guessing their shape wrong.
+
+**Explicitly rejected:** designing the predicates for unbuilt systems in advance.
+
+---
+
 
 ## 0. The problem, measured
 
