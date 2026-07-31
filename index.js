@@ -1926,13 +1926,19 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         items.push({ icon: '🧬', label: 'Edit Character', action: () => openPlayerEditor() });
         if (currentGameState.isActive) {
             items.push({ icon: '⏰', label: 'Wait (advance time)', action: () => waitCommand({}, '') });
+            if (canRewindTime()) {
+                const prev = (currentGameState.timeUndo || [])[currentGameState.timeUndo.length - 1];
+                const back = prev ? `${TIME_PERIODS[prev.time].emoji} ${TIME_PERIODS[prev.time].name}, Day ${prev.day}` : 'one step';
+                items.push({ icon: '⏪', label: 'Go back a time step', sub: `back to ${back}`, action: () => rewindTimeStep() });
+            }
             items.push({ icon: '📅', label: 'Date & Time', action: () => dateCommand({}, '') });
             items.push({ icon: '🚪', label: 'Exit RPG Mode', action: () => rpgExitCommand({}, '') });
         }
 
         const menu = $('<div id="rpg-menu-popup"></div>');
         for (const item of items) {
-            const row = $(`<div class="rpg-menu-item">${item.icon} ${item.label}</div>`);
+            const row = $(`<div class="rpg-menu-item">${item.icon} ${item.label}` +
+                (item.sub ? `<div class="rpg-item-sub">${$('<i>').text(item.sub).html()}</div>` : '') + `</div>`);
             row.on('click', async function(event) {
                 event.stopPropagation();
                 $('#rpg-menu-popup').remove();
@@ -3227,11 +3233,62 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     /**
      * Advance time to the next period and handle day transitions
      */
+    // ── Rewinding the clock ────────────────────────────────────────────────
+    // A time step is not just a number: it ages pregnancies, expires statuses
+    // and curses, hatches eggs, wakes the unconscious and decays arousal. None
+    // of that can be undone by subtracting one from the counter, so every step
+    // snapshots the state it is about to change and the rewind restores it
+    // wholesale. One snapshot per STEP, so a long skip rewinds an hour at a
+    // time — which is the point: the narrator ran ahead and you want a piece
+    // of the day back, not the whole thing.
+    const TIME_UNDO_MAX = 12;
+    function snapshotTimeState() {
+        const rd = getPlayerRpgData();
+        if (!rd) return;
+        currentGameState.timeUndo = currentGameState.timeUndo || [];
+        try {
+            currentGameState.timeUndo.push({
+                time: currentGameState.currentTime,
+                day: currentGameState.dayCount,
+                step: currentGameState.timeStep || 0,
+                party: [...(currentGameState.party || [])],
+                offspring: structuredClone(currentGameState.offspring || []),
+                rd: structuredClone(rd),
+            });
+            while (currentGameState.timeUndo.length > TIME_UNDO_MAX) currentGameState.timeUndo.shift();
+        } catch (e) { console.warn('RPG Custodian: could not snapshot the clock', e); }
+    }
+    function canRewindTime() { return !!(currentGameState.timeUndo || []).length; }
+    async function rewindTimeStep() {
+        const stack = currentGameState.timeUndo || [];
+        const snap = stack.pop();
+        if (!snap) { sendGhostMessage('⏪ Nothing to rewind — no time has passed yet this session.'); return; }
+        currentGameState.currentTime = snap.time;
+        currentGameState.dayCount = snap.day;
+        currentGameState.timeStep = snap.step;
+        currentGameState.party = snap.party;
+        currentGameState.offspring = snap.offspring;
+        // Restore the persona's rpg_data IN PLACE so every held reference stays valid
+        const rd = getPlayerRpgData();
+        if (rd) {
+            for (const k of Object.keys(rd)) delete rd[k];
+            Object.assign(rd, structuredClone(snap.rd));
+        }
+        savePlayer(); saveCurrentState();
+        await syncPresence();
+        projectPlayerStatus(); renderActionBar(); updateTimeDisplay();
+        const t = TIME_PERIODS[currentGameState.currentTime];
+        sendGameMasterMessage(`⏪ **The clock steps back** — it is ${t.emoji} **${t.name}** again, ${weekdayName()}, Day ${currentGameState.dayCount}.` +
+            `${presenceLine(currentGameState.currentLocation)}\n\n_(Everything the hour changed — schedules, conditions, pregnancies — is as it was. The story already told stands; you are simply not as late as you thought.)_`);
+    }
+
     function advanceTime(quiet = false) {
         if (!currentGameState.isActive) {
             console.warn('RPG Custodian: Cannot advance time - no active game session');
             return null;
         }
+
+        snapshotTimeState();   // before anything the hour will change
 
         const previousTime = TIME_PERIODS[currentGameState.currentTime];
         currentGameState.currentTime = (currentGameState.currentTime + 1) % 4;
@@ -7294,6 +7351,9 @@ Narrate the result briefly, grounded in this location and the story's current be
         effectiveStat: (s) => effectiveStat(s),
         analyze: (t) => analyzeIntent(t),                       // DC calibration probes
         rest: () => doRest(),
+        rewind: () => rewindTimeStep(),
+        canRewind: () => canRewindTime(),
+        undoDepth: () => (currentGameState.timeUndo || []).length,
         narrate: (intent, check) => narrateResult(intent?.narration_hint || 'an action', intent, check),
         awardXp: (c) => awardCheckXp(c),
         levelUp: () => openLevelUp(),
