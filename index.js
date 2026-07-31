@@ -6772,10 +6772,13 @@ Narrate the result briefly, grounded in this location and the story's current be
         } catch (e) { console.error('RPG Custodian: narration failed', e); return null; }
     }
 
-    async function triggerNpcReply(npcName) {
+    async function triggerNpcReply(npcName, opts = {}) {
         if (!npcName) return;
         const present = getNpcsAt(currentGameState.currentLocation).map(n => n.name);
-        if (!present.includes(npcName)) return;
+        // Normally only someone in the room may speak. The exception is someone
+        // the player addressed while they WERE in the room, whom the turn's own
+        // effects have since moved apart from — she answers rather than vanishing.
+        if (!present.includes(npcName) && !opts.wasAddressedHere) return;
         // A KO'd NPC can't respond — skip her generation (the KO-aware GM
         // narration covers the scene); log a quiet note.
         if (getRelationship(npcName).npcUnconscious) {
@@ -6847,6 +6850,12 @@ Narrate the result briefly, grounded in this location and the story's current be
         travelIssueNote = null;                        // ditto for last turn's failed-travel note
         pendingWhereaboutsNote = null;                 // ditto for whereabouts knowledge
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
+        // Who the player spoke TO, judged while they are all still in the room.
+        // Effects run before anyone replies, so a turn that walks away would
+        // otherwise leave the person he just addressed with no chance to answer.
+        const addressedAtStart = detectAddressedNpcs(playerText)
+            .filter(n => getNpcsAt(currentGameState.currentLocation).some(p => p.name === n));
+        const repliedThisTurn = [];
         try {
             const intent = await analyzeIntent(playerText);
             console.log('RPG Custodian: intent =', JSON.stringify(intent));
@@ -6908,8 +6917,24 @@ Narrate the result briefly, grounded in this location and the story's current be
                         }
                         case 'add_party': await addToParty(e.npc); break;
                         case 'remove_party': dismissedThisTurn.push(e.npc); await removeFromParty(e.npc); break;
-                        case 'move': moved = await doNlMove(e.destination) || moved; break;
-                        case 'event_teleport': moved = await doEventTeleport(e.destination) || moved; break;
+                        // Leaving is a beat in the sequence like any other, and
+                        // anyone spoken to before it must answer BEFORE the door
+                        // shuts — otherwise "say goodbye, then head out" moves
+                        // first and her farewell is dropped for not being present.
+                        case 'move':
+                            for (const n of addressedAtStart) {
+                                if (repliedThisTurn.includes(n) || dismissedThisTurn.includes(n)) continue;
+                                repliedThisTurn.push(n);
+                                await triggerNpcReply(n);
+                            }
+                            moved = await doNlMove(e.destination) || moved; break;
+                        case 'event_teleport':
+                            for (const n of addressedAtStart) {
+                                if (repliedThisTurn.includes(n) || dismissedThisTurn.includes(n)) continue;
+                                repliedThisTurn.push(n);
+                                await triggerNpcReply(n);
+                            }
+                            moved = await doEventTeleport(e.destination) || moved; break;
                         case 'rest': await doRest(); break;
                         case 'advance_time': await advanceTimeBy(e.periods || 1); break;
                         default: break;   // sync effect — handled by applyEffects below
@@ -6942,9 +6967,13 @@ Narrate the result briefly, grounded in this location and the story's current be
             const addressed = detectAddressedNpcs(playerText);
             const targets = (addressed.length ? addressed
                 : (intent?.target_npc && getNpcsAt(currentGameState.currentLocation).some(n => n.name === intent.target_npc) ? [intent.target_npc] : []))
-                .filter(n => !dismissedThisTurn.includes(n));   // a dismissed companion already said her goodbye
+                .filter(n => !dismissedThisTurn.includes(n))    // a dismissed companion already said her goodbye
+                .filter(n => !repliedThisTurn.includes(n));     // …as has anyone who answered before we left
             if (targets.length) {
-                for (const name of targets) await triggerNpcReply(name);   // each replies in turn
+                // Someone addressed while present still gets to answer even if
+                // the turn has since separated them: silence should never be the
+                // side-effect of a sequencing accident.
+                for (const name of targets) await triggerNpcReply(name, { wasAddressedHere: addressedAtStart.includes(name) });
             } else if (intent && !intent.mechanical) {
                 const gm = await narrateResult(playerText, intent, null);
                 if (gm) sendGameMasterMessage(gm);
