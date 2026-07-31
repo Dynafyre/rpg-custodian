@@ -4120,17 +4120,20 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         const present = getNpcsAt(currentGameState.currentLocation);
         const t = String(text || '');
         const esc = escRe;
-        const named = [];
-        // A name at the very start = direct address ("Bryony, …").
+        // Order by WHERE each name falls in the sentence, not by roster order:
+        // "Seline, then Wren, then Marta" must answer in that sequence, the way
+        // vanilla group chats do. (A name at the very start naturally sorts
+        // first, so direct address needs no special case.)
+        const hits = [];
         for (const npc of present) {
-            if (npcAliases(npc, present).some(a => new RegExp(`^["'*\\s]*${esc(a)}\\b`, 'i').test(t))) named.push(npc.name);
+            let at = -1;
+            for (const alias of npcAliases(npc, present)) {
+                const m = new RegExp(`\\b${esc(alias)}\\b`, 'i').exec(t);
+                if (m && (at < 0 || m.index < at)) at = m.index;
+            }
+            if (at >= 0) hits.push({ name: npc.name, at });
         }
-        // Any present NPC named anywhere in the line.
-        for (const npc of present) {
-            if (named.includes(npc.name)) continue;
-            if (npcAliases(npc, present).some(a => new RegExp(`\\b${esc(a)}\\b`, 'i').test(t))) named.push(npc.name);
-        }
-        if (named.length) return named;
+        if (hits.length) return hits.sort((a, b) => a.at - b.at).map(h => h.name);
         // Collective address → everyone present reacts.
         if (present.length > 1 && /\b(you (two|three|both|all|lot)|both of you|all of you|everyone|ladies|girls|the group|y'?all)\b/i.test(t)) {
             return present.map(n => n.name);

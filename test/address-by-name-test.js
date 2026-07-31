@@ -70,6 +70,21 @@ try {
     check('a shared first name is not claimed by either woman', ambiguous.length === 0, JSON.stringify(ambiguous));
     check('but the full name still picks the right one', (await addressed('Evelina Celeste, over here!')).includes('Evelina Celeste'));
 
+    // ── several named at once answer in the order they were named ─────────
+    await page.evaluate(() => {
+        const st = window.rpgCustodianDebug.state();
+        const here = st.currentLocation;
+        const sched = { Morning: here, Day: here, Evening: here, Night: here };
+        for (const n of st.npcRoster) if (['Marta', 'Wren', 'Seline'].includes(n.name)) { n.schedule = sched; n.homeLocation = here; }
+    });
+    check('all three named are detected', (await addressed('Marta, Wren and Seline — over here.')).length === 3, JSON.stringify(await addressed('Marta, Wren and Seline — over here.')));
+    const order1 = await addressed('Marta, Wren and Seline — over here.');
+    check('they answer in the order named', JSON.stringify(order1) === JSON.stringify(['Marta', 'Wren', 'Seline']), JSON.stringify(order1));
+    const order2 = await addressed('Seline, then Wren, then Marta.');
+    check('a different order is honoured, not roster order', JSON.stringify(order2) === JSON.stringify(['Seline', 'Wren', 'Marta']), JSON.stringify(order2));
+    const order3 = await addressed('I ask Wren about the price, and Marta about the room.');
+    check('mid-sentence mentions order by position too', JSON.stringify(order3) === JSON.stringify(['Wren', 'Marta']), JSON.stringify(order3));
+
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;
 } finally { await page.close(); await browser.disconnect(); }
