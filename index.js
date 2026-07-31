@@ -4115,7 +4115,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         };
         const parts = [];
         parts.push(`🎚️ Level ${s.level} · XP ${s.experience} · ⭐ ${s.power_tokens ?? 0} Power Tokens`);
-        parts.push(`❤️ Stamina: ${getStamina()}/${maxStamina()}${rd.stats.unconscious ? ' — UNCONSCIOUS' : ''}${customStatMod('stamina') ? ` (${customStatMod('stamina') >= 0 ? '+' : ''}${customStatMod('stamina')})` : ''}   🔮 Mana: ${s.mana}/${effectiveStat('craftiness')}`);
+        parts.push(`❤️ Stamina: ${getStamina()}/${maxStamina()}${rd.stats.unconscious ? ' — EXHAUSTED' : ''}${customStatMod('stamina') ? ` (${customStatMod('stamina') >= 0 ? '+' : ''}${customStatMod('stamina')})` : ''}   🔮 Mana: ${s.mana}/${effectiveStat('craftiness')}`);
         parts.push(`🪙 Gold: ${getGold()}`);
         parts.push([arrow('Ruggedness', '💪', 'ruggedness'), arrow('Charm', '😏', 'charm'), arrow('Craftiness', '🦊', 'craftiness'), arrow('Virility', '🔥', 'virility')].join('\n'));
         if (isCrystalCursed('player')) parts.push(`💠 **Crystal Curse** — your issue turns to soulgems (${rd.crystalCurse?.expiresStep == null ? 'permanent until broken by magic' : `${Math.max(0, rd.crystalCurse.expiresStep - (currentGameState.timeStep || 0))} periods left`})`);
@@ -4589,6 +4589,77 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         return `[SCENE CONTINUITY for ${npcName}${role} — read this before you reply. You have NOT seen ${player} for about ${dur}. You spent that time APART, living your own life — ${scheduleSummary(npc)}${didText}${circumstance} React to his RETURN across that gap: you are aware time has passed and that you did NOT spend it with him, so greet/acknowledge the reunion rather than picking the last scene back up as if he never left. You may carry your own news, changes, or feelings about the time apart. Your standing with him: ${t.label} — ${npcName} ${t.desc}.${preg} If he asks where you have been or what you do, answer honestly from your routine above.]`;
     }
 
+    // ========================================================================
+    // ENGINE-MANAGED STATUSES
+    // ========================================================================
+    // Three states the ENGINE owns entirely: it applies and removes them from
+    // hard numbers, and the Custodian never emits them. They ride the ordinary
+    // status system anyway so that every surface that already reads statuses —
+    // the NPCs' context, the GM narrator, examine, the character sheet — sees
+    // them without a single new special case.
+    const PENT_UP_PERIODS = 8;   // time steps without release before it sets in
+    const ENGINE_STATUSES = {
+        exhausted: {
+            name: 'Exhausted', kind: 'status', polarity: 'negative',
+            desc: 'Wrung out and running on empty — everything is heavier, slower, and harder to think through. Not asleep, but badly in need of rest.',
+            mods: [{ stat: 'ruggedness', amount: -2 }, { stat: 'charm', amount: -2 }, { stat: 'craftiness', amount: -2 }],
+            onApply: '😮‍💨 **Exhausted** — you are spent (Stamina 0). −2 Ruggedness, Charm and Craftiness until you rest.',
+            onClear: '💪 You shake off the exhaustion.',
+        },
+        unconscious: {
+            name: 'Unconscious', kind: 'status', polarity: 'negative',
+            desc: 'Out cold — collapsed from exhaustion, limp and unresponsive. She cannot speak, move, or react to anything until she wakes or is revived.',
+            mods: [],
+        },
+        pentUp: {
+            name: 'Pent Up', kind: 'status', polarity: 'neutral',
+            desc: 'A long while without release has left a restless ache — distractible and short of focus, but primed and potent.',
+            mods: [{ stat: 'craftiness', amount: -1 }, { stat: 'virility', amount: 1 }],
+            onApply: '🔥 **Pent Up** — it has been a long while. −1 Craftiness, +1 Virility.',
+            onClear: '😌 The edge is off — **Pent Up** fades.',
+        },
+    };
+    let syncingEngineStatuses = false;   // addCustomStatus saves, which re-enters here
+    function engineStatusOf(holder, key) {
+        return (holder?.customEffects || []).find(e => e.engineManaged === key && e.active !== false);
+    }
+    /** Add or remove one engine status so it matches `shouldHave`. */
+    function reconcileEngineStatus(target, key, shouldHave) {
+        const isPlayer = !target || target === 'player';
+        const holder = isPlayer ? getPlayerRpgData() : getRelationship(target);
+        if (!holder) return;
+        const spec = ENGINE_STATUSES[key];
+        const existing = engineStatusOf(holder, key);
+        if (shouldHave && !existing) {
+            const rec = addCustomStatus(isPlayer ? 'player' : target, spec, true);
+            if (rec) rec.engineManaged = key;
+            if (spec.onApply && isPlayer) sendGhostMessage(spec.onApply);
+        } else if (!shouldHave && existing) {
+            holder.customEffects = holder.customEffects.filter(e => e !== existing);
+            if (spec.onClear && isPlayer) sendGhostMessage(spec.onClear);
+        }
+    }
+    /**
+     * Bring all engine-owned statuses in line with the numbers. Cheap, pure
+     * bookkeeping — safe to call after anything that moves stamina or time.
+     */
+    function syncEngineStatuses() {
+        if (syncingEngineStatuses || !currentGameState.isActive) return;
+        const rd = getPlayerRpgData();
+        if (!rd) return;
+        syncingEngineStatuses = true;
+        try {
+            reconcileEngineStatus('player', 'exhausted', getStamina() <= 0);
+            const since = (currentGameState.timeStep || 0) - (rd.stats.lastOrgasmStep ?? 0);
+            reconcileEngineStatus('player', 'pentUp', since >= PENT_UP_PERIODS);
+            for (const npc of (currentGameState.npcRoster || [])) {
+                const rel = rd.relationships?.[npc.name];
+                if (!rel) continue;                       // untouched NPCs keep no record
+                reconcileEngineStatus(npc.name, 'unconscious', !!rel.npcUnconscious);
+            }
+        } finally { syncingEngineStatuses = false; }
+    }
+
     const STATUS_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS';
     // The when/where ground truth, injected SEPARATELY at depth 0 — immediately
     // adjacent to the generation point, in every generation path (trigger,
@@ -4603,6 +4674,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         return `[NOW — ${weekdayName()}, ${period ? period.name.toLowerCase() : 'day'} of day ${currentGameState.dayCount}. Place: ${locName(currentGameState.currentLocation)}. This is the true day, time, and place; anything said or thought about them matches it.]`;
     }
     function projectPlayerStatus() {
+        syncEngineStatuses();   // stamina/time-derived states, before anyone reads them
         const rd = currentGameState.isActive ? getPlayerRpgData() : null;
         context.setExtensionPrompt(SCENE_PROMPT_KEY, rd ? sceneGroundTruth() : '', 1, 0);
         if (!rd) { context.setExtensionPrompt(STATUS_PROMPT_KEY, '', 1, 4); return; }
@@ -4616,7 +4688,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             ``,
             `[Adventurer Status — plainly visible to everyone present]`,
             `${name} — Ruggedness ${effectiveStat('ruggedness')}, Charm ${effectiveStat('charm')}, Craftiness ${effectiveStat('craftiness')}, Virility ${effectiveStat('virility')} (Level ${s.level}).`,
-            `Stamina ${getStamina()}/${maxStamina()}${rd.stats.unconscious ? ' — UNCONSCIOUS' : ''}.`,
+            `Stamina ${getStamina()}/${maxStamina()}${rd.stats.unconscious ? ' — EXHAUSTED (spent, not asleep: he can still act, badly)' : ''}.`,
             `Coin purse: ${rd.inventory.currency} gold.`,
             `Carrying: ${items.length ? items.join(', ') : 'nothing of note'}.`,
         ];
@@ -5042,7 +5114,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             rd.stats.unconscious = rd.stats.stamina <= 0;
             savePlayer();
             const gained = rd.stats.stamina - before;
-            sendGhostMessage(`💚 Restoration${gained > 0 ? ` (+${gained})` : ''} — your Stamina is ${rd.stats.stamina}/${max}${revived && !rd.stats.unconscious ? ' — you come to, revived!' : ''}.`);
+            sendGhostMessage(`💚 Restoration${gained > 0 ? ` (+${gained})` : ''} — your Stamina is ${rd.stats.stamina}/${max}${revived && !rd.stats.unconscious ? ' — the worst of the exhaustion lifts!' : ''}.`);
         } else {
             const rel = getRelationship(tgt);
             const max = npcMaxStamina(tgt);
@@ -5407,8 +5479,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         let conceived = 0;
         const lines = [];
         for (let i = 0; i < Math.max(1, count); i++) {
-            if (getPlayerRpgData()?.stats.unconscious) { lines.push('…you have no stamina left to give.'); break; }
+            if (getPlayerRpgData()?.stats.unconscious) { lines.push('…you are far too spent to manage it again.'); break; }
             spendStamina(1);
+            const rdNow = getPlayerRpgData();
+            if (rdNow) rdNow.stats.lastOrgasmStep = currentGameState.timeStep || 0;   // resets Pent Up
             let line = `💦 Climax — −1 Stamina (now ${getStamina()}/${maxStamina()})`;
             if (internal && npcName) {
                 const rel = getRelationship(npcName);
@@ -5430,7 +5504,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 }
             }
             lines.push(line);
-            if (getPlayerRpgData()?.stats.unconscious) { lines.push('🥴 Spent utterly — you slump into unconsciousness.'); break; }
+            if (getPlayerRpgData()?.stats.unconscious) { lines.push('🥴 Spent utterly — you are wrung out to nothing.'); break; }
         }
         if (conceived && npcName) {
             const rel = getRelationship(npcName);
