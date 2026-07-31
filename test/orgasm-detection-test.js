@@ -74,6 +74,31 @@ try {
         }
     }
 
+    // ── HER climax written in HER OWN reply ───────────────────────────────
+    // The analyzer runs before she speaks, so this is the case that was being
+    // missed entirely: the reaction judge now catches it from her reply text.
+    const judgeClimax = async (reply) => page.evaluate(async (r) => {
+        const d = window.rpgCustodianDebug;
+        const c = SillyTavern.getContext();
+        const rel = d.player().relationships['Bryony'];
+        rel.npcStamina = 5; rel.npcUnconscious = false;
+        const before = rel.npcStamina;
+        c.chat.push({ name: 'Dyna', is_user: true, is_system: false, mes: 'I keep going, watching her face.', send_date: Date.now() });
+        const at = c.chat.length;
+        c.chat.push({ name: 'Bryony', is_user: false, is_system: false, mes: r, send_date: Date.now() });
+        await d.judgeReaction('Bryony', at);
+        const after = d.player().relationships['Bryony'].npcStamina;
+        return { before, after, spent: before - after };
+    }, reply);
+
+    let res = await judgeClimax(`Bryony's whole body locks — her back bows off the bedding, thighs clamping around his hips, and a sound she never meant to make is torn out of her throat. Her sight goes white at the edges, everything in her fluttering and clenching around him in long helpless waves, and then she simply comes apart, sagging boneless into the furs with her chest heaving.`);
+    console.log('   her own climax reply →', JSON.stringify(res));
+    check('a climax written in HER reply is now caught', res.spent === 1, JSON.stringify(res));
+
+    res = await judgeClimax(`Bryony moans against his shoulder, hips working greedily, breath coming ragged. "Don't stop," she gasps, nails biting into his back. "I'm close — so close, please—"`);
+    console.log('   her climb reply →', JSON.stringify(res));
+    check('the climb in her reply does NOT cost her stamina', res.spent === 0, JSON.stringify(res));
+
     console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
     process.exitCode = failures ? 1 : 0;
 } finally { await page.close(); await browser.disconnect(); }

@@ -4632,7 +4632,8 @@ AROUSAL — answer this checklist IN ORDER:
 (b) Physical evidence beyond her stated band — lingering or roaming gazes, deliberate touches, closing distance, display, flush, breathlessness: +1 (+2 if blatant).
 (c) Clear physical cooling below her band: −1.
 (d) None of the above: 0. (Merely refusing or deflecting an advance HE made is 0.)
-Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "why": "<ten words max>"}`;
+CLIMAX — did her body actually COME APART in this reply? Judge the body, not the words; the prose rarely names it. Yes when an involuntary crisis takes her and then leaves her: clenching or fluttering around him, a back arching, thighs locking or legs giving way, a cry torn out of her, sight or thought whiting out, then the limp shuddering aftermath. NO for the climb — moaning, writhing, begging, being close, "almost", "any second" — that is arousal rising, not breaking. NO if she is merely described as already spent from an earlier one.
+Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "climax": true|false, "why": "<ten words max>"}`;
             const prompt = `NPC: ${npcName}
 Her disposition band she was told to play (${t.label}, affection ${getNpcAffection(npcName)}/10): she ${t.band}
 Her physical band (${a.label}, arousal ${getNpcArousal(npcName)}/10): ${a.band}
@@ -4647,7 +4648,19 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             let dAff = Math.max(-2, Math.min(2, Math.round(Number(p.affection) || 0)));
             const dAro = Math.max(-2, Math.min(2, Math.round(Number(p.arousal) || 0)));
             // Log zeros too — silent verdicts made live misses undiagnosable.
-            console.log(`RPG Custodian: reaction judge ${npcName}: aff ${dAff >= 0 ? '+' : ''}${dAff}, aro ${dAro >= 0 ? '+' : ''}${dAro} (${p.why || ''})`);
+            console.log(`RPG Custodian: reaction judge ${npcName}: aff ${dAff >= 0 ? '+' : ''}${dAff}, aro ${dAro >= 0 ? '+' : ''}${dAro}${p.climax ? ', CLIMAX' : ''} (${p.why || ''})`);
+
+            // Her climax usually appears in HER OWN reply, which the analyzer
+            // never sees (it ran before she spoke, and next turn it reads her
+            // truncated). This judge is already holding the full text, so it
+            // costs nothing to catch it here.
+            currentGameState.npcClimaxedThisTurn = currentGameState.npcClimaxedThisTurn || [];
+            if (p.climax && !currentGameState.npcClimaxedThisTurn.includes(npcName)) {
+                currentGameState.npcClimaxedThisTurn.push(npcName);
+                const r2 = spendNpcStamina(npcName, 1);
+                sendGhostMessage(`💦 ${npcName} climaxes — Stamina ${r2.npcStamina}/${npcMaxStamina(npcName)}${r2.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`);
+                savePlayer();
+            }
             if (!dAff && !dAro) return;
 
             // Pacing cap (knob #1): ordinary gain +1 per time period per NPC;
@@ -6523,6 +6536,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         return lines.length ? lines.reverse().join('\n') : '(scene just beginning)';
     }
 
+    function clipForAnalyzer(text, max = 800) {
+        if (text.length <= max) return text;
+        const head = Math.floor(max * 0.4), tail = max - head;
+        return `${text.slice(0, head)} […] ${text.slice(-tail)}`;
+    }
     function recentSceneForAnalyzer() {
         const chat = getCtx().chat || [];
         // A wide, spam-filtered window: the Custodian spends its whole story budget
@@ -6530,7 +6548,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // NPC's offer, a bargain, a handed-over item), not travel/time/sheet noise.
         const lines = chat.filter(isStoryMessage)
             .slice(-12)                                          // doubled from 6
-            .map(m => `${m.is_user ? 'Player' : m.name}: ${String(m.mes).replace(/\s+/g, ' ').slice(0, 800)}`);
+            // Keep the END, not just the beginning: a message RESOLVES at its
+            // close (she finally comes apart, he finally gives in), and cutting
+            // the tail meant the analyzer read the build-up and never the
+            // outcome. Long messages keep a head for context plus the payoff.
+            .map(m => `${m.is_user ? 'Player' : m.name}: ${clipForAnalyzer(String(m.mes).replace(/\s+/g, ' '))}`);
         return lines.length ? lines.join('\n') : '(scene just beginning)';
     }
 
@@ -6795,7 +6817,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 case 'use_item': useItemByName(eff.name); break;
                 case 'orgasm':
                     if ((eff.actor || 'player') === 'player') resolvePlayerOrgasm(eff.npc, eff.internal !== false, eff.count || 1);
-                    else if (eff.npc) { const rel = spendNpcStamina(eff.npc, eff.count || 1); sendGhostMessage(`💦 ${eff.npc} climaxes — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`); }
+                    else if (eff.npc) { (currentGameState.npcClimaxedThisTurn = currentGameState.npcClimaxedThisTurn || []).push(eff.npc); const rel = spendNpcStamina(eff.npc, eff.count || 1); sendGhostMessage(`💦 ${eff.npc} climaxes — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`); }
                     break;
                 case 'damage':
                     if ((eff.target || 'player') === 'player') { spendStamina(eff.amount || 1); sendGhostMessage(`💢 You take ${eff.amount || 1} — Stamina ${getStamina()}/${maxStamina()}${getPlayerRpgData()?.stats.unconscious ? ' — you black out!' : ''}`); }
@@ -7154,6 +7176,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         travelIssueNote = null;                        // ditto for last turn's failed-travel note
         pendingWhereaboutsNote = null;                 // ditto for whereabouts knowledge
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
+        currentGameState.npcClimaxedThisTurn = [];   // so one climax is never counted twice
         // Who the player spoke TO, judged while they are all still in the room.
         // Effects run before anyone replies, so a turn that walks away would
         // otherwise leave the person he just addressed with no chance to answer.
