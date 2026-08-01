@@ -4611,14 +4611,20 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     // detects the band-break and moves the tier. Affection: ±1 (±2 reserved
     // for far-outside-band moments), gain paced per time period. Arousal: ±2
     // on physical evidence. Default is always 0.
-    async function judgeNpcReaction(npcName, preReplyLen) {
+    //
+    // Split in two on purpose. REQUEST is the model call and nothing else, so
+    // it can run while the next woman is already answering. APPLY is the state
+    // change and the player-facing line, which must land in speaker order — a
+    // "💗 affection +1" that arrives whenever its call happened to return would
+    // attach itself to whatever reply is on screen at that moment.
+    async function requestReactionVerdict(npcName, preReplyLen) {
         const doneJudge = perfStage(`judge:${npcName}`);
         try {
             const chat = getCtx().chat || [];
             const reply = chat.length > preReplyLen ? chat[chat.length - 1] : null;
-            if (!reply || reply.is_user || reply.is_system || reply.name !== npcName) return;
+            if (!reply || reply.is_user || reply.is_system || reply.name !== npcName) return null;
             const replyText = String(reply.mes || '').trim();
-            if (!replyText) return;
+            if (!replyText) return null;
             const playerMsg = [...chat.slice(0, preReplyLen)].reverse().find(m => m.is_user);
             const rel = getRelationship(npcName);
             const t = affectionTier(getNpcAffection(npcName));    // effective: status deltas/caps included
@@ -4644,12 +4650,25 @@ Player's message: "${String(playerMsg?.mes || '').replace(/\s+/g, ' ').slice(0, 
 HER REPLY (score this):
 ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
 
-            const p = await generateJson({ prompt, systemPrompt: sys, budget: 220 });
-            if (!p) return;
+            // concurrent: this call can be in flight while SillyTavern builds
+            // the next reply, and a response-length cap would corrupt hers.
+            const p = await generateJson({ prompt, systemPrompt: sys, budget: 220, concurrent: true });
+            if (!p) { doneJudge({ verdict: 'unparsed' }); return null; }
+            // Log zeros too — silent verdicts made live misses undiagnosable.
+            console.log(`RPG Custodian: reaction judge ${npcName}: aff ${Number(p.affection) || 0}, aro ${Number(p.arousal) || 0}${p.climax ? ', CLIMAX' : ''} (${p.why || ''})`);
+            doneJudge({ verdict: `${Number(p.affection) || 0}/${Number(p.arousal) || 0}${p.climax ? '/climax' : ''}` });
+            return p;
+        } catch (e) { console.error('RPG Custodian: reaction judge failed', e); return null; }
+        finally { doneJudge(); }
+    }
+
+    /** Apply a verdict. Synchronous and ordered — the caller chooses the moment. */
+    function applyReactionVerdict(npcName, p) {
+        if (!p) return;
+        try {
+            const rel = getRelationship(npcName);
             let dAff = Math.max(-2, Math.min(2, Math.round(Number(p.affection) || 0)));
             const dAro = Math.max(-2, Math.min(2, Math.round(Number(p.arousal) || 0)));
-            // Log zeros too — silent verdicts made live misses undiagnosable.
-            console.log(`RPG Custodian: reaction judge ${npcName}: aff ${dAff >= 0 ? '+' : ''}${dAff}, aro ${dAro >= 0 ? '+' : ''}${dAro}${p.climax ? ', CLIMAX' : ''} (${p.why || ''})`);
 
             // Her climax usually appears in HER OWN reply, which the analyzer
             // never sees (it ran before she spoke, and next turn it reads her
@@ -4662,7 +4681,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 sendGhostMessage(`💦 ${npcName} climaxes — Stamina ${r2.npcStamina}/${npcMaxStamina(npcName)}${r2.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`);
                 savePlayer();
             }
-            if (!dAff && !dAro) { doneJudge({ verdict: 'no change' }); return; }
+            if (!dAff && !dAro) return;
 
             // Pacing cap (knob #1): ordinary gain +1 per time period per NPC;
             // a far-outside +2 may breach it once. Losses are never capped.
@@ -4690,8 +4709,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 : '';
             if (bits.length) sendGhostMessage(`${npcName}: ${bits.join(' · ')}${shift}`);
             if (shift) projectPlayerStatus();   // she plays the new band from the next line
-        } catch (e) { console.error('RPG Custodian: reaction judge failed', e); }
-        finally { doneJudge(); }
+        } catch (e) { console.error('RPG Custodian: applying reaction verdict failed', e); }
+    }
+
+    /** Ask and apply in one go — for the out-of-band paths (a swipe, a ▶
+     *  continue, the debug hook), where there is no turn to order against. */
+    async function judgeNpcReaction(npcName, preReplyLen) {
+        applyReactionVerdict(npcName, await requestReactionVerdict(npcName, preReplyLen));
     }
     function buildReunionNote(npcName) {
         const rel = getRelationship(npcName);
@@ -4947,10 +4971,16 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         };
         perfTurn.calls.push(rec);
         const t = perfNow();
-        return (out) => {
+        // Idempotent, and closeable on the failure path: a call that THREW used
+        // to leave ms null, so the most expensive events in a session — a model
+        // call that burned 17s and returned nothing — were the very ones
+        // missing from the data collected to diagnose them.
+        return (out, meta) => {
+            if (rec.ms !== null) return;
             rec.ms = Math.round(perfNow() - t);
             rec.outChars = String(out ?? '').length;
             rec.estOutTokens = Math.round(rec.outChars / 4);
+            if (meta && meta.failed) rec.failed = meta.failed;
         };
     }
     /** Stamp the moment the LAST visible line landed. In a group scene several
@@ -4964,10 +4994,14 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         perfTurn.totalMs = Math.round(perfNow() - perfTurn.t0);
         if (perfTurn.visibleMs == null) perfTurn.visibleMs = perfTurn.totalMs;
         // Two different questions, so two numbers:
-        //  judgeMs     — total time spent judging anywhere in the turn. This is
-        //                what moving judges off the critical path could reclaim.
+        //  judgeMs     — total judging WORK. Judges now run concurrently with
+        //                the replies that follow them, so these windows OVERLAP
+        //                and this sum can exceed the turn's own wall clock. It
+        //                prices the work, not the delay — do not read it as
+        //                time the player waited.
         //  afterLastMs — dead time once the last line was on the page: the part
-        //                the player experiences as the engine still chewing.
+        //                the player experiences as the engine still chewing,
+        //                and the honest measure of what judging still costs.
         perfTurn.judgeMs = perfTurn.stages.filter(x => x.label.startsWith('judge:')).reduce((a, b) => a + (b.ms || 0), 0);
         perfTurn.afterLastMs = perfTurn.totalMs - perfTurn.visibleMs;
         perfTurn.calls_n = perfTurn.calls.length;
@@ -6368,14 +6402,14 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const list = items.map(it => `- id "${it.id}": ${it.text}`).join('\n');
         const prompt = `RECENT STORY:\n${recentSceneForAnalyzer()}\n\nCONDITIONS TO JUDGE:\n${list}\n\nOutput JSON like {"<id>": true|false, ...}.`;
         try {
-            const parsed = await generateJson({ prompt, systemPrompt: sys, budget: 300 });
+            const parsed = await generateJson({ prompt, systemPrompt: sys, budget: 300, concurrent: true });
             return (parsed && typeof parsed === 'object') ? parsed : {};
         } catch (e) { console.error('RPG Custodian: condition eval failed', e); return {}; }
     }
     // Run after a turn's story resolves: end statuses / break curses whose
     // condition the story just satisfied. One judge call per turn (only if pending).
-    async function checkPendingConditions() {
-        const rd = getPlayerRpgData(); if (!rd) return;
+    function collectPendingConditions() {
+        const rd = getPlayerRpgData(); if (!rd) return [];
         const pending = [];
         // An effect is not eligible to end on the very turn it was applied (its own
         // arrival narration must not be mistaken for its resolution). Clear the flag
@@ -6407,14 +6441,25 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         regStatuses(rd, 'player'); regCurse(rd, 'player');
         for (const [name, rel] of Object.entries(rd.relationships || {})) { regStatuses(rel, name); regCurse(rel, name); }
         savePlayer();
-        if (!pending.length) return;
-        const verdict = await evaluateConditions(pending.map(p => ({ id: p.id, text: p.text })));
-        for (const p of pending) {
+        return pending;
+    }
+
+    /** Apply a condition verdict — ends statuses, breaks curses, closes
+     *  objectives. Synchronous and ordered, for the same reason the reaction
+     *  verdict is: "⚖️ your oath is discharged" must not surface mid-reply. */
+    function applyConditionVerdicts(pending, verdict) {
+        for (const p of (pending || [])) {
             if (verdict[p.id] !== true) continue;
             if (p.kind === 'quest') completeObjective(p.target, p.ref);
             else if (p.kind === 'status') removeCustomStatus(p.target, p.name, 'its condition was met');
             else if (p.kind === 'curse') liftCrystalCurse(p.target);
         }
+    }
+
+    async function checkPendingConditions() {
+        const pending = collectPendingConditions();
+        if (!pending || !pending.length) return;
+        applyConditionVerdicts(pending, await evaluateConditions(pending.map(p => ({ id: p.id, text: p.text }))));
     }
 
     // ========================================================================
@@ -6843,6 +6888,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 if (parsed) return normalizeIntent(parsed);
                 console.warn(`RPG Custodian: analyzer empty/unparseable (attempt ${attempt + 1}), raw:`, String(raw || '').slice(0, 160));
             } catch (e) {
+                doneCall(null, { failed: String(e?.message || e).slice(0, 120) });
                 console.error(`RPG Custodian: analyzer call failed (attempt ${attempt + 1})`, e);
             }
             await new Promise(r => setTimeout(r, 600));
@@ -6872,9 +6918,11 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
             text = stripReasoning(await context.generateRaw({ prompt, systemPrompt, responseLength: budget + THINK_HEADROOM }));
         } catch (e) { console.warn('RPG Custodian: prose call failed, trying prefill rescue', e); }
         if (!text) {
-            const raw = await context.generateRaw({ prompt, systemPrompt, responseLength: budget, prefill: rescuePrefill || undefined });
-            text = stripReasoning(raw);
-            if (text && rescuePrefill && !text.startsWith(rescuePrefill.trim())) text = rescuePrefill + text;
+            try {
+                const raw = await context.generateRaw({ prompt, systemPrompt, responseLength: budget, prefill: rescuePrefill || undefined });
+                text = stripReasoning(raw);
+                if (text && rescuePrefill && !text.startsWith(rescuePrefill.trim())) text = rescuePrefill + text;
+            } catch (e) { doneCall(null, { failed: String(e?.message || e).slice(0, 120) }); throw e; }
         }
         doneCall(text);
         return text;
@@ -6884,15 +6932,24 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
      * JSON call: think-first with headroom, parse, prefill-'{' rescue.
      * Returns the parsed object, or null.
      */
-    async function generateJson({ prompt, systemPrompt, budget }) {
+    // `concurrent` omits responseLength. SillyTavern implements that cap with
+    // TempResponseLength (script.js), a STATIC singleton holding one saved
+    // value plus a one-shot CHAT_COMPLETION_SETTINGS_READY hook — so a capped
+    // call that overlaps an NPC's reply can have its 220-token ceiling applied
+    // to HER generation instead. That truncation reads as the model being lazy,
+    // not as a bug, so any call that may run alongside another must go uncapped.
+    async function generateJson({ prompt, systemPrompt, budget, concurrent }) {
         const doneCall = perfCall('json', prompt?.length, systemPrompt?.length);
+        const cap = concurrent ? {} : { responseLength: budget + THINK_HEADROOM };
         try {
-            const parsed = parseIntent(await context.generateRaw({ prompt, systemPrompt, responseLength: budget + THINK_HEADROOM }));
+            const parsed = parseIntent(await context.generateRaw({ prompt, systemPrompt, ...cap }));
             if (parsed) { doneCall(JSON.stringify(parsed)); return parsed; }
         } catch (e) { console.warn('RPG Custodian: json call failed, trying prefill rescue', e); }
-        const raw = await context.generateRaw({ prompt, systemPrompt, responseLength: budget, prefill: '{' });
-        doneCall(raw);
-        return parseIntent(raw) || parseIntent('{' + String(raw || ''));
+        try {
+            const raw = await context.generateRaw({ prompt, systemPrompt, ...(concurrent ? {} : { responseLength: budget }), prefill: '{' });
+            doneCall(raw);
+            return parseIntent(raw) || parseIntent('{' + String(raw || ''));
+        } catch (e) { doneCall(null, { failed: String(e?.message || e).slice(0, 120) }); throw e; }
     }
 
     function stripReasoning(s) {
@@ -7317,9 +7374,24 @@ Narrate the result briefly, grounded in this location and the story's current be
         // Stamp the index so the out-of-band handler can't judge it twice.
         getRelationship(npcName).lastJudgedMesId = preReplyLen;
         currentGameState.lastReplier = npcName;   // she holds the conversation
-        await judgeNpcReaction(npcName, preReplyLen);
+        // Within a turn: ASK now, APPLY at the barrier — so the next woman can
+        // start speaking while this one is still being judged. Calling without
+        // awaiting is safe because everything that reads the chat (finding her
+        // reply, building the prompt) happens synchronously before the request's
+        // first await; only the model round trip is deferred.
+        if (currentGameState.rpgOrchestrating && concurrentJudges) {
+            pendingTurnJudges.push({ npc: npcName, verdict: requestReactionVerdict(npcName, preReplyLen) });
+        } else {
+            await judgeNpcReaction(npcName, preReplyLen);
+        }
         return true;
     }
+
+    // Reaction verdicts requested during the current turn, in speaker order.
+    let pendingTurnJudges = [];
+    // Off puts judging back on the critical path — kept so the concurrent and
+    // sequential paths can be A/B'd against each other on the live backend.
+    let concurrentJudges = true;
 
     // Poll until no generation is in progress (or timeout).
     async function waitForGenerationIdle(timeoutMs = 10000) {
@@ -7340,6 +7412,8 @@ Narrate the result briefly, grounded in this location and the story's current be
         pendingCharmNote = null;                       // never leak a stale charm read into a new turn
         travelIssueNote = null;                        // ditto for last turn's failed-travel note
         pendingWhereaboutsNote = null;                 // ditto for whereabouts knowledge
+        pendingTurnJudges = [];                        // a previous turn's barrier already drained these
+        let pendingConds = null, condVerdict = null;   // resolved at the barrier below
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
         currentGameState.npcClimaxedThisTurn = [];   // so one climax is never counted twice
         // Who the player spoke TO, judged while they are all still in the room.
@@ -7521,13 +7595,28 @@ Narrate the result briefly, grounded in this location and the story's current be
             // speak anyway.
 
             // Now that the turn's story is on the page, let the Custodian judge
-            // whether any status/curse break-condition was just satisfied.
+            // whether any status/curse break-condition was just satisfied. This
+            // needs only the finished story, so it is STARTED here and left to
+            // run alongside the reaction judges still in flight rather than
+            // queueing behind them.
             const doneCond = perfStage('conditions');
-            await checkPendingConditions();
-            doneCond();
+            pendingConds = collectPendingConditions();
+            condVerdict = pendingConds.length
+                ? evaluateConditions(pendingConds.map(p => ({ id: p.id, text: p.text }))).then(v => { doneCond(); return v; })
+                : (doneCond(), null);
         } catch (e) {
             console.error('RPG Custodian: orchestration error', e);
         } finally {
+            // The barrier. Nothing the turn started is allowed to outlive it,
+            // and everything lands in one fixed order: reaction verdicts in
+            // speaker order, then condition outcomes. Anything else would let a
+            // "💗 affection +1" or a "⚖️ condition met" surface against whatever
+            // reply happened to be on screen when its call returned.
+            try {
+                const judges = pendingTurnJudges; pendingTurnJudges = [];
+                for (const j of judges) applyReactionVerdict(j.npc, await j.verdict);
+                if (condVerdict) applyConditionVerdicts(pendingConds, await condVerdict);
+            } catch (e) { console.error('RPG Custodian: turn barrier failed', e); }
             perfEnd();
             currentGameState.rpgOrchestrating = false;
         }
@@ -7747,6 +7836,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             context.saveSettingsDebounced(); return cd.extensions.rpg_custodian;
         },
         checkConditions: () => checkPendingConditions(),
+        setConcurrentJudges: (v) => { concurrentJudges = v !== false; return concurrentJudges; },
         appraise: (item) => appraiseItem(item),
         equipped: () => equippedItemsSummary(),
         items: () => (getPlayerRpgData()?.inventory.items || []).map(i => ({ name: i.name, equipped: !!i.equipped, effect: i.effectText, usage: i.usage, mod: i.mod })),
