@@ -337,9 +337,9 @@ code {
 
 /* Turn telemetry chip — tells you whether the engine is cooking or stalled */
 #rpg-perf-chip {
-    /* absolute, anchored to #sheld: a transform on <html> makes position:fixed
-       resolve against the scrolled page box rather than the viewport */
-    position: absolute; left: 0; bottom: 48px; z-index: 30002;
+    /* Its own row above the chat log — a flex child of #sheld, so it displaces
+       the conversation instead of covering it. */
+    display: none; align-self: center; flex: 0 0 auto; margin: 5px 0 3px;
     background: rgba(20, 24, 32, 0.92); color: #cfe0ff;
     border: 1px solid rgba(120, 180, 255, 0.45); border-radius: 999px;
     padding: 5px 12px; font-size: 12px; pointer-events: none;

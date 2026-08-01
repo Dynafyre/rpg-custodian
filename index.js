@@ -5017,41 +5017,27 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
 
     // ── the chip ──────────────────────────────────────────────────────────
+    /** Live in the layout as its own row directly ABOVE the chat log, rather
+     *  than floating over it. #sheld is a flex column whose #chat child is
+     *  `flex: 1 1 auto`, so a sibling inserted before it simply takes its own
+     *  strip and the conversation shrinks to fit — the chip can never sit on
+     *  top of a line the player is reading.
+     *
+     *  This also retires the old absolute positioning: nothing has to be
+     *  measured or clamped, so there is no geometry left to get wrong on a
+     *  phone (SillyTavern puts a transform on <html>, which used to make
+     *  position:fixed resolve against the scrolled page box instead of the
+     *  viewport and threw the chip off-screen entirely). */
     function perfChipEl() {
         let el = $('#rpg-perf-chip');
-        const home = document.querySelector('#sheld') || document.body;
-        if (!el.length) { el = $('<div id="rpg-perf-chip"></div>'); }
-        // #sheld is torn down and rebuilt on some layout changes, so re-home the
-        // chip every time rather than trusting the first append to survive.
-        if (el[0].parentElement !== home) $(home).append(el);
+        if (!el.length) el = $('<div id="rpg-perf-chip"></div>');
+        const sheld = document.querySelector('#sheld');
+        const chat = document.querySelector('#chat');
+        // #sheld is torn down and rebuilt on some layout changes, so re-seat the
+        // chip every time rather than trusting the first insert to survive.
+        if (sheld && chat && el[0].parentElement !== sheld) sheld.insertBefore(el[0], chat);
+        else if (!sheld && el[0].parentElement !== document.body) $(document.body).append(el);
         return el;
-    }
-    /** Sit just above the composer, centred on the chat column — where the
-     *  player is already looking. A fixed corner put it out in the dead margin
-     *  beside the conversation, which reads as unrelated chrome.
-     *
-     *  Anchored to #sheld, NOT the viewport: SillyTavern puts a transform on
-     *  <html>, and a transformed ancestor becomes the containing block for
-     *  position:fixed. Fixed offsets were therefore resolved against the
-     *  scrolled html box, which on a phone threw the chip 73px above the top of
-     *  the screen. No amount of clamping fixes that — only the anchor does. */
-    function perfChipPlace(el) {
-        const sheld = el[0].offsetParent;
-        const form = document.querySelector('#form_sheld') || document.querySelector('#send_form');
-        const col = document.querySelector('#chat') || form;
-        if (!sheld || !form || !col) return;
-        const s = sheld.getBoundingClientRect();
-        const f = form.getBoundingClientRect(), c = col.getBoundingClientRect();
-        const w = el.outerWidth() || 160, h = el.outerHeight() || 28;
-        // Offsets are relative to the anchor's box, and clamped inside it so a
-        // mid-reflow measurement can never park the chip somewhere unreachable.
-        const wantBottom = (f.height > 0) ? (s.bottom - f.top + 8) : 96;
-        const wantLeft = c.left + c.width / 2 - w / 2 - s.left;
-        el.css({
-            left: `${Math.round(Math.min(Math.max(6, wantLeft), Math.max(6, s.width - w - 6)))}px`,
-            bottom: `${Math.round(Math.min(Math.max(6, wantBottom), Math.max(6, s.height - h - 6)))}px`,
-            right: 'auto',
-        });
     }
     function perfChipStart() {
         const el = perfChipEl().removeClass('rpg-perf-stall').show();
@@ -5062,7 +5048,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             const stalled = (perfNow() - perfTurn.t0) > PERF_STALL_MS;
             el.toggleClass('rpg-perf-stall', stalled);
             el.text(`${perfTurn.chipLabel || 'working'} ${secs}s${stalled ? ' — still going…' : ''}`);
-            perfChipPlace(el);   // the composer grows as you type; follow it
         }, 200);
     }
     function perfChipSet(stage) {
