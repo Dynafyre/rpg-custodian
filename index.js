@@ -4612,6 +4612,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     // for far-outside-band moments), gain paced per time period. Arousal: ±2
     // on physical evidence. Default is always 0.
     async function judgeNpcReaction(npcName, preReplyLen) {
+        const doneJudge = perfStage(`judge:${npcName}`);
         try {
             const chat = getCtx().chat || [];
             const reply = chat.length > preReplyLen ? chat[chat.length - 1] : null;
@@ -4661,7 +4662,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 sendGhostMessage(`💦 ${npcName} climaxes — Stamina ${r2.npcStamina}/${npcMaxStamina(npcName)}${r2.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`);
                 savePlayer();
             }
-            if (!dAff && !dAro) return;
+            if (!dAff && !dAro) { doneJudge({ verdict: 'no change' }); return; }
 
             // Pacing cap (knob #1): ordinary gain +1 per time period per NPC;
             // a far-outside +2 may breach it once. Losses are never capped.
@@ -4890,6 +4891,113 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (ctx.eventTypes[ev]) ctx.eventSource.on(ctx.eventTypes[ev], restoreWitnessVisibility);
         }
     }
+
+    // ========================================================================
+    // TURN TELEMETRY  —  one system, two faces
+    // ========================================================================
+    // Face 1: a live chip so the player can tell cooking from idle from stalled.
+    // Face 2: a timestamped record of every stage and every model call, kept for
+    // later parsing against the chat log.
+    //
+    // The headline number is TOTAL: from the instant the send button is pressed
+    // to the last judge of the chain finishing. VISIBLE is the same clock
+    // stopped when the final NPC line actually appears — the gap between them is
+    // exactly what taking the judges off the critical path would buy, so the
+    // instrumentation can price its own optimisations.
+    const PERF_KEEP_TURNS = 80;
+    const PERF_STALL_MS = 25000;
+    let perfTurn = null;
+    let perfChipTimer = null;
+    const perfNow = () => (window.performance?.now?.() ?? Date.now());
+
+    function perfBegin(playerText) {
+        perfTurn = {
+            startedAt: new Date().toISOString(),
+            t0: perfNow(),
+            chatIndex: (getCtx().chat || []).length,          // cross-reference to the log
+            day: currentGameState.dayCount, time: currentGameState.currentTime,
+            location: currentGameState.currentLocation,
+            present: getNpcsAt(currentGameState.currentLocation || '').map(n => n.name),
+            action: String(playerText || '').slice(0, 120),
+            stages: [], calls: [],
+            visibleMs: null, totalMs: null,
+        };
+        perfChipStart();
+    }
+    /** Open a stage; returns the closer. Nestable-safe: stages are a flat list. */
+    function perfStage(label, meta = {}) {
+        if (!perfTurn) return () => {};
+        const rec = { label, at: Math.round(perfNow() - perfTurn.t0), ms: null, ...meta };
+        perfTurn.stages.push(rec);
+        perfChipSet(label);
+        const t = perfNow();
+        return (extra = {}) => { rec.ms = Math.round(perfNow() - t); Object.assign(rec, extra); };
+    }
+    /** Record one model round trip. Sizes are characters — token counts are not
+     *  returned by the API, so we log what we can measure and estimate from it. */
+    function perfCall(kind, promptChars, systemChars) {
+        if (!perfTurn) return () => {};
+        const rec = {
+            kind, at: Math.round(perfNow() - perfTurn.t0), ms: null,
+            inChars: (promptChars || 0) + (systemChars || 0), outChars: null,
+            estInTokens: Math.round(((promptChars || 0) + (systemChars || 0)) / 4),
+        };
+        perfTurn.calls.push(rec);
+        const t = perfNow();
+        return (out) => {
+            rec.ms = Math.round(perfNow() - t);
+            rec.outChars = String(out ?? '').length;
+            rec.estOutTokens = Math.round(rec.outChars / 4);
+        };
+    }
+    function perfMarkVisible() {
+        if (perfTurn && perfTurn.visibleMs == null) perfTurn.visibleMs = Math.round(perfNow() - perfTurn.t0);
+    }
+    function perfEnd() {
+        if (!perfTurn) return;
+        perfTurn.totalMs = Math.round(perfNow() - perfTurn.t0);
+        if (perfTurn.visibleMs == null) perfTurn.visibleMs = perfTurn.totalMs;
+        perfTurn.judgeTailMs = perfTurn.totalMs - perfTurn.visibleMs;   // the cost of finishing after she spoke
+        perfTurn.calls_n = perfTurn.calls.length;
+        const store = context.extensionSettings[extensionName];
+        store.perf = store.perf || [];
+        store.perf.push(perfTurn);
+        while (store.perf.length > PERF_KEEP_TURNS) store.perf.shift();
+        context.saveSettingsDebounced();
+        console.log(`RPG Custodian ⏱ turn: total ${perfTurn.totalMs}ms · visible ${perfTurn.visibleMs}ms · judge tail ${perfTurn.judgeTailMs}ms · ${perfTurn.calls.length} model calls`,
+            perfTurn.stages.map(s => `${s.label}:${s.ms ?? '—'}ms`).join(' | '));
+        perfTurn = null;
+        perfChipStop();
+    }
+
+    // ── the chip ──────────────────────────────────────────────────────────
+    function perfChipEl() {
+        let el = $('#rpg-perf-chip');
+        if (!el.length) { el = $('<div id="rpg-perf-chip"></div>'); $('body').append(el); }
+        return el;
+    }
+    function perfChipStart() {
+        const el = perfChipEl().removeClass('rpg-perf-stall').show();
+        clearInterval(perfChipTimer);
+        perfChipTimer = setInterval(() => {
+            if (!perfTurn) return;
+            const secs = ((perfNow() - perfTurn.t0) / 1000).toFixed(1);
+            const stalled = (perfNow() - perfTurn.t0) > PERF_STALL_MS;
+            el.toggleClass('rpg-perf-stall', stalled);
+            el.text(`${perfTurn.chipLabel || 'working'} ${secs}s${stalled ? ' — still going…' : ''}`);
+        }, 200);
+    }
+    function perfChipSet(stage) {
+        if (!perfTurn) return;
+        const PRETTY = {
+            analyze: '🧠 reading your action', narrate: '✍️ the narrator', conditions: '⚖️ checking conditions',
+        };
+        perfTurn.chipLabel = PRETTY[stage]
+            || (stage.startsWith('reply:') ? `💬 ${stage.slice(6)} is answering` : '')
+            || (stage.startsWith('judge:') ? `⚖️ reading ${stage.slice(6)}` : '')
+            || stage;
+    }
+    function perfChipStop() { clearInterval(perfChipTimer); perfChipTimer = null; $('#rpg-perf-chip').fadeOut(150); }
 
     const STATUS_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS';
     // The when/where ground truth, injected SEPARATELY at depth 0 — immediately
@@ -6680,11 +6788,13 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 // Attempt 0: think-first — the Custodian keeps its reasoning,
                 // with headroom so thinking can't starve the JSON. Attempt 1:
                 // prefill '{' rescue, which skips the thinking channel.
+                const doneCall = perfCall(`analyzer-attempt-${attempt + 1}`, prompt?.length, sys?.length);
                 const raw = await context.generateRaw(attempt === 0
                     ? { prompt, systemPrompt: sys, responseLength: 900 + THINK_HEADROOM }
                     : { prompt, systemPrompt: sys, responseLength: 900, prefill: '{' });
                 if (window.RPGC_LOG_PROMPT) console.log('RPG Custodian: ANALYZER RAW =', String(raw).slice(0, 500));
                 let parsed = parseIntent(raw);
+                doneCall(raw);
                 if (!parsed) parsed = parseIntent('{' + String(raw || ''));  // prefill may be stripped from the echo
                 if (parsed) return normalizeIntent(parsed);
                 console.warn(`RPG Custodian: analyzer empty/unparseable (attempt ${attempt + 1}), raw:`, String(raw || '').slice(0, 160));
@@ -6713,6 +6823,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
      */
     async function generateProse({ prompt, systemPrompt, budget, rescuePrefill = '' }) {
         let text = '';
+        const doneCall = perfCall('prose', prompt?.length, systemPrompt?.length);
         try {
             text = stripReasoning(await context.generateRaw({ prompt, systemPrompt, responseLength: budget + THINK_HEADROOM }));
         } catch (e) { console.warn('RPG Custodian: prose call failed, trying prefill rescue', e); }
@@ -6721,6 +6832,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
             text = stripReasoning(raw);
             if (text && rescuePrefill && !text.startsWith(rescuePrefill.trim())) text = rescuePrefill + text;
         }
+        doneCall(text);
         return text;
     }
 
@@ -6729,11 +6841,13 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
      * Returns the parsed object, or null.
      */
     async function generateJson({ prompt, systemPrompt, budget }) {
+        const doneCall = perfCall('json', prompt?.length, systemPrompt?.length);
         try {
             const parsed = parseIntent(await context.generateRaw({ prompt, systemPrompt, responseLength: budget + THINK_HEADROOM }));
-            if (parsed) return parsed;
+            if (parsed) { doneCall(JSON.stringify(parsed)); return parsed; }
         } catch (e) { console.warn('RPG Custodian: json call failed, trying prefill rescue', e); }
         const raw = await context.generateRaw({ prompt, systemPrompt, responseLength: budget, prefill: '{' });
+        doneCall(raw);
         return parseIntent(raw) || parseIntent('{' + String(raw || ''));
     }
 
@@ -7141,8 +7255,11 @@ Narrate the result briefly, grounded in this location and the story's current be
             relForNote.statusReactionNote = null;
         }
         const preReplyLen = (getCtx().chat || []).length;
+        const doneReply = perfStage(`reply:${npcName}`);
         try {
             await context.executeSlashCommandsWithOptions(`/trigger await=true ${npcName}`, { source: 'rpg-custodian' });
+            doneReply({ chars: String((getCtx().chat || [])[preReplyLen]?.mes || '').length });
+            perfMarkVisible();   // she is on the page — everything after this is tail
         } catch (e) { console.error('RPG Custodian: trigger NPC failed', e); }
         finally {
             if (reunion) context.setExtensionPrompt(REUNION_PROMPT_KEY, '', 1, 0);     // one-shot: clear after this reply
@@ -7188,7 +7305,9 @@ Narrate the result briefly, grounded in this location and the story's current be
             .filter(n => getNpcsAt(currentGameState.currentLocation).some(p => p.name === n));
         const repliedThisTurn = [];
         try {
+            const doneAnalyze = perfStage('analyze');
             const intent = await analyzeIntent(playerText);
+            doneAnalyze({ mechanical: !!intent?.mechanical, check: intent?.check?.stat || null });
             console.log('RPG Custodian: intent =', JSON.stringify(intent));
 
             if (intent && intent.mechanical) {
@@ -7300,7 +7419,9 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // solitary scene silent.
                 const resolvedSomething = !!check || substantive.length > 0 || aloneHere();
                 if (!pureMove && !pureExamine && !charmExchange && resolvedSomething) {
+                    const doneNarr = perfStage('narrate');
                     const gm = await narrateResult(playerText, intent, check);
+                    doneNarr();
                     if (gm) sendGameMasterMessage(gm);
                 } else if (!resolvedSomething) {
                     console.log('RPG Custodian: nothing was resolved this turn — GM stays quiet.');
@@ -7357,10 +7478,13 @@ Narrate the result briefly, grounded in this location and the story's current be
 
             // Now that the turn's story is on the page, let the Custodian judge
             // whether any status/curse break-condition was just satisfied.
+            const doneCond = perfStage('conditions');
             await checkPendingConditions();
+            doneCond();
         } catch (e) {
             console.error('RPG Custodian: orchestration error', e);
         } finally {
+            perfEnd();
             currentGameState.rpgOrchestrating = false;
         }
     }
@@ -7441,6 +7565,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             const chat = getCtx().chat;
             const msg = (typeof mesId === 'number' && chat[mesId]) ? chat[mesId] : [...chat].reverse().find(m => m.is_user);
             if (!msg || !msg.is_user) return;
+            perfBegin(msg.mes);    // the clock starts the moment he hits send
             stampWitnesses(msg);   // who was in the room to hear him say it
             const sig = `${msg.send_date}|${(msg.mes || '').length}`;
             if (currentGameState.lastActionSig === sig) return;
@@ -7506,6 +7631,23 @@ Narrate the result briefly, grounded in this location and the story's current be
         effectiveStat: (s) => effectiveStat(s),
         analyze: (t) => analyzeIntent(t),                       // DC calibration probes
         rest: () => doRest(),
+        // telemetry: perf() for the table, perfRaw() for everything, perfExport() to save
+        perfRaw: () => (context.extensionSettings[extensionName].perf || []),
+        perfClear: () => { context.extensionSettings[extensionName].perf = []; context.saveSettingsDebounced(); },
+        perf: () => (context.extensionSettings[extensionName].perf || []).map(t => ({
+            at: t.startedAt, mes: t.chatIndex, total: t.totalMs, visible: t.visibleMs, judgeTail: t.judgeTailMs,
+            calls: t.calls.length, present: (t.present || []).length,
+            slowest: (t.stages || []).slice().sort((a, b) => (b.ms || 0) - (a.ms || 0))[0]?.label,
+            action: t.action,
+        })),
+        perfExport: () => {
+            const blob = new Blob([JSON.stringify(context.extensionSettings[extensionName].perf || [], null, 1)], { type: 'application/json' });
+            const a2 = document.createElement('a');
+            a2.href = URL.createObjectURL(blob);
+            a2.download = `rpg-custodian-perf-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.json`;
+            a2.click(); setTimeout(() => URL.revokeObjectURL(a2.href), 30000);
+            return (context.extensionSettings[extensionName].perf || []).length + ' turns exported';
+        },
         addressed: (t) => detectAddressedNpcs(t),
         resolveNpc: (n) => resolveNpcName(n),
         rewind: () => rewindTimeStep(),
