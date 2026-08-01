@@ -37,11 +37,14 @@ try {
     });
 
     const CASES = [
-        // ── HERS: physical evidence, no vocabulary ────────────────────────
+        // ── HERS is NEVER read from HIS message ───────────────────────────
+        // Her body is hers to report. The player writing that she came is him
+        // narrating her, not evidence that she did — it is judged from her own
+        // reply instead (see the judge cases at the bottom).
         { t: `I keep going, and Bryony's thighs clamp around my hips — her back bows off the furs, her legs shaking uncontrollably, and a cry she never meant to make is torn out of her before she sags boneless against me.`,
-          want: 'npc', label: 'her body breaks (legs shaking, back arching, cry torn out)' },
+          want: null, label: 'he writes her climax for her — does not count' },
         { t: `Bryony's whole body seizes, her vision whiting out as she screams into my shoulder, cunt fluttering wildly around my fingers before she goes limp.`,
-          want: 'npc', label: 'her vision whites out and she screams' },
+          want: null, label: 'he writes her whiting out — still does not count' },
         // ── HERS: the climb is NOT a climax ───────────────────────────────
         { t: `Bryony moans against my mouth, hips rolling greedily, panting that she's close — so close, please, don't stop.`,
           want: null, label: 'being "so close" is not a climax' },
@@ -73,6 +76,25 @@ try {
             if (p) console.log(`      internal=${p.internal}`);
         }
     }
+
+    // The guarantee, independent of whether the analyzer obeys the prompt:
+    // even if an npc-actor orgasm is emitted, the engine must refuse it.
+    const refused = await page.evaluate(() => {
+        const d = window.rpgCustodianDebug;
+        const rel = d.rel('Bryony'); rel.npcStamina = 5; rel.npcUnconscious = false;
+        d.applyEffects([{ type: 'orgasm', actor: 'npc', npc: 'Bryony', count: 1 }]);
+        return { after: d.rel('Bryony').npcStamina };
+    });
+    check('an npc-actor orgasm effect is refused by the engine', refused.after === 5, JSON.stringify(refused));
+
+    // …while HIS still resolves normally through the same path.
+    const his = await page.evaluate(() => {
+        const d = window.rpgCustodianDebug;
+        const before = d.player().stats.stamina;
+        d.applyEffects([{ type: 'orgasm', actor: 'player', npc: 'Bryony', internal: false, count: 1 }]);
+        return { before, after: d.player().stats.stamina };
+    });
+    check('his own orgasm still resolves', his.after === his.before - 1, JSON.stringify(his));
 
     // ── HER climax written in HER OWN reply ───────────────────────────────
     // The analyzer runs before she speaks, so this is the case that was being
