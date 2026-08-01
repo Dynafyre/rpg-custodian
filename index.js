@@ -6928,12 +6928,19 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         const cap = concurrent ? {} : { responseLength: budget + THINK_HEADROOM };
         try {
             const parsed = parseIntent(await context.generateRaw({ prompt, systemPrompt, ...cap }));
-            if (parsed) { doneCall(JSON.stringify(parsed)); return parsed; }
+            // Must be NON-EMPTY. `{}` is truthy, so an object with no fields used
+            // to short-circuit the rescue and come back as a verdict of all
+            // zeroes — a climax the judge had actually seen was scored as
+            // nothing, silently, with no error anywhere. Treat it as a miss and
+            // let the prefill pass try again.
+            if (parsed && Object.keys(parsed).length) { doneCall(JSON.stringify(parsed)); return parsed; }
+            console.warn('RPG Custodian: json call returned an empty object, trying prefill rescue');
         } catch (e) { console.warn('RPG Custodian: json call failed, trying prefill rescue', e); }
         try {
             const raw = await context.generateRaw({ prompt, systemPrompt, ...(concurrent ? {} : { responseLength: budget }), prefill: '{' });
             doneCall(raw);
-            return parseIntent(raw) || parseIntent('{' + String(raw || ''));
+            const p2 = parseIntent(raw) || parseIntent('{' + String(raw || ''));
+            return (p2 && Object.keys(p2).length) ? p2 : null;
         } catch (e) { doneCall(null, { failed: String(e?.message || e).slice(0, 120) }); throw e; }
     }
 
