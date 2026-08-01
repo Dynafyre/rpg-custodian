@@ -337,7 +337,9 @@ code {
 
 /* Turn telemetry chip — tells you whether the engine is cooking or stalled */
 #rpg-perf-chip {
-    position: fixed; right: 12px; bottom: 96px; z-index: 30002;
+    /* absolute, anchored to #sheld: a transform on <html> makes position:fixed
+       resolve against the scrolled page box rather than the viewport */
+    position: absolute; left: 0; bottom: 48px; z-index: 30002;
     background: rgba(20, 24, 32, 0.92); color: #cfe0ff;
     border: 1px solid rgba(120, 180, 255, 0.45); border-radius: 999px;
     padding: 5px 12px; font-size: 12px; pointer-events: none;
@@ -347,4 +349,4 @@ code {
 #rpg-perf-chip.rpg-perf-stall {
     border-color: rgba(255, 190, 90, 0.75); color: #ffd9a0;
 }
-@media (max-width: 500px) { #rpg-perf-chip { right: 8px; bottom: 84px; font-size: 11px; } }
+@media (max-width: 500px) { #rpg-perf-chip { font-size: 11px; padding: 4px 10px; max-width: 88vw; } }
