@@ -50,12 +50,13 @@ try {
     const rows = await page.evaluate(() => window.rpgCustodianDebug.perf());
     const raw = await page.evaluate(() => window.rpgCustodianDebug.perfRaw());
     console.log('\nturn summary:');
-    for (const r of rows) console.log(`   ${r.at} · mes ${r.mes} · total ${r.total}ms · visible ${r.visible}ms · judge tail ${r.judgeTail}ms · ${r.calls} calls · slowest "${r.slowest}"`);
+    for (const r of rows) console.log(`   ${r.at} · mes ${r.mes} · total ${r.total}ms · last line ${r.lastLine}ms · judging ${r.judging}ms · ${r.calls} calls · slowest "${r.slowest}"`);
     check('turns were recorded', rows.length >= 2, `${rows.length}`);
     const t = raw[raw.length - 1];
     check('total is measured from send to the last judge', typeof t.totalMs === 'number' && t.totalMs > 0, `${t.totalMs}ms`);
-    check('visible (her words on the page) is measured separately', typeof t.visibleMs === 'number' && t.visibleMs <= t.totalMs, `${t.visibleMs} <= ${t.totalMs}`);
-    check('the judge tail is priced — this is what pitch 1 would buy', typeof t.judgeTailMs === 'number', `${t.judgeTailMs}ms`);
+    check('the last visible line is measured separately', typeof t.visibleMs === 'number' && t.visibleMs <= t.totalMs, `${t.visibleMs} <= ${t.totalMs}`);
+    check('judging is priced — this is what pitch 1 would buy', typeof t.judgeMs === 'number', `${t.judgeMs}ms`);
+    check('dead time after the last line is priced too', typeof t.afterLastMs === 'number' && t.afterLastMs >= 0, `${t.afterLastMs}ms`);
     check('every stage is timed', t.stages.length > 0 && t.stages.every(s => typeof s.at === 'number'), JSON.stringify(t.stages.map(s => `${s.label}:${s.ms}ms`)));
     check('every model round trip is timed and sized', t.calls.length > 0 && t.calls.every(c => typeof c.ms === 'number' && c.inChars > 0),
         JSON.stringify(t.calls.map(c => `${c.kind}:${c.ms}ms in~${c.estInTokens}t out~${c.estOutTokens}t`)));

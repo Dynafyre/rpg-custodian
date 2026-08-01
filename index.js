@@ -4691,6 +4691,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (bits.length) sendGhostMessage(`${npcName}: ${bits.join(' · ')}${shift}`);
             if (shift) projectPlayerStatus();   // she plays the new band from the next line
         } catch (e) { console.error('RPG Custodian: reaction judge failed', e); }
+        finally { doneJudge(); }
     }
     function buildReunionNote(npcName) {
         const rel = getRelationship(npcName);
@@ -4931,7 +4932,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         perfTurn.stages.push(rec);
         perfChipSet(label);
         const t = perfNow();
-        return (extra = {}) => { rec.ms = Math.round(perfNow() - t); Object.assign(rec, extra); };
+        // Idempotent: closing twice keeps the first measurement, so a stage can
+        // be closed on an early return AND in a finally without lying.
+        return (extra = {}) => { if (rec.ms == null) rec.ms = Math.round(perfNow() - t); Object.assign(rec, extra); };
     }
     /** Record one model round trip. Sizes are characters — token counts are not
      *  returned by the API, so we log what we can measure and estimate from it. */
@@ -4950,21 +4953,30 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             rec.estOutTokens = Math.round(rec.outChars / 4);
         };
     }
+    /** Stamp the moment the LAST visible line landed. In a group scene several
+     *  speakers answer in turn, so this moves forward with each of them —
+     *  stamping only the first made every later reply look like dead time. */
     function perfMarkVisible() {
-        if (perfTurn && perfTurn.visibleMs == null) perfTurn.visibleMs = Math.round(perfNow() - perfTurn.t0);
+        if (perfTurn) perfTurn.visibleMs = Math.round(perfNow() - perfTurn.t0);
     }
     function perfEnd() {
         if (!perfTurn) return;
         perfTurn.totalMs = Math.round(perfNow() - perfTurn.t0);
         if (perfTurn.visibleMs == null) perfTurn.visibleMs = perfTurn.totalMs;
-        perfTurn.judgeTailMs = perfTurn.totalMs - perfTurn.visibleMs;   // the cost of finishing after she spoke
+        // Two different questions, so two numbers:
+        //  judgeMs     — total time spent judging anywhere in the turn. This is
+        //                what moving judges off the critical path could reclaim.
+        //  afterLastMs — dead time once the last line was on the page: the part
+        //                the player experiences as the engine still chewing.
+        perfTurn.judgeMs = perfTurn.stages.filter(x => x.label.startsWith('judge:')).reduce((a, b) => a + (b.ms || 0), 0);
+        perfTurn.afterLastMs = perfTurn.totalMs - perfTurn.visibleMs;
         perfTurn.calls_n = perfTurn.calls.length;
         const store = context.extensionSettings[extensionName];
         store.perf = store.perf || [];
         store.perf.push(perfTurn);
         while (store.perf.length > PERF_KEEP_TURNS) store.perf.shift();
         context.saveSettingsDebounced();
-        console.log(`RPG Custodian ⏱ turn: total ${perfTurn.totalMs}ms · visible ${perfTurn.visibleMs}ms · judge tail ${perfTurn.judgeTailMs}ms · ${perfTurn.calls.length} model calls`,
+        console.log(`RPG Custodian ⏱ turn: total ${perfTurn.totalMs}ms · last line ${perfTurn.visibleMs}ms · judging ${perfTurn.judgeMs}ms · after last line ${perfTurn.afterLastMs}ms · ${perfTurn.calls.length} model calls`,
             perfTurn.stages.map(s => `${s.label}:${s.ms ?? '—'}ms`).join(' | '));
         perfTurn = null;
         perfChipStop();
@@ -7635,7 +7647,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         perfRaw: () => (context.extensionSettings[extensionName].perf || []),
         perfClear: () => { context.extensionSettings[extensionName].perf = []; context.saveSettingsDebounced(); },
         perf: () => (context.extensionSettings[extensionName].perf || []).map(t => ({
-            at: t.startedAt, mes: t.chatIndex, total: t.totalMs, visible: t.visibleMs, judgeTail: t.judgeTailMs,
+            at: t.startedAt, mes: t.chatIndex, total: t.totalMs, lastLine: t.visibleMs, judging: t.judgeMs, afterLast: t.afterLastMs,
             calls: t.calls.length, present: (t.present || []).length,
             slowest: (t.stages || []).slice().sort((a, b) => (b.ms || 0) - (a.ms || 0))[0]?.label,
             action: t.action,
