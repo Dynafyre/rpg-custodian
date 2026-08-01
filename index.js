@@ -3309,6 +3309,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         // per-step notifications during a multi-step skip (advanceTimeBy summarizes).
         pruneCurses(quiet);          // timed curses expire
         pruneCustomStatuses(quiet);  // timed status effects run their course
+        plugRefertilize(quiet);      // sealed-in seed gets another go at her womb
         advancePregnancies(quiet);
         hatchEggs(quiet);            // laid eggs hatch a couple days on
         recoverUnconscious(quiet);   // KO'd NPCs wake on their own once they've slept it off
@@ -5874,6 +5875,43 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }
         savePlayer();
     }
+    /** One conception attempt: `shots` rolls at her CURRENT fertility, applied.
+     *  Shared by a creampie and by the Cum Plugged tick, so the two can never
+     *  drift apart on what conceiving means. */
+    function rollFertilization(npcName, shots) {
+        const rel = getRelationship(npcName);
+        const pct = fertilityPercent(npcName);
+        const n = Math.max(1, shots);
+        if ((rel.pregnancy_progress || 0) >= FERTILIZATION_LOCK_PCT) return { hits: 0, pct, shots: n, locked: true };
+        let hits = 0;
+        for (let r = 0; r < n; r++) if (Math.random() * 100 < pct) hits++;
+        if (hits > 0) {
+            rel.pregnancies = (rel.pregnancies || 0) + hits;
+            if (!rel.pregnancy_progress || rel.pregnancy_progress <= 0) rel.pregnancy_progress = 5; // conception = Zygote
+            if (!rel.conceptionKind) rel.conceptionKind = resolveConceptionKind(npcName);  // egg / crystal / live
+            savePlayer();
+        }
+        return { hits, pct, shots: n };
+    }
+
+    /** Cum Plugged: every time step his sealed-in seed gets another go at her
+     *  womb. Runs off the `refertilizes` flag, so any future preset that seals
+     *  seed in gets the behaviour for free. */
+    function plugRefertilize(quiet = false) {
+        const rd = getPlayerRpgData(); if (!rd) return;
+        for (const [name, rel] of Object.entries(rd.relationships || {})) {
+            if (!(rel.customEffects || []).some(e => e.active !== false && e.refertilizes)) continue;
+            const roll = rollFertilization(name, Math.max(1, effectiveStat('virility')));
+            if (roll.locked) continue;                       // womb already committed
+            if (quiet) continue;                             // advanceTimeBy summarizes
+            if (roll.hits > 0) {
+                sendGhostMessage(`🔒 **${name}** is still plugged full of him — ${roll.shots} shot${roll.shots > 1 ? 's' : ''} at ${roll.pct}% → 🌱 **${roll.hits} took**. She now carries **${rel.pregnancies}**.`);
+            } else {
+                sendGhostMessage(`🔒 **${name}** is still plugged full of him — ${roll.shots} shot${roll.shots > 1 ? 's' : ''} at ${roll.pct}%, none took this time.`);
+            }
+        }
+    }
+
     // One player orgasm: −1 Stamina; if internal & P-in-V, roll fertilization
     // VIRILITY times, each at her Fertility% — so a single climax can take
     // multiple times (twins/triplets). `count` handles several climaxes.
@@ -5892,18 +5930,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                     // Fetal stage onward — womb already committed, can't take again.
                     line += ` · (already carrying, ${pregnancyStage(rel.pregnancy_progress)} — cannot conceive again)`;
                 } else {
-                    const virility = Math.max(1, effectiveStat('virility'));
-                    const fpct = fertilityPercent(npcName);
-                    let hits = 0;
-                    for (let r = 0; r < virility; r++) if (Math.random() * 100 < fpct) hits++;
-                    line += ` · ${virility} shot${virility > 1 ? 's' : ''} at ${fpct}% → ${hits > 0 ? `🌱 ${hits} took` : 'none took'}`;
-                    if (hits > 0) {
-                        rel.pregnancies = (rel.pregnancies || 0) + hits;
-                        if (!rel.pregnancy_progress || rel.pregnancy_progress <= 0) rel.pregnancy_progress = 5; // conception = Zygote
-                        if (!rel.conceptionKind) rel.conceptionKind = resolveConceptionKind(npcName);  // egg / crystal / live
-                        conceived += hits; savePlayer();
-                    }
+                    const roll = rollFertilization(npcName, Math.max(1, effectiveStat('virility')));
+                    line += ` · ${roll.shots} shot${roll.shots > 1 ? 's' : ''} at ${roll.pct}% → ${roll.hits > 0 ? `🌱 ${roll.hits} took` : 'none took'}`;
+                    conceived += roll.hits;
                 }
+                // She is holding his seed as of now — what a plug would seal in.
+                rel.lastCreampieStep = currentGameState.timeStep || 0;
+                savePlayer();
             }
             lines.push(line);
             if (getPlayerRpgData()?.stats.unconscious) { lines.push('🥴 Spent utterly — you are wrung out to nothing.'); break; }
@@ -6237,9 +6270,40 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (r.item) addItem({ id: `${String(r.item).toLowerCase().replace(/\s+/g, '-')}-${currentGameState.timeStep || 0}-${Math.floor(Math.random() * 1e5)}`, name: r.item, desc: '' });
         savePlayer();
     }
+    // ── Preset statuses ───────────────────────────────────────────────────
+    // Recurring situations whose effect is always the same. Authored ONCE here
+    // so the Custodian only has to NAME the preset — it never has to remember
+    // the mods, the magnitude, the duration or how the thing ends. That keeps
+    // the if/else in code where it belongs and costs the prompt one line
+    // instead of a rule block per effect.
+    const PRESET_STATUSES = {
+        cum_plugged: {
+            name: 'Cum Plugged', kind: 'status', polarity: 'neutral',
+            desc: 'Sealed shut with his seed still inside her, so none of it can escape — it keeps working at her womb for as long as the plug holds.',
+            endCondition: 'the plug is pulled out of her, or his seed is let out of her',
+            mods: [],
+            refertilizes: true,     // engine: another go at her womb every time step
+        },
+        stimulated_ovaries: {
+            name: 'Stimulated Ovaries', kind: 'buff', polarity: 'positive',
+            desc: 'Her ovaries have been roused by the working of her lower belly — for a little while she is far readier to take.',
+            mods: [{ stat: 'fertility', amount: 10 }],
+            duration: 1,
+        },
+    };
+    function resolvePresetStatus(spec) {
+        const key = String(spec?.preset || '').toLowerCase().replace(/[\s-]+/g, '_');
+        const preset = PRESET_STATUSES[key];
+        if (!preset) return spec;
+        // The preset wins on everything it defines; anything the Custodian sent
+        // alongside it (a target, a note) is kept underneath.
+        return { ...spec, ...preset };
+    }
+
     // A quest, oath, pact, or errand IS a "silent status" — same store, same
     // end-condition watcher. category:'quest' completes with a reward when met.
     function addCustomStatus(target, spec, quiet = false) {
+        spec = resolvePresetStatus(spec);
         const dur = Number(spec.duration) > 0 ? Math.floor(Number(spec.duration)) : null;   // time-increment lifespan
         const category = spec.category === 'quest' ? 'quest' : 'status';
         const rec = {
@@ -6257,6 +6321,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             active: true, createdStep: currentGameState.timeStep || 0,
             justCreated: true,   // immune to its own end-check on the turn it's applied
         };
+        if (spec.refertilizes) rec.refertilizes = true;   // ticked by plugRefertilize
         const isPlayer = (!target || target === 'player');
         // An immobilizing state pins an NPC where it takes hold — her schedule
         // stops walking her around until the status ends (pin dies with it).
@@ -6804,6 +6869,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
     HOW IT ENDS — give it a "duration" in time periods AND/OR an "end_condition", and it ends when EITHER happens (whichever comes first). A "duration" is a deterministic timer (4 periods = one day) — invent a sensible lifespan so nothing lingers forever (a bad hangover ~4; a wolf-fever sickness ~12; a fleeting inspiration ~2; a grievous curse-like affliction longer or omit for indefinite). An "end_condition" is a narrative escape hatch judged by the engine ("when cured with medicine", "if you harm an innocent", "once the sun rises") — use it when a specific event should end it early. Most lingering afflictions want BOTH, e.g. duration 12 AND end_condition "when treated with a cure" → "12 periods pass, or when cured". Omit both only for something truly permanent. CRUCIAL — do this WHENEVER the story inflicts or bestows something that LINGERS past this single moment, not just a blessing or hex: an illness/disease/infection, a poison or venom, a festering or draining wound, exhaustion, a fear or despair, an inspiration or resolve, an enchantment/charm, drunkenness, a mark or oath, etc. Do NOT let such a thing evaporate as mere flavor, and do NOT collapse a lingering affliction into one-off "damage" — if the narrative says a character is left weakened/sickened/poisoned/emboldened in an ONGOING way, that is a STATUS. Read the fiction and give it the FITTING mod: something that saps physical strength lowers ruggedness (negative amount), something dulling the mind lowers craftiness, something disfiguring lowers charm, a boon raises the apt stat (small, ±1–3). A mod applies for the WHOLE time the status is active — do NOT add any per-mod condition (the status being active IS the condition). A status may also be purely narrative with no mods. end_condition is a natural-language trigger the engine WATCHES and auto-ends the status when met — infer what would plausibly end THIS effect (e.g. a sickness ends when it is cured/treated by medicine; drunkenness when slept off; a fear when the threat is gone). Omit only if truly indefinite. This is the main tool for the world to leave a lasting mark on a character — reach for it.
   {"type":"add_objective","name":"short title","objective":"plain-English condition that COMPLETES it","reward":{"gold":N,"xp":N,"tokens":N,"item":"name"},"duration":N,"mods":[{"stat":"...","amount":N}]}  the player TAKES ON a task, quest, errand, promise, oath, deal, or PACT — a villager's request, a fey bargain, a personal vow ("I'll find the lost locket", "I swear to guard her", "I accept your pact, fair one"). This is a tracked objective — a "silent status" the engine WATCHES; when its objective is met in the story it AUTO-COMPLETES and grants the reward. reward is optional (any of gold/xp/power tokens/an item). duration is optional (a time-limited task fails if not done in time). mods are optional stat changes that hold WHILE a pact/oath is in force (a fey pact granting +2 craftiness until it's fulfilled or broken) — omit for an ordinary errand. Emit whenever the player accepts or undertakes ANY goal, however small — INCLUDING when the acceptance is just one beat of a message that also travels, converses, or does other things ("Yeah, I'll take the job — lead the way" emits add_objective AND the move; the job is NEVER dropped in favor of the other effects).
   {"type":"remove_status","target":"player"|"HerName","name":"...","reason":"why"}  end a named status effect or abandon an objective now (dispelled, cured, willed away, given up).
+  {"type":"add_status","target":"HerName","preset":"cum_plugged"|"stimulated_ovaries"}  PRESET STATUSES — two situations have a canonical effect already authored in the engine. Emit add_status with ONLY a target and a preset: the engine fills in the name, the mods, the magnitude, the duration and how it ends, so you never have to remember them. "cum_plugged" — something is put in her to STOP his seed escaping after he has finished INSIDE her (a plug, a stopper, a cork, her own fingers held there, anything that seals it in); while it holds, his seed keeps working at her womb every time period. "stimulated_ovaries" — her lower belly, womb, or ovaries are deliberately RUBBED, massaged, kneaded, or pressed, by him or by anyone including herself; it rouses her ovaries and passes off shortly. Emit these the moment the story shows it, exactly as you would any other add_status. Use a normal add_status (not a preset) for anything else.
   {"type":"adjust_stat","target":"player"|"HerName","stat":"ruggedness|charm|craftiness|virility","amount":N}  a PERMANENT change to a core stat (a hard-won training gain, a level of mastery, a permanent drain from dark magic). Use sparingly — for temporary changes use add_status.
   {"type":"equip_item","name":"..."}  the player equips/dons/wears/wields a piece of gear he holds (a sword, armor, an amulet). {"type":"unequip_item","name":"..."} he removes/sheathes/takes it off. (Consumables are use_item, not equip.)
   {"type":"birth","npc":"HerName","count":N,"kind":"live"|"egg"|"crystal"}  a BIRTH is happening in the scene — a mother AT or OVER term (Birth Overdue) is delivering: labor/pushing/crowning, laying an egg, or producing a crystal. Emit ONE per message for however many emerge in THAT message (count = born right now; e.g. triplets delivered one at a time across three messages → three births of count 1, or all at once → one birth of count 3). Never emit more than she is carrying. kind: "egg" for egg-laying mothers (dragons, harpies, other monster-girls), "crystal" if the sire's magic makes inert soul-crystals (a soul-mage / necromancer father), else "live". You may OMIT kind — the engine infers it from her race and the father. Do NOT invent Power Tokens, offspring, or names — the engine awards the tokens and names the young. Only emit when a birth actually occurs in the narrative.
@@ -6858,11 +6924,15 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         // returned empty intermittently). Retry once on an empty/unparseable reply.
         if (window.RPGC_LOG_PROMPT) console.log('RPG Custodian: ANALYZER PROMPT\n' + prompt);
         for (let attempt = 0; attempt < 2; attempt++) {
+            // Declared OUTSIDE the try: the catch closes this record, and a
+            // `const` inside the try is not in scope there — which turned every
+            // analyzer failure into a ReferenceError instead of a retry.
+            let doneCall = () => {};
             try {
                 // Attempt 0: think-first — the Custodian keeps its reasoning,
                 // with headroom so thinking can't starve the JSON. Attempt 1:
                 // prefill '{' rescue, which skips the thinking channel.
-                const doneCall = perfCall(`analyzer-attempt-${attempt + 1}`, prompt?.length, sys?.length);
+                doneCall = perfCall(`analyzer-attempt-${attempt + 1}`, prompt?.length, sys?.length);
                 const raw = await context.generateRaw(attempt === 0
                     ? { prompt, systemPrompt: sys, responseLength: 900 + THINK_HEADROOM }
                     : { prompt, systemPrompt: sys, responseLength: 900, prefill: '{' });
@@ -7812,6 +7882,9 @@ Narrate the result briefly, grounded in this location and the story's current be
         isCursed: (target) => isCrystalCursed(target || 'player'),
         mana: () => ({ cur: getPlayerRpgData()?.stats.mana, max: maxMana() }),
         addStatus: (target, spec) => addCustomStatus(target || 'player', spec || {}),
+        fertilityOf: (n) => fertilityPercent(n),
+        removeStatus: (target, name) => removeCustomStatus(target || 'player', name, 'debug'),
+        presets: () => Object.keys(PRESET_STATUSES),
         addObjective: (spec) => addCustomStatus('player', { ...(spec || {}), category: 'quest' }),
         objectives: () => playerObjectives(),
         statuses: (target) => ((!target || target === 'player') ? getPlayerRpgData()?.customEffects : getRelationship(target).customEffects) || [],

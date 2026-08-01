@@ -65,6 +65,23 @@ try {
     console.log('\nstages:', JSON.stringify(t.stages.map(s => `${s.label} @${s.at}ms took ${s.ms}ms`), null, 0));
     console.log('calls  :', JSON.stringify(t.calls.map(c => `${c.kind} @${c.at}ms took ${c.ms}ms in~${c.estInTokens}t out~${c.estOutTokens}t`), null, 0));
 
+    // A model call that THROWS must be survivable and must still be recorded.
+    // Both halves regressed once: the catch closing the record referenced a
+    // const declared inside the try, so a backend failure raised a
+    // ReferenceError out of the analyzer instead of retrying.
+    const thrown = await page.evaluate(async () => {
+        const c = SillyTavern.getContext();
+        const real = c.generateRaw;
+        c.generateRaw = async () => { throw new Error('simulated backend failure'); };
+        let result, threw = null;
+        try { result = await window.rpgCustodianDebug.analyze('I heave the crate onto the counter.'); }
+        catch (e) { threw = String(e).slice(0, 90); }
+        c.generateRaw = real;
+        const last = (window.rpgCustodianDebug.perfRaw() || []).slice(-1)[0];
+        return { threw, gotIntent: !!result, failedCalls: (last?.calls || []).filter(x => x.failed).length };
+    });
+    check('a failing model call does not take the turn down with it', !thrown.threw && thrown.gotIntent, JSON.stringify(thrown));
+
     // survives a reload, so a long human playtest accumulates
     await page.reload({ waitUntil: 'domcontentloaded' }); await wait(9000);
     const after = await page.evaluate(() => (window.rpgCustodianDebug?.perf() || []).length);
