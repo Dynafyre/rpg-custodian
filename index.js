@@ -5493,9 +5493,20 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         savePlayer();
     }
     // Everyone recovers to their OWN max Stamina, clearing unconsciousness.
+    /** Exhausted carries −2 Ruggedness, and max Stamina is DERIVED from
+     *  Ruggedness — so anything about to bring him back above 0 must lift the
+     *  exhaustion FIRST. Filling while it is still on fills to a maximum that
+     *  is about to change: the status then clears, the ceiling jumps back up,
+     *  and he is left permanently short by the size of the penalty. */
+    function liftExhaustionForRestore() {
+        const rd = getPlayerRpgData(); if (!rd) return;
+        rd.stats.unconscious = false;
+        reconcileEngineStatus('player', 'exhausted', false);
+    }
+
     function restoreEveryoneStamina() {
         const rd = getPlayerRpgData();
-        if (rd) { rd.stats.stamina = maxStamina(); rd.stats.unconscious = false; }
+        if (rd) { liftExhaustionForRestore(); rd.stats.stamina = maxStamina(); }
         for (const [name, r] of Object.entries(rd?.relationships || {})) {
             if (r.npcUnconscious) wakeNpc(name, r, true);   // records woke-alone if she's stashed elsewhere
             else if (r.npcStamina != null) r.npcStamina = npcMaxStamina(name);
@@ -5511,8 +5522,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const full = amount == null || amount === 'full' || amount === 'max';
         if (tgt === 'player') {
             const rd = getPlayerRpgData(); if (!rd) return;
-            const before = getStamina(), max = maxStamina();
+            const before = getStamina();
             const revived = rd.stats.unconscious && (full || amount > 0);
+            // Lift the exhaustion before reading the ceiling, or a draught drunk
+            // while Exhausted heals against the penalised maximum and comes up
+            // short — the same ordering bug as resting.
+            if (full || amount > 0) liftExhaustionForRestore();
+            const max = maxStamina();
             rd.stats.stamina = full ? max : Math.min(max, before + (amount || 0));
             rd.stats.unconscious = rd.stats.stamina <= 0;
             savePlayer();
