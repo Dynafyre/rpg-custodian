@@ -194,6 +194,21 @@ There is a real, working end-to-end test rig. Use it; do not hand-verify.
 - **Lane discipline.** When two verbs could both fire for one situation, the prompt
   must say "pick one, never both" (learned when buff+status double-counted). Fewer
   overlapping verbs is always better — prefer folding over adding.
+- **Ask WHOSE ACTION is the trigger.** The recurring blind spot is not a missing
+  verb but an unstated assumption that the player's own message caused the thing.
+  Three watch-blocks now exist for exactly this: GRANTED BOONS (the granting words
+  came from the NPC), IMPOSED STATES (done TO her), and STATES ALREADY IN PLAY (the
+  state exists as the scene now stands, whoever caused it — she did it to herself,
+  it happened a beat ago and was never recorded, or the player just states it). The
+  third was found only in live play: a plug re-inserted inside the NPC's OWN reply
+  was never recorded, so it never ticked. **When you add a rule, test the same
+  situation arriving via her reply and via the player asserting it, not just via
+  his action.** A scene-watching rule needs two guards or it spams: never re-emit
+  what is already on her record, and judge the state as it stands NOW.
+- **Single-sample NL checks cannot attribute a regression.** The test backend is a
+  cheap non-deterministic model; a phrasing that "passed 4/4" may be a coin flip.
+  `test/preset-nl-rate.js` measures a rate over N runs — take a baseline (stash the
+  change) before blaming or clearing a prompt edit.
 
 ---
 
