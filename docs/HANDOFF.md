@@ -162,7 +162,11 @@ There is a real, working end-to-end test rig. Use it; do not hand-verify.
   → drive turns. Two ways to drive:
   - **`window.rpgCustodianDebug.act(text)`** runs the full orchestration on a
     string, exactly as if the player typed it — use for **emergent / NL tests**
-    (the ones that prove the Custodian _judges_ correctly).
+    (the ones that prove the Custodian _judges_ correctly). It now opens the turn
+    clock too (`perfBegin`), which lives in `onUserMessage` on the real path — so
+    until 2026-08-01 every debug-driven turn recorded NO telemetry and none of it
+    could be tested headlessly. If you add anything to the turn record, check it
+    still lands through `act()`.
   - **Direct debug hooks** (`buff`, `curse`, `birth`, `addStatus`, `rollCheck`,
     `tick`, `setPreg`, `hurt`, `teleport`, …) set/inspect state deterministically
     — use for **mechanical assertions** that shouldn't depend on the LLM.
@@ -228,6 +232,21 @@ There is a real, working end-to-end test rig. Use it; do not hand-verify.
   for all pending) or a cheaper model for the judge.
 - **Test scripts accumulate.** `test/` has many one-off scripts; they're useful as
   regression seeds but unpruned. `harness.js` is the stable part.
+- **A dead analyzer call used to be indistinguishable from a stakeless turn** —
+  fixed 2026-08-01, and worth knowing about because it hides *other* bugs. When
+  both attempts in `analyzeIntent` fail it still returns `{ mechanical: false,
+  analyzerFailed: true }`, which is the same shape as "the player said something
+  stakeless", so a turn that lost all its mechanics looked exactly like a quiet
+  one. It now stamps `perfTurn.analyzer` = `ok` | `recovered` | `dead`, and an
+  empty-or-unparseable reply is flagged `failed` on the call record (previously
+  only a THROWN call was — so a backend answering promptly with garbage logged as
+  a fast healthy round trip, the very event the log exists to catch). Surfaced
+  three ways: `rpgCustodianDebug.perfDead()` lists lost turns with cause and the
+  discarded action, the console shouts, and the chip holds a warning instead of
+  fading. **Check `perfDead()` before blaming the Custodian's judgment** — on the
+  cheap test backend one phrasing was scoring 2/5 purely from deaths, 2/2 on
+  judgment. `test/analyzer-death-test.js` covers both death modes by intercepting
+  the generate endpoint at the network layer (no production test seam).
 - **`apply_buff` / `active_boosts` are GONE.** If you see them referenced anywhere,
   it's stale — everything is `add_status`. `addBoost` survives only as a thin shim.
 

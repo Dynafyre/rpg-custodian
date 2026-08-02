@@ -4984,6 +4984,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (meta && meta.failed) rec.failed = meta.failed;
         };
     }
+    /** Turn-level outcome of the Custodian call: 'ok' | 'recovered' (the prefill
+     *  rescue saved it) | 'dead' (both attempts gone). A dead analyzer returns an
+     *  intent shaped EXACTLY like "the player said something stakeless" — no
+     *  check, no effects, nothing on screen — so the turns that silently lost
+     *  their mechanics were invisible in the very data collected to find them.
+     *  Stamp it on the turn so a lost turn can be counted, not just felt. */
+    function perfNoteAnalyzer(outcome, detail) {
+        if (!perfTurn) return;
+        perfTurn.analyzer = outcome;
+        if (detail) perfTurn.analyzerDetail = String(detail).slice(0, 160);
+    }
     /** Stamp the moment the LAST visible line landed. In a group scene several
      *  speakers answer in turn, so this moves forward with each of them —
      *  stamping only the first made every later reply look like dead time. */
@@ -5011,10 +5022,16 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         store.perf.push(perfTurn);
         while (store.perf.length > PERF_KEEP_TURNS) store.perf.shift();
         context.saveSettingsDebounced();
-        console.log(`RPG Custodian ⏱ turn: total ${perfTurn.totalMs}ms · last line ${perfTurn.visibleMs}ms · judging ${perfTurn.judgeMs}ms · after last line ${perfTurn.afterLastMs}ms · ${perfTurn.calls.length} model calls`,
-            perfTurn.stages.map(s => `${s.label}:${s.ms ?? '—'}ms`).join(' | '));
+        const stages = perfTurn.stages.map(s => `${s.label}:${s.ms ?? '—'}ms`).join(' | ');
+        const line = `RPG Custodian ⏱ turn: total ${perfTurn.totalMs}ms · last line ${perfTurn.visibleMs}ms · judging ${perfTurn.judgeMs}ms · after last line ${perfTurn.afterLastMs}ms · ${perfTurn.calls.length} model calls${perfTurn.analyzer ? ` · custodian ${perfTurn.analyzer}` : ''}`;
+        // A dead Custodian is the one turn outcome worth shouting about: the
+        // player acted, and the engine applied nothing at all.
+        const died = perfTurn.analyzer === 'dead';
+        if (died) console.error(`${line}\n  ⚠️ THE CUSTODIAN NEVER ANSWERED — no check rolled, no effects applied${perfTurn.analyzerDetail ? ` (${perfTurn.analyzerDetail})` : ''}`, stages);
+        else console.log(line, stages);
         perfTurn = null;
-        perfChipStop();
+        if (died) perfChipWarn('⚠️ the Custodian never answered — nothing was applied this turn');
+        else perfChipStop();
     }
 
     // ── the chip ──────────────────────────────────────────────────────────
@@ -5062,6 +5079,14 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             || stage;
     }
     function perfChipStop() { clearInterval(perfChipTimer); perfChipTimer = null; $('#rpg-perf-chip').fadeOut(150); }
+    /** Hold the chip up with a warning instead of fading it away. A turn that
+     *  quietly lost its mechanics must not look exactly like a quiet turn —
+     *  this is the live face of the same fact perfNoteAnalyzer records. */
+    function perfChipWarn(text, ms = 7000) {
+        clearInterval(perfChipTimer); perfChipTimer = null;
+        perfChipEl().addClass('rpg-perf-stall').stop(true, true).show().text(text);
+        setTimeout(() => $('#rpg-perf-chip').fadeOut(300), ms);
+    }
 
     const STATUS_PROMPT_KEY = 'RPG_CUSTODIAN_STATUS';
     // The when/where ground truth, injected SEPARATELY at depth 0 — immediately
@@ -6956,9 +6981,13 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     : { prompt, systemPrompt: sys, responseLength: 900, prefill: '{' });
                 if (window.RPGC_LOG_PROMPT) console.log('RPG Custodian: ANALYZER RAW =', String(raw).slice(0, 500));
                 let parsed = parseIntent(raw);
-                doneCall(raw);
                 if (!parsed) parsed = parseIntent('{' + String(raw || ''));  // prefill may be stripped from the echo
-                if (parsed) return normalizeIntent(parsed);
+                // An empty or unparseable reply is a FAILED call, not a cheap
+                // one. Only a THROWN call used to be flagged, so a backend that
+                // answered promptly with nothing usable was logged as a fast,
+                // healthy round trip — the exact event the log exists to catch.
+                doneCall(raw, parsed ? undefined : { failed: `empty/unparseable (${String(raw || '').length} chars back)` });
+                if (parsed) { perfNoteAnalyzer(attempt === 0 ? 'ok' : 'recovered'); return normalizeIntent(parsed); }
                 console.warn(`RPG Custodian: analyzer empty/unparseable (attempt ${attempt + 1}), raw:`, String(raw || '').slice(0, 160));
             } catch (e) {
                 doneCall(null, { failed: String(e?.message || e).slice(0, 120) });
@@ -6966,7 +6995,13 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
             }
             await new Promise(r => setTimeout(r, 600));
         }
-        return { mechanical: false };
+        // Both attempts are gone. What goes back is shaped exactly like "the
+        // player said something stakeless", so the ONLY way anyone learns this
+        // turn lost its mechanics is if we say so — in the turn record, in the
+        // console, on the chip, and in the intent itself.
+        perfNoteAnalyzer('dead', (perfTurn?.calls || []).filter(c => String(c.kind).startsWith('analyzer') && c.failed).map(c => c.failed).join(' · '));
+        console.error('RPG Custodian: THE CUSTODIAN NEVER ANSWERED — this turn rolls no check and applies no effects.');
+        return { mechanical: false, analyzerFailed: true };
     }
 
     // Strip a reasoning model's thinking blocks so only the answer remains.
@@ -7854,9 +7889,16 @@ Narrate the result briefly, grounded in this location and the story's current be
         perf: () => (context.extensionSettings[extensionName].perf || []).map(t => ({
             at: t.startedAt, mes: t.chatIndex, total: t.totalMs, lastLine: t.visibleMs, judging: t.judgeMs, afterLast: t.afterLastMs,
             calls: t.calls.length, present: (t.present || []).length,
+            custodian: t.analyzer || '—',
             slowest: (t.stages || []).slice().sort((a, b) => (b.ms || 0) - (a.ms || 0))[0]?.label,
             action: t.action,
         })),
+        // The turns where the Custodian never answered: the player acted and
+        // the engine applied nothing. Silent by construction, so make them
+        // easy to ask for.
+        perfDead: () => (context.extensionSettings[extensionName].perf || [])
+            .filter(t => t.analyzer === 'dead')
+            .map(t => ({ at: t.startedAt, mes: t.chatIndex, why: t.analyzerDetail || '', action: t.action })),
         perfExport: () => {
             const blob = new Blob([JSON.stringify(context.extensionSettings[extensionName].perf || [], null, 1)], { type: 'application/json' });
             const a2 = document.createElement('a');
@@ -7884,7 +7926,11 @@ Narrate the result briefly, grounded in this location and the story's current be
         rollCheck: (stat, dc) => { const c = skillCheck(stat, dc || 8); consumeCheckEffects(stat); return c; },
         addGold: (n) => addGold(n),
         teleport: async (locId) => { currentGameState.currentLocation = locId; await syncPresence(); renderActionBar(); },
-        act: (text) => orchestratePlayerAction(text),
+        // Faithful to a typed turn. onUserMessage starts the turn clock BEFORE
+        // it orchestrates; a debug turn skipped perfBegin, so perfEnd bailed on
+        // a null turn and act() recorded no telemetry at all — which is also
+        // why none of it could be tested headlessly.
+        act: (text) => { perfBegin(text); return orchestratePlayerAction(text); },
         busy: () => !!currentGameState.rpgOrchestrating,
         orgasm: (npc, internal, count) => resolvePlayerOrgasm(npc, internal !== false, count || 1),
         buff: (target, stat, amt, source) => addCustomStatus(target || 'player', { name: source || 'debug elixir', kind: amt >= 0 ? 'buff' : 'debuff', polarity: amt >= 0 ? 'positive' : 'negative', mods: [{ stat, amount: amt }], duration: 4 }),
