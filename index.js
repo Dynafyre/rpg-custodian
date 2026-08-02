@@ -4021,6 +4021,11 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             // ensnared…) is pinned where it took hold until the status ends.
             const pin = (rel?.customEffects || []).find(e => e.active !== false && e.immobilizes && e.pinnedAt);
             if (pin) return locationId === pin.pinnedAt;
+            // Just parted ways: escorting someone somewhere has to MEAN
+            // something, so she stays where you brought her instead of snapping
+            // back onto her routine the instant you let her go. The step stamp
+            // expires this by itself the moment time moves on.
+            if (isLingeringWhereParted(rel)) return locationId === rel.partedAt;
             return npcSlotFor(npc, currentGameState.dayCount, period).loc === locationId;
         });
     }
@@ -4058,6 +4063,23 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     // Where an NPC's schedule places her at the current time (her "own" spot).
     function scheduledLocationFor(name) {
         return npcSlotByName(name).loc;
+    }
+    /** The period AFTER this one, wrapping Night → next day's Morning. */
+    function nextPeriod() {
+        const idx = ((currentGameState.currentTime || 0) + 1) % TIME_PERIODS.length;
+        return { idx, name: TIME_PERIODS[idx].name, day: (currentGameState.dayCount || 1) + (idx === 0 ? 1 : 0) };
+    }
+    /** Where her routine takes her NEXT. A companion you part with now lingers
+     *  where you left her until time moves on, so "where can I find you?" has to
+     *  be answered with her next slot — her current one is the room she is
+     *  already standing in. */
+    function nextScheduledLocationFor(name) {
+        const n = nextPeriod();
+        return npcSlotByName(name, n.day, n.name).loc;
+    }
+    /** She was let go here and time has not moved on yet. */
+    function isLingeringWhereParted(rel) {
+        return !!(rel?.partedAt && rel.partedStep === (currentGameState.timeStep || 0));
     }
     /** Absolute period index, so we can walk backwards through an absence. */
     function absPeriodNow() { return ((currentGameState.dayCount || 1) - 1) * 4 + (currentGameState.currentTime || 0); }
@@ -4269,7 +4291,9 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             currentGameState.party.push(npcName);
             // Tenure: how long she's been on the road with you (feeds examine
             // descriptions so travel reads as her present life, not an outing).
-            getRelationship(npcName).partyJoinedStep = currentGameState.timeStep || 0;
+            const relJoin = getRelationship(npcName);
+            relJoin.partyJoinedStep = currentGameState.timeStep || 0;
+            relJoin.partedAt = null; relJoin.partedStep = null;   // travelling again — no lingering pin
             savePlayer();
             sendGhostMessage(`🧑‍🤝‍🧑 **${npcName} joins you** — she'll travel at your side until you part ways.`);
         }
@@ -4297,12 +4321,25 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             return;
         }
 
-        // Conscious parting: let her say goodbye IN CHARACTER and name where she's
-        // headed on her own routine, BEFORE she leaves the scene.
+        // Conscious parting: let her say goodbye IN CHARACTER and name where she
+        // will be NEXT, BEFORE she leaves the scene.
         if (wasParty) await triggerNpcDeparture(npcName);
         currentGameState.party = (currentGameState.party || []).filter(n => n !== npcName);
-        const dest = scheduledLocationFor(npcName);
-        sendGhostMessage(`👋 **${npcName} parts ways**${dest ? `, heading to ${locName(dest)}` : ''}, and returns to her own routine.`);
+        if (wasParty) {
+            // She stays where you brought her and only picks her routine back up
+            // when time moves on — otherwise escorting someone anywhere is undone
+            // the instant you part. Only for someone actually travelling with
+            // you: a woman you were never with was never yours to leave anywhere.
+            rel.partedAt = here;
+            rel.partedStep = currentGameState.timeStep || 0;
+            savePlayer();
+            const when = nextPeriod().name;
+            const dest = nextScheduledLocationFor(npcName);
+            sendGhostMessage(`👋 **${npcName} parts ways** — she stays at ${locName(here)} for now, and ${dest && dest !== here ? `heads to ${locName(dest)}` : 'picks her own routine back up'} come ${when}.`);
+        } else {
+            const dest = scheduledLocationFor(npcName);
+            sendGhostMessage(`👋 **${npcName} parts ways**${dest ? `, heading to ${locName(dest)}` : ''}, and returns to her own routine.`);
+        }
         saveCurrentState();
         await syncPresence();
     }
@@ -4318,10 +4355,17 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName);
         const player = context.powerUserSettings.personas?.[playerAvatar()] || 'the adventurer';
         const period = TIME_PERIODS[currentGameState.currentTime].name;
-        const destId = scheduledLocationFor(npcName);
-        const dest = destId ? locName(destId) : 'about her own way';
+        const nxt = nextPeriod();
+        const here = currentGameState.currentLocation;
+        const destId = nextScheduledLocationFor(npcName);
         const role = npc?.role ? ` (you are ${aOrAn(npc.role)})` : '';
-        const note = `[You are parting ways with ${player} for now and heading off on your OWN. In ONE short, warm, in-character line, say goodbye and tell him where he can find you — you are going to ${dest} to go about your business this ${period}${role}. Tone like: "Alright, goodbye! If you need me, I'll be at ${dest} this ${period}." Just the spoken farewell — do not narrate leaving in detail.]`;
+        // She is not rushing off any more: she stays put until this period is
+        // out, so the farewell must name where she'll be NEXT. Naming where she
+        // already stands would send him looking for her where she has not gone.
+        const plan = (destId && destId !== here)
+            ? `You are NOT rushing off — you stay here at ${locName(here)} for the rest of this ${period}, and come ${nxt.name} you head to ${locName(destId)} to go about your business${role}. Tell him where to find you LATER. Tone like: "Goodbye for now! I'll be around here a while yet — after that you'll find me at ${locName(destId)}."`
+            : `You are NOT rushing off — you stay right here at ${locName(here)}${role}, which is where your own business keeps you for now. Tone like: "Goodbye for now! You know where to find me — I'll be right here."`;
+        const note = `[You are parting ways with ${player} for now and going back to your OWN business. In ONE short, warm, in-character line, say goodbye and tell him where he can find you. ${plan} Just the spoken farewell — do not narrate leaving in detail, and do not walk out of the scene.]`;
         context.setExtensionPrompt(DEPART_PROMPT_KEY, note, 1, 0);
         try {
             await context.executeSlashCommandsWithOptions(`/trigger await=true ${npcName}`, { source: 'rpg-custodian' });
@@ -4593,6 +4637,11 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             else if (pin && locSecret(pin.pinnedAt) === 0) where = `at ${locName(pin.pinnedAt)} — held there by her condition (${pin.name})`;
             else if (pin) where = 'nobody is quite sure where she gets to at this hour';
             else if (isInParty(npc.name)) where = `off with ${player} — they were seen leaving together`;
+            // Let go a moment ago and not yet back on her routine: gossip should
+            // put her where she actually is, not where her schedule says.
+            else if (isLingeringWhereParted(rel)) where = locSecret(rel.partedAt) === 0
+                ? `still over at ${locName(rel.partedAt)}, where she and ${player} went their separate ways`
+                : 'nobody is quite sure where she gets to at this hour';
             else {
                 const locId = scheduledLocationFor(npc.name);
                 where = (locId && locSecret(locId) === 0)
