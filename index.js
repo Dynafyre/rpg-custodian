@@ -6933,8 +6933,8 @@ Roll ONLY when the outcome is genuinely uncertain for THIS character: (DC − th
 
 === EFFECTS ("effects_on_success"/"effects_on_failure": arrays of {type,...}) ===
 A single message often contains SEVERAL effects — a look taken while talking, a job accepted while setting off, a place entered while greeting someone. Emit ALL of them, in narrative order. NEVER let one effect crowd out another: dialogue does not cancel a travel, a travel does not cancel an acceptance, a look does not replace a move.
-  {"type":"move","destination":"..."}  the player travels to / heads for / walks to / steps INTO any KNOWN PLACE (see the list). Give the place he actually INTENDS to reach — copy its name AS LISTED in KNOWN PLACES (the player may call it something else: "the secret tunnel", "her shop" — you translate to the listed name) — the engine finds the route there automatically, however many stops it takes; never substitute an intermediate stop for the real destination. Entering, going inside, or arriving at a named place IS a move — emit it even when the message also looks around, greets someone, or converses (emit the move FIRST, then the rest). SECRET-tagged places are fully valid destinations exactly like any other — the tag only describes NPC knowledge and menus, never routability; using a hidden entrance, lifting the false bush, slipping through the gap IS a move there. Deterministic, no check.
-  {"type":"event_teleport","destination":"..."}  the STORY translocates the party INSTANTLY — a spell or ritual, a portal or rift, an entity spiriting them away, strange technology, a summons taking hold. No walking and no route: any KNOWN PLACE is a valid destination, INCLUDING places no path joins to the map at all (pocket dimensions, sealed sanctums, other planes). The player and any party companions arrive together in a single beat. Emit it when the narrative performs the translocation — the player steps through the rift, accepts an entity's offer to be whisked away, is pulled bodily into somewhere else. Ordinary walking, riding, or climbing to a reachable place stays "move". Deterministic, no check.
+  {"type":"move","destination":"..."}  the player travels to / heads for / walks to / steps INTO any KNOWN PLACE (see the list). Give the place he actually INTENDS to reach — copy its name AS LISTED in KNOWN PLACES (the player may call it something else: "the secret tunnel", "her shop" — you translate to the listed name) — the engine finds the route there automatically, however many stops it takes; never substitute an intermediate stop for the real destination. Entering, going inside, or arriving at a named place IS a move — emit it even when the message also looks around, greets someone, or converses (emit the move FIRST, then the rest). SECRET-tagged places are fully valid destinations exactly like any other — the tag only describes NPC knowledge and menus, never routability; using a hidden entrance, lifting the false bush, slipping through the gap IS a move there. But "move" is travel UNDER HIS OWN POWER — his legs, a mount, a boat, a cart. If a power is what puts him there instead (magic, an entity, mind, or advanced technology), that is event_teleport, not this. NEVER emit "move" for a place tagged NO PATH LEADS THERE: no road runs to it, so this verb can only fail and strand the story. Deterministic, no check.
+  {"type":"event_teleport","destination":"..."}  he ends up somewhere BY A POWER RATHER THAN BY HIS OWN LEGS. Ask ONE question: is he getting there by walking, riding or climbing — or is something else PUTTING him there? If the means is MAGIC (a spell, ritual, summons, portal or rift, a god's or spirit's will, or simply what an entity IS and can do), or PSIONIC/mental, or TECHNOLOGY beyond the ordinary, it is event_teleport, however the prose dresses it up. Do NOT wait for the word "teleport" — it will almost never appear. Judge the CAUSE, and read what being moved by a power FEELS like from the inside: the ground and gravity going away, weightlessness, losing which way is down, the dark folding around him, being drawn or enveloped or swallowed INTO someone or something, a space opening that was not there, light and sound dropping away, waking somewhere else. A companion's own nature counts — if she takes him into her world, her body, her dream, or her domain, SHE is the means and this is the verb. Any KNOWN PLACE is valid, and a place tagged NO PATH LEADS THERE can be reached NO OTHER WAY — so if the story puts him inside one it is ALWAYS this verb and NEVER "move". The player and any party companions arrive together in a single beat. Deterministic, no check.
   {"type":"advance_time","periods":N}  narrative time passes. Each period is a step Morning→Day→Evening→Night→(next) Morning. A FULL DAY IS EXACTLY 4 PERIODS — for an explicit span of days use N = days×4 EXACTLY: "one day" = 4, "two days" = 8, "three days" = 12, "a week" = 28. For a time-of-day span, count periods from CURRENT TIME to the target: from Morning "long into the evening" = 2; "that night"/"until nightfall" = to Night; "sleep until morning" = to next Morning.
   {"type":"add_party","npc":"..."}  a present NPC agrees to travel WITH the player or to spend extended time together (join me, come along, let's spend the day together, share stories into the evening). She then follows the player everywhere until dismissed.
   {"type":"remove_party","npc":"..."}  a companion parts ways / is dismissed / stays behind.
@@ -7244,11 +7244,31 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         const loc = currentGameState.worldData?.locations?.[fromId];
         return (loc?.connections || []).filter(c => locSecret(c) < 2);
     }
+    /** Everywhere the player could WALK to from here, however many hops. */
+    function reachableFrom(fromId) {
+        const world = currentGameState.worldData;
+        const seen = new Set([fromId]);
+        const q = [fromId];
+        while (q.length) {
+            const cur = q.shift();
+            for (const c of (world?.locations?.[cur]?.connections || [])) if (!seen.has(c)) { seen.add(c); q.push(c); }
+        }
+        return seen;
+    }
     function knownPlacesForAnalyzer() {
+        // Which places no road reaches is a fact the ENGINE owns — it is the
+        // location graph. Without it the Custodian reads a pocket dimension as
+        // an ordinary destination and reaches for "move", which then dies on
+        // routing and strands the story mid-translocation. Don't make the model
+        // guess at something we can simply tell it.
+        const reach = reachableFrom(currentGameState.currentLocation);
         return Object.entries(currentGameState.worldData?.locations || {}).map(([id, l]) => {
             const s = Number(l.secret) || 0;
-            const tag = s >= 2 ? " (secret: unknown to NPCs, not on the player's menus)" : s === 1 ? " (NPCs don't know of it)" : '';
-            return `"${l.name || id}"${tag}`;
+            const tags = [];
+            if (s >= 2) tags.push("secret: unknown to NPCs, not on the player's menus");
+            else if (s === 1) tags.push("NPCs don't know of it");
+            if (!reach.has(id)) tags.push('NO PATH LEADS THERE — no walking, riding or climbing can ever reach it; only event_teleport puts anyone inside');
+            return `"${l.name || id}"${tags.length ? ` (${tags.join('; ')})` : ''}`;
         }).join(', ');
     }
 
