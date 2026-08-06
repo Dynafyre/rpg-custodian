@@ -4300,7 +4300,11 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         saveCurrentState();
         await syncPresence();   // un-mute her at your location; she follows on every move
     }
-    async function removeFromParty(npcName) {
+    // opts.quiet: management action (party button) — no in-character farewell,
+    // no LLM call of any kind. opts.resumeSchedule: no lingering pin — she is
+    // back on her routine (at her CURRENT scheduled spot) the moment presence
+    // syncs, instead of staying where you parted until time moves on.
+    async function removeFromParty(npcName, opts = {}) {
         const wasParty = (currentGameState.party || []).includes(npcName);
         const rel = getRelationship(npcName);
         const here = currentGameState.currentLocation;
@@ -4323,9 +4327,14 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
         // Conscious parting: let her say goodbye IN CHARACTER and name where she
         // will be NEXT, BEFORE she leaves the scene.
-        if (wasParty) await triggerNpcDeparture(npcName);
+        if (wasParty && !opts.quiet) await triggerNpcDeparture(npcName);
         currentGameState.party = (currentGameState.party || []).filter(n => n !== npcName);
-        if (wasParty) {
+        if (wasParty && opts.resumeSchedule) {
+            rel.partedAt = null; rel.partedStep = null;
+            savePlayer();
+            const dest = scheduledLocationFor(npcName);
+            sendGhostMessage(`👋 **${npcName} leaves the party**${dest && dest !== here ? `, heading to ${locName(dest)}` : ''}, and returns to her own routine.`);
+        } else if (wasParty) {
             // She stays where you brought her and only picks her routine back up
             // when time moves on — otherwise escorting someone anywhere is undone
             // the instant you part. Only for someone actually travelling with
@@ -6751,6 +6760,33 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }));
         bar.append(mkBtn('⏳ Wait', () => waitCommand({}, '')));
         bar.append(mkBtn(`🎒 Items${getGold() ? ` (${getGold()}g)` : ''}`, () => openInventory()));
+        // Party management — deliberately narration-free bookkeeping. The NL
+        // path keeps its in-character farewell; these buttons never call an LLM.
+        const canJoin = (n) => !getRelationship(n.name).npcUnconscious &&
+            !(getRelationship(n.name).customEffects || []).some(e => e.active !== false && e.immobilizes && e.pinnedAt);
+        const partyNow = currentGameState.party || [];
+        const joinableNow = getNpcsAt(currentGameState.currentLocation).filter(n => !partyNow.includes(n.name) && canJoin(n));
+        if (partyNow.length || joinableNow.length) {
+            bar.append(mkBtn(`🧑‍🤝‍🧑 Party${partyNow.length ? ` (${partyNow.length})` : ''}`, () => {
+                // Rebuild at click time — presence can shift under a stale render.
+                const party = currentGameState.party || [];
+                const items = [];
+                for (const npc of getNpcsAt(currentGameState.currentLocation)) {
+                    if (party.includes(npc.name) || !canJoin(npc)) continue;
+                    items.push({ icon: '🤝', label: `${npc.name} joins the party`, sub: npc.role, action: () => addToParty(npc.name) });
+                }
+                for (const name of party) {
+                    if (getRelationship(name).npcUnconscious) {
+                        items.push({ icon: '💤', label: `Leave ${name} here`, sub: 'unconscious — she stays until she wakes', action: () => removeFromParty(name, { quiet: true }) });
+                        continue;
+                    }
+                    items.push({ icon: '👋', label: `Part with ${name} — she stays here`, sub: 'lingers here until time moves on', action: () => removeFromParty(name, { quiet: true }) });
+                    const dest = scheduledLocationFor(name);
+                    items.push({ icon: '🏠', label: `Part with ${name} — back to her routine`, sub: dest && dest !== currentGameState.currentLocation ? `off to ${locName(dest)}` : 'resumes her schedule here', action: () => removeFromParty(name, { quiet: true, resumeSchedule: true }) });
+                }
+                openActionPopup('Party…', items);
+            }));
+        }
         // Offered after a rest, and only while you are still where you rested.
         if (currentGameState.levelUpAt && currentGameState.levelUpAt === currentGameState.currentLocation) {
             const xpNow = getPlayerRpgData()?.stats?.experience || 0;
@@ -8010,7 +8046,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         presence: (loc) => getNpcsAt(loc || currentGameState.currentLocation).map(n => n.name),
         tick: (n) => { for (let i = 0; i < (n || 1); i++) advanceTime(false); syncPresence(); },
         addParty: (n) => addToParty(n),
-        removeParty: (n) => removeFromParty(n),
+        removeParty: (n, opts) => removeFromParty(n, opts),
         reunionNote2: (n) => buildReunionNote(n),
         birth: (n, count, kind) => resolveBirth(n, count || 1, kind, true),
         curse: (target, duration) => applyCrystalCurse(target || 'player', duration),
@@ -8028,7 +8064,6 @@ Narrate the result briefly, grounded in this location and the story's current be
         statuses: (target) => ((!target || target === 'player') ? getPlayerRpgData()?.customEffects : getRelationship(target).customEffects) || [],
         statusNote: (n) => renderStatusReactionNotes(getRelationship(n)),
         eventTeleport: (d) => doEventTeleport(d),
-        addParty: (n) => addToParty(n),
         adoptCast: (worldId, charName) => {   // headless adoption (no form UI): castData + rpg block, world-ready
             const world = authoredWorlds()[worldId]; const char = getCtx().characters.find(c => c.name === charName);
             if (!world || !char) return null;
