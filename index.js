@@ -639,7 +639,7 @@ jQuery(async () => {
                     rd2.customEffects = (rd2.customEffects || []).filter(x => x !== e && x.id !== e.id);
                     savePlayer();
                     wmToast(`${e.name} dispelled.`, 'success');
-                    projectPlayerStatus(); renderActionBar();
+                    projectPlayerStatus();
                     renderEffects();
                 });
                 row.append(del);
@@ -662,7 +662,7 @@ jQuery(async () => {
                 del.on('click', () => {
                     removeItemById(it.id);
                     wmToast(`${prettyItem(it.name)} removed.`, 'success');
-                    renderActionBar(); renderInv();
+                    renderInv();
                 });
                 row.append(del);
                 list.append(row);
@@ -697,7 +697,7 @@ jQuery(async () => {
             if (s.stamina > 0) s.unconscious = false;
             rd.inventory.currency = v('pe-gold', 0, 999999);
             savePlayer();
-            projectPlayerStatus(); renderActionBar();
+            projectPlayerStatus();
             $('#rpg-player-overlay').remove();
             wmToast('Character updated.', 'success');
         });
@@ -1546,7 +1546,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         if (editedActive) {
             // The live game keeps pace with the edit immediately.
             currentGameState.worldData = structuredClone(authoredWorlds()[worldId]);
-            syncPresence(); renderActionBar(); projectPlayerStatus();
+            syncPresence(); projectPlayerStatus();
         }
         wmToast('World saved.', 'success');
     }
@@ -1919,27 +1919,52 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         const save = getCurrentSave();
         const items = [];
 
-        if (save) {
-            items.push({ icon: '▶️', label: `Continue (${save.world}, Day ${save.day ?? 1} — ${saveWeekdayName(save)})`, action: continueGame });
-        }
-        // New games start from the Worlds manager (world → 🎲 New Game).
-        items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
-        items.push({ icon: '✨', label: 'Create Character', action: () => createRPGCharacterCommand() });
-        items.push({ icon: '👤', label: 'Character Sheet', action: () => showRPGCharacterInfoCommand({}, '') });
-        items.push({ icon: '🧬', label: 'Edit Character', action: () => openPlayerEditor() });
+        // ONE flat menu. In play: the every-turn game verbs first (this replaced
+        // the old bottom action bar, which ate chat space), then time, then the
+        // rare session/meta actions. Out of play: just the session actions.
         if (currentGameState.isActive) {
+            items.push({ icon: '🚶', label: 'Move', action: () => openTravelPopup() });
+            items.push({ icon: '👀', label: 'Look', action: () => openLookPopup() });
+            items.push({ icon: '🎒', label: `Items${getGold() ? ` (${getGold()}g)` : ''}`, action: () => openInventory() });
+            if ((currentGameState.party || []).length || partyJoinable().length) {
+                const n = (currentGameState.party || []).length;
+                items.push({ icon: '🧑‍🤝‍🧑', label: `Party${n ? ` (${n})` : ''}`, action: () => openPartyPopup() });
+            }
+            // Offered after a rest, and only while you are still where you rested.
+            if (currentGameState.levelUpAt && currentGameState.levelUpAt === currentGameState.currentLocation) {
+                items.push({ icon: '⭐', label: `Level Up (${getPlayerRpgData()?.stats?.experience || 0} XP)`, action: () => openLevelUp() });
+            }
+            items.push({ sep: true });
             items.push({ icon: '⏰', label: 'Wait (advance time)', action: () => waitCommand({}, '') });
             if (canRewindTime()) {
                 const prev = (currentGameState.timeUndo || [])[currentGameState.timeUndo.length - 1];
                 const back = prev ? `${TIME_PERIODS[prev.time].emoji} ${TIME_PERIODS[prev.time].name}, Day ${prev.day}` : 'one step';
                 items.push({ icon: '⏪', label: 'Go back a time step', sub: `back to ${back}`, action: () => rewindTimeStep() });
             }
-            items.push({ icon: '📅', label: 'Date & Time', action: () => dateCommand({}, '') });
+            items.push({ sep: true });
+            items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
+            items.push({ icon: '🧬', label: 'Edit Character', action: () => openPlayerEditor() });
             items.push({ icon: '🚪', label: 'Exit RPG Mode', action: () => rpgExitCommand({}, '') });
+        } else {
+            if (save) {
+                items.push({ icon: '▶️', label: `Continue (${save.world}, Day ${save.day ?? 1} — ${saveWeekdayName(save)})`, action: continueGame });
+            }
+            // New games start from the Worlds manager (world → 🎲 New Game).
+            items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
+            items.push({ icon: '✨', label: 'Create Character', action: () => createRPGCharacterCommand() });
+            items.push({ icon: '🧬', label: 'Edit Character', action: () => openPlayerEditor() });
         }
 
         const menu = $('<div id="rpg-menu-popup"></div>');
+        if (currentGameState.isActive) {
+            // The date/time readout lives here now (the old 📅 row's job) — a
+            // glanceable header instead of a button that prints to chat.
+            const t = TIME_PERIODS[currentGameState.currentTime];
+            menu.append($('<div class="rpg-popup-title"></div>')
+                .text(`${t.emoji} ${t.name} — Day ${currentGameState.dayCount} (${weekdayName()}) · ${locName(currentGameState.currentLocation)}`));
+        }
         for (const item of items) {
+            if (item.sep) { menu.append('<div class="rpg-menu-sep"></div>'); continue; }
             const row = $(`<div class="rpg-menu-item">${item.icon} ${item.label}` +
                 (item.sub ? `<div class="rpg-item-sub">${$('<i>').text(item.sub).html()}</div>` : '') + `</div>`);
             row.on('click', async function(event) {
@@ -2094,7 +2119,6 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             console.error('RPG Custodian: Failed to persist presence mute state:', error);
         }
         console.log(`RPG Custodian: Presence synced — present: [${presentAvatars.join(', ') || 'none'}], muted: ${disabled.length}`);
-        renderActionBar();
         projectPlayerStatus();  // refresh dispositions for who's now present
     }
 
@@ -2435,7 +2459,6 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         try {
             await setUserAvatar(createdAvatarId, { toastPersonaNameChange: false });
             console.log(`RPG Custodian: Selected "${personaName}" as active persona`);
-            renderActionBar();
         } catch (error) {
             console.warn('RPG Custodian: Failed to select new persona:', error);
         }
@@ -3058,7 +3081,6 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             currentGameState.currentTime = 0;
             currentGameState.dayCount = 1;
             currentGameState.startWeekday = null;
-            $('#rpg-action-bar').remove();
             $('#rpg-action-popup').remove();
             projectPlayerStatus();  // clears the injected status block
             
@@ -3280,7 +3302,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         }
         savePlayer(); saveCurrentState();
         await syncPresence();
-        projectPlayerStatus(); renderActionBar(); updateTimeDisplay();
+        projectPlayerStatus(); updateTimeDisplay();
         const t = TIME_PERIODS[currentGameState.currentTime];
         sendGameMasterMessage(`⏪ **The clock steps back** — it is ${t.emoji} **${t.name}** again, ${weekdayName()}, Day ${currentGameState.dayCount}.` +
             `${presenceLine(currentGameState.currentLocation)}\n\n_(Everything that period changed — schedules, conditions, pregnancies — is as it was. The story already told stands; you are simply not as late as you thought.)_`);
@@ -4471,7 +4493,6 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
 
     function savePlayer() {
         if (typeof context.saveSettingsDebounced === 'function') context.saveSettingsDebounced();
-        renderActionBar();
         projectPlayerStatus();
     }
 
@@ -5358,7 +5379,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Mechanical record only. The Shop-button path triggers the merchant to
         // react here; the NL path lets orchestration trigger her (avoid double).
         sendGhostMessage(`🛍️ Bought **${item.name}** for ${item.price}g. (${getGold()}g left)`);
-        renderActionBar();
         if (!currentGameState.rpgOrchestrating) triggerNpcReply(npc.name);
     }
 
@@ -5402,7 +5422,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         } else {
             sendGhostMessage(`You examine the ${item.name}. (No use implemented.)`);
         }
-        renderActionBar();
     }
 
     // Emergent XP: harder successful checks are worth more (bard experience —
@@ -5439,7 +5458,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 d.stats.experience -= LEVEL_UP_XP;
                 d.stats[stat] = (d.stats[stat] || 0) + 1;
                 d.stats.level = (d.stats.level || 1) + 1;
-                savePlayer(); renderActionBar();
+                savePlayer();
                 sendGhostMessage(`⭐ **Level up!** ${stat.charAt(0).toUpperCase() + stat.slice(1)} is now **${d.stats[stat]}** (−${LEVEL_UP_XP} XP, ${d.stats.experience} left). You are level ${d.stats.level}.`);
             },
         }));
@@ -5452,7 +5471,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 if ((d.stats.power_tokens || 0) < 1) { sendGhostMessage('❌ You have no Power Tokens.'); return; }
                 d.stats.power_tokens -= 1;
                 d.stats.experience = (d.stats.experience || 0) + TOKEN_TO_XP;
-                savePlayer(); renderActionBar();
+                savePlayer();
                 sendGhostMessage(`⭐ A Power Token burns away into experience — +${TOKEN_TO_XP} XP (now ${d.stats.experience}), ${d.stats.power_tokens} token(s) left.`);
                 openLevelUp();   // stay open so several can be spent in a row
             },
@@ -5640,7 +5659,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // action bar and stays there until you leave this place.
         currentGameState.levelUpAt = currentGameState.currentLocation;
         await advanceTimeBy(1);
-        renderActionBar();
     }
 
     // NPC combat/sex stamina, tracked on the relationship record.
@@ -6635,7 +6653,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     function toggleOrUseItem(item) {
         if (itemIsConsumable(item)) { useItem(item); return; }
         item.equipped = !item.equipped;
-        savePlayer(); renderActionBar();
+        savePlayer();
         sendGhostMessage(item.equipped
             ? `🎽 Equipped **${prettyItem(item.name)}**${item.effectText ? ` — ${item.effectText}` : ''}.`
             : `👝 Removed **${prettyItem(item.name)}**.`);
@@ -6645,7 +6663,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (!it) return;
         if (on && itemIsConsumable(it)) { useItem(it); return; }   // "equip the potion" → just use it
         it.equipped = on;
-        savePlayer(); renderActionBar();
+        savePlayer();
         sendGhostMessage(on
             ? `🎽 Equipped **${prettyItem(it.name)}**${it.effectText ? ` — ${it.effectText}` : ''}.`
             : `👝 Removed **${prettyItem(it.name)}**.`);
@@ -6685,7 +6703,6 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             const stat = ['ruggedness', 'charm', 'craftiness', 'virility'].includes(p.stat) ? p.stat : null;
             if (stat && Number(p.amount)) item.mod = { stat, amount: Number(p.amount), condition: (p.condition && String(p.condition).trim()) ? String(p.condition).trim() : null };
             savePlayer();
-            renderActionBar();
         } catch (e) { console.error('RPG Custodian: appraise failed', e); }
     }
 
@@ -6710,9 +6727,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             pop.append(row);
         }
         $('body').append(pop);
-        // Center-bottom above the input.
-        const bar = document.getElementById('rpg-action-bar');
-        const anchorTop = bar ? bar.getBoundingClientRect().top : window.innerHeight - 120;
+        // Center-bottom, above the RPG button / input row.
+        const btn = document.getElementById('rpg-menu-button');
+        const anchorTop = btn ? btn.getBoundingClientRect().top : window.innerHeight - 120;
         const el = pop[0];
         const left = Math.max(8, Math.min((window.innerWidth - el.offsetWidth) / 2, window.innerWidth - el.offsetWidth - 8));
         let top = anchorTop - el.offsetHeight - 8;
@@ -6721,80 +6738,56 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         setTimeout(() => $(document).one('click.rpgActionPop', () => $('#rpg-action-popup').remove()), 0);
     }
 
-    function ensureActionBar() {
-        if (document.getElementById('rpg-action-bar')) return;
-        const bar = $('<div id="rpg-action-bar"></div>');
-        const sendForm = $('#send_form');
-        if (sendForm.length) sendForm.before(bar);
-        else $('#rightSendForm').before(bar);
+    // The game verbs live in the RPG menu (toggleRpgMenu) — the old bottom
+    // action bar was removed 2026-08-05 because it ate chat space. These
+    // builders run at CLICK time, so presence/party/gold are always current.
+    // No per-NPC mechanical buttons (shop/wrestle/quest) — those are handled
+    // through natural language via the Intent Analyzer.
+    function openTravelPopup() {
+        const items = visibleConnections(currentGameState.currentLocation).map(c => ({
+            icon: '🚪', label: currentGameState.worldData.locations[c]?.name || c,
+            action: () => moveCommand({}, c),
+        }));
+        openActionPopup('Travel to…', items);
     }
-
-    function renderActionBar() {
-        if (!currentGameState.isActive) { $('#rpg-action-bar').remove(); return; }
-        ensureActionBar();
-        const bar = $('#rpg-action-bar');
-        bar.empty();
-
-        const mkBtn = (label, handler) => {
-            const b = $('<button class="rpg-action-btn"></button>').html(label);
-            b.on('click', (e) => { e.stopPropagation(); handler(); });
-            return b;
-        };
-
-        // Core verbs
-        bar.append(mkBtn('🚶 Move', () => {
-            const items = visibleConnections(currentGameState.currentLocation).map(c => ({
-                icon: '🚪', label: currentGameState.worldData.locations[c]?.name || c,
-                action: () => moveCommand({}, c),
-            }));
-            openActionPopup('Travel to…', items);
-        }));
-        bar.append(mkBtn('👀 Look', () => {
-            const present = getNpcsAt(currentGameState.currentLocation);
-            const items = [
-                { icon: '🏞️', label: 'Examine your surroundings', action: () => lookCommand({}, '') },
-                { icon: '🪞', label: 'Look at yourself', sub: 'your stats, stamina, gold & buffs', action: () => examineSelf() },
-            ];
-            for (const npc of present) items.push({ icon: '🔍', label: `Look at ${npc.name}`, sub: npc.role, action: () => examineNpc(npc.name) });
-            openActionPopup('Look at…', items);
-        }));
-        bar.append(mkBtn('⏳ Wait', () => waitCommand({}, '')));
-        bar.append(mkBtn(`🎒 Items${getGold() ? ` (${getGold()}g)` : ''}`, () => openInventory()));
-        // Party management — deliberately narration-free bookkeeping. The NL
-        // path keeps its in-character farewell; these buttons never call an LLM.
-        const canJoin = (n) => !getRelationship(n.name).npcUnconscious &&
-            !(getRelationship(n.name).customEffects || []).some(e => e.active !== false && e.immobilizes && e.pinnedAt);
-        const partyNow = currentGameState.party || [];
-        const joinableNow = getNpcsAt(currentGameState.currentLocation).filter(n => !partyNow.includes(n.name) && canJoin(n));
-        if (partyNow.length || joinableNow.length) {
-            bar.append(mkBtn(`🧑‍🤝‍🧑 Party${partyNow.length ? ` (${partyNow.length})` : ''}`, () => {
-                // Rebuild at click time — presence can shift under a stale render.
-                const party = currentGameState.party || [];
-                const items = [];
-                for (const npc of getNpcsAt(currentGameState.currentLocation)) {
-                    if (party.includes(npc.name) || !canJoin(npc)) continue;
-                    items.push({ icon: '🤝', label: `${npc.name} joins the party`, sub: npc.role, action: () => addToParty(npc.name) });
-                }
-                for (const name of party) {
-                    if (getRelationship(name).npcUnconscious) {
-                        items.push({ icon: '💤', label: `Leave ${name} here`, sub: 'unconscious — she stays until she wakes', action: () => removeFromParty(name, { quiet: true }) });
-                        continue;
-                    }
-                    items.push({ icon: '👋', label: `Part with ${name} — she stays here`, sub: 'lingers here until time moves on', action: () => removeFromParty(name, { quiet: true }) });
-                    const dest = scheduledLocationFor(name);
-                    items.push({ icon: '🏠', label: `Part with ${name} — back to her routine`, sub: dest && dest !== currentGameState.currentLocation ? `off to ${locName(dest)}` : 'resumes her schedule here', action: () => removeFromParty(name, { quiet: true, resumeSchedule: true }) });
-                }
-                openActionPopup('Party…', items);
-            }));
+    function openLookPopup() {
+        const present = getNpcsAt(currentGameState.currentLocation);
+        const items = [
+            { icon: '🏞️', label: 'Examine your surroundings', action: () => lookCommand({}, '') },
+            { icon: '🪞', label: 'Look at yourself', sub: 'your stats, stamina, gold & buffs', action: () => examineSelf() },
+        ];
+        for (const npc of present) items.push({ icon: '🔍', label: `Look at ${npc.name}`, sub: npc.role, action: () => examineNpc(npc.name) });
+        openActionPopup('Look at…', items);
+    }
+    // Party management — deliberately narration-free bookkeeping. The NL
+    // path keeps its in-character farewell; these rows never call an LLM.
+    // A bound or unconscious woman does not fall in behind you because a
+    // menu said so — arbitrating that stays the Custodian's job.
+    function canButtonJoin(name) {
+        const rel = getRelationship(name);
+        return !rel.npcUnconscious &&
+            !(rel.customEffects || []).some(e => e.active !== false && e.immobilizes && e.pinnedAt);
+    }
+    function partyJoinable() {
+        const party = currentGameState.party || [];
+        return getNpcsAt(currentGameState.currentLocation).filter(n => !party.includes(n.name) && canButtonJoin(n.name));
+    }
+    function openPartyPopup() {
+        const party = currentGameState.party || [];
+        const items = [];
+        for (const npc of partyJoinable()) {
+            items.push({ icon: '🤝', label: `${npc.name} joins the party`, sub: npc.role, action: () => addToParty(npc.name) });
         }
-        // Offered after a rest, and only while you are still where you rested.
-        if (currentGameState.levelUpAt && currentGameState.levelUpAt === currentGameState.currentLocation) {
-            const xpNow = getPlayerRpgData()?.stats?.experience || 0;
-            bar.append(mkBtn(`⭐ Level Up (${xpNow} XP)`, () => openLevelUp()));
+        for (const name of party) {
+            if (getRelationship(name).npcUnconscious) {
+                items.push({ icon: '💤', label: `Leave ${name} here`, sub: 'unconscious — she stays until she wakes', action: () => removeFromParty(name, { quiet: true }) });
+                continue;
+            }
+            items.push({ icon: '👋', label: `Part with ${name} — she stays here`, sub: 'lingers here until time moves on', action: () => removeFromParty(name, { quiet: true }) });
+            const dest = scheduledLocationFor(name);
+            items.push({ icon: '🏠', label: `Part with ${name} — back to her routine`, sub: dest && dest !== currentGameState.currentLocation ? `off to ${locName(dest)}` : 'resumes her schedule here', action: () => removeFromParty(name, { quiet: true, resumeSchedule: true }) });
         }
-        // No per-NPC mechanical buttons (shop/wrestle/quest) — those are handled
-        // through natural language via the Intent Analyzer. The bar stays to the
-        // simple, always-useful verbs only.
+        openActionPopup('Party…', items);
     }
 
     // ========================================================================
@@ -7768,7 +7761,6 @@ Narrate the result briefly, grounded in this location and the story's current be
                 } else if (!resolvedSomething) {
                     console.log('RPG Custodian: nothing was resolved this turn — GM stays quiet.');
                 }
-                renderActionBar();
             }
 
             // React. Who replies is decided DETERMINISTICALLY from the player's
@@ -8020,7 +8012,6 @@ Narrate the result briefly, grounded in this location and the story's current be
         narrate: (intent, check) => narrateResult(intent?.narration_hint || 'an action', intent, check),
         awardXp: (c) => awardCheckXp(c),
         levelUp: () => openLevelUp(),
-        renderBar: () => renderActionBar(),
         save: () => savePlayer(),
         checkLine: (c, label) => skillCheckLine(c, label || 'probe'),
         odds: (mod, dc) => successChance(mod, dc),
@@ -8030,7 +8021,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         boost: (stat, amt) => addBoost(stat, amt, 'debug'),
         rollCheck: (stat, dc) => { const c = skillCheck(stat, dc || 8); consumeCheckEffects(stat); return c; },
         addGold: (n) => addGold(n),
-        teleport: async (locId) => { currentGameState.currentLocation = locId; await syncPresence(); renderActionBar(); },
+        teleport: async (locId) => { currentGameState.currentLocation = locId; await syncPresence(); },
         // Faithful to a typed turn. onUserMessage starts the turn clock BEFORE
         // it orchestrates; a debug turn skipped perfBegin, so perfEnd bailed on
         // a null turn and act() recorded no telemetry at all — which is also

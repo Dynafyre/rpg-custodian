@@ -84,12 +84,15 @@
     position: fixed;
     z-index: 30000;
     min-width: 240px;
+    max-width: min(440px, 92vw);
     background: rgba(20, 20, 30, 0.97);
     border: 1px solid rgba(255, 255, 255, 0.25);
     border-radius: 8px;
     box-shadow: 0 6px 18px rgba(0, 0, 0, 0.6);
     padding: 4px;
     backdrop-filter: blur(4px);
+    max-height: 80vh;
+    overflow-y: auto;
 }
 
 .rpg-menu-item {
@@ -100,6 +103,8 @@
     cursor: pointer;
     user-select: none;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
 }
 
 .rpg-menu-item:hover {
@@ -107,30 +112,12 @@
     color: #ffffff;
 }
 
-/* Contextual action bar (buttons above the input during a session) */
-#rpg-action-bar {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    padding: 6px 8px;
-    justify-content: center;
-    background: rgba(20, 20, 30, 0.55);
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
+/* Thin divider between the menu's verb / time / session groups */
+.rpg-menu-sep {
+    height: 1px;
+    margin: 4px 8px;
+    background: rgba(255, 255, 255, 0.12);
 }
-
-.rpg-action-btn {
-    background: rgba(74, 144, 226, 0.22);
-    color: #eaf2ff;
-    border: 1px solid rgba(255, 255, 255, 0.22);
-    border-radius: 6px;
-    padding: 6px 11px;
-    font-size: 13px;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.1s ease;
-}
-.rpg-action-btn:hover { background: rgba(74, 144, 226, 0.45); }
-.rpg-action-btn:active { transform: translateY(1px); }
 
 /* Shared popup (RPG menu, shop, inventory, quests) */
 .rpg-popup {
