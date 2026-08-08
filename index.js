@@ -4773,6 +4773,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 if (dAff > 0) { rel.affJudgeStep = step; rel.affGainedThisStep = gained + dAff; }
             }
             const beforeTier = affectionTier(getNpcAffection(npcName)).label;
+            const aroBefore = getNpcArousal(npcName);
             if (dAff) rel.affection = Math.max(0, Math.min(10, (rel.affection || 0) + dAff));
             if (dAro) setNpcArousalRaw(npcName, (rel.arousal ?? 0) + dAro);
             savePlayer();
@@ -4780,9 +4781,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             // Every increment is shown to the player (Dyna's call) — with a
             // flourish line added when a tier boundary is crossed. Displays are
             // EFFECTIVE values (status deltas/caps folded in) — what she plays.
+            // EXCEPT a gain that changes nothing she plays (already at 10, or
+            // pinned by a cap): "+1 → 10/10" every reply is noise (Dyna
+            // 2026-08-08), and the raw substrate moved regardless.
             const bits = [];
             if (dAff) bits.push(`💗 affection ${dAff > 0 ? '+' : ''}${dAff} → ${getNpcAffection(npcName)}/10 (${affectionTier(getNpcAffection(npcName)).label})`);
-            if (dAro) bits.push(`🔥 arousal ${dAro > 0 ? '+' : ''}${dAro} → ${getNpcArousal(npcName)}/10 (${arousalTier(getNpcArousal(npcName)).label})`);
+            if (dAro && !(dAro > 0 && getNpcArousal(npcName) === aroBefore)) bits.push(`🔥 arousal ${dAro > 0 ? '+' : ''}${dAro} → ${getNpcArousal(npcName)}/10 (${arousalTier(getNpcArousal(npcName)).label})`);
             const afterTier = affectionTier(getNpcAffection(npcName)).label;
             const shift = afterTier !== beforeTier
                 ? `\n${dAff > 0 ? `💗 Something shifts in ${npcName} — **${beforeTier} → ${afterTier}**.` : `💔 ${npcName} pulls back — **${beforeTier} → ${afterTier}**.`}`
@@ -6520,12 +6524,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         expire(rd, 'Your');
         for (const [name, rel] of Object.entries(rd.relationships || {})) {
             expire(rel, `${name}'s`, name);
-            // Arousal cools by 2 per time period toward calm (romance-redesign
-            // §D; raised from 1, Dyna 2026-07-28 — it lingered too long) —
-            // bodies cool off; affection doesn't. Step-guarded so a repeated
-            // prune in the same period can't double-decay.
+            // Arousal cools by 3 per time period toward calm (romance-redesign
+            // §D; raised from 1 on 2026-07-28 and from 2 on 2026-08-08, both
+            // Dyna — it lingered too long) — bodies cool off; affection
+            // doesn't. Step-guarded so a repeated prune in the same period
+            // can't double-decay.
             if ((rel.arousal ?? 0) > 0 && rel.arousalDecayStep !== step) {
-                rel.arousal = Math.max(0, (rel.arousal ?? 0) - 2);
+                rel.arousal = Math.max(0, (rel.arousal ?? 0) - 3);
                 rel.arousalDecayStep = step;
             }
         }
@@ -7239,7 +7244,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     if ((eff.target || 'player') === 'player') { spendStamina(eff.amount || 1); sendGhostMessage(`💢 You take ${eff.amount || 1} — Stamina ${getStamina()}/${maxStamina()}${getPlayerRpgData()?.stats.unconscious ? ' — you black out!' : ''}`); }
                     else if (eff.npc) { const rel = spendNpcStamina(eff.npc, eff.amount || 1); sendGhostMessage(`⚔️ ${eff.npc} takes ${eff.amount || 1} — Stamina ${rel.npcStamina}/${npcMaxStamina(eff.npc)}${rel.npcUnconscious ? ' — she goes down!' : ''}`); }
                     break;
-                case 'adjust_arousal': { const rel = getRelationship(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal ?? 0) + (eff.amount || 0)); if (eff.amount) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
+                case 'adjust_arousal': { const rel = getRelationship(eff.npc); const aroWas = getNpcArousal(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal ?? 0) + (eff.amount || 0)); if (eff.amount && !((eff.amount > 0) && getNpcArousal(eff.npc) === aroWas)) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;

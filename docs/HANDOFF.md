@@ -33,7 +33,9 @@ memory files (§7) named in brackets.
   a post-reply band-break judge on the NPC's own reply — never via charm
   checks (charm = framing-acceptance, fed as a one-shot interpretation note).
   `adjust_affection`/`adjust_arousal` are lane-narrowed to external/magical
-  causes. Arousal: floor 0, decay 2/period, post-coital stamina valve.
+  causes. Arousal: floor 0, decay 3/period (2026-08-08; was 2), post-coital
+  stamina valve; a gain that leaves the effective value unchanged (already
+  10/10, or pinned by a cap) prints no ghost line.
   Effective reads `getNpcAffection`/`getNpcArousal` (raw + status mods,
   cap-clamped) feed all bands/displays; raw stays the judge substrate.
 - **Statuses grew teeth** [`status-equipment-conditions`,
