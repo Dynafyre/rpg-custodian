@@ -104,6 +104,20 @@ try {
   narr = await narrationSince(before);
   check('routine disband produced no narration/farewell', narr.length === 0, narr.join(' | '));
 
+  // ── Items & Statuses popup ──
+  await D(() => window.rpgCustodianDebug.buff('player', 'charm', 1, 'Test Elixir'));
+  await openMenu();
+  check('menu row renamed to Items & Statuses', (await menuRows()).some(r => r.includes('Items & Statuses')));
+  await clickMenuRow('Items & Statuses'); await wait(400);
+  check('popup titled Items & Statuses', (await D(() => document.querySelector('#rpg-action-popup .rpg-popup-title')?.textContent || '')).includes('Items & Statuses'));
+  check('Active statuses heading shown', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-item-head')].some(h => h.textContent.includes('Active statuses'))));
+  check('status row shows the buff with its mods', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].some(r => r.textContent.includes('Test Elixir') && r.textContent.includes('+1 charm'))));
+  await D(() => window.rpgCustodianDebug.removeStatus('player', 'Test Elixir'));
+  await openMenu();
+  await clickMenuRow('Items & Statuses'); await wait(400);
+  check('unafflicted placeholder when no statuses', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].some(r => r.textContent.includes('unafflicted'))));
+  await D(() => $('#rpg-action-popup').remove());
+
   // ── Mobile pass on a fresh page: everything by tap, on-screen ──
   const mob = await browser.newPage();
   const M = (fn, ...a) => mob.evaluate(fn, ...a);

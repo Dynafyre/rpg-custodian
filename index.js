@@ -1932,7 +1932,10 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         if (currentGameState.isActive) {
             items.push({ icon: '🚶', label: 'Move', action: () => openTravelPopup() });
             items.push({ icon: '👀', label: 'Look', action: () => openLookPopup() });
-            items.push({ icon: '🎒', label: `Items${getGold() ? ` (${getGold()}g)` : ''}`, action: () => openInventory() });
+            {
+                const nFx = playerStatusesOnly().length + (isCrystalCursed('player') ? 1 : 0);
+                items.push({ icon: '🎒', label: `Items & Statuses${getGold() || nFx ? ` (${[getGold() ? `${getGold()}g` : '', nFx ? `${nFx} fx` : ''].filter(Boolean).join(' · ')})` : ''}`, action: () => openInventory() });
+            }
             if ((currentGameState.party || []).length || partyJoinable().length) {
                 const n = (currentGameState.party || []).length;
                 items.push({ icon: '🧑‍🤝‍🧑', label: `Party${n ? ` (${n})` : ''}`, action: () => openPartyPopup() });
@@ -5464,8 +5467,22 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Gold sits at the top of the pouch as its own line.
         items.unshift({ icon: '🪙', label: `${getGold()} gold`, sub: 'coin purse', action: () => {} });
         if (items.length === 1) items.push({ icon: '—', label: '(no other items)', action: () => {} });
+        // Active statuses live here too (Dyna 2026-08-09: one place to check
+        // yourself) — read-only rows; quests/objectives stay on the sheet.
+        items.push({ head: 'Active statuses' });
+        const statuses = playerStatusesOnly();
+        for (const e of statuses) {
+            items.push({
+                icon: effectIcon(e),
+                label: `${e.name}${statusModString(e.mods)}`,
+                sub: `${e.desc ? `${e.desc} · ` : ''}ends: ${statusEndsLabel(e) || 'permanent'}`,
+                action: () => {},
+            });
+        }
+        if (isCrystalCursed('player')) items.push({ icon: '💠', label: 'Crystal Curse', sub: 'any child you sire is born an inert soulgem — until broken by magic', action: () => {} });
+        if (!statuses.length && !isCrystalCursed('player')) items.push({ icon: '—', label: '(none — you are unafflicted)', action: () => {} });
         const equipped = equippedItemsSummary();
-        openActionPopup(`🎒 Inventory${equipped.length ? `  —  worn: ${equipped.map(e => e.split(' (')[0]).join(', ')}` : ''}`, items);
+        openActionPopup(`🎒 Items & Statuses${equipped.length ? `  —  worn: ${equipped.map(e => e.split(' (')[0]).join(', ')}` : ''}`, items);
     }
     function useItem(item) {
         if (item.effect?.type === 'stat_boost') {
@@ -6783,6 +6800,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const pop = $('<div id="rpg-action-popup" class="rpg-popup"></div>');
         pop.append($('<div class="rpg-popup-title"></div>').text(title));
         for (const item of items) {
+            if (item.head) {
+                pop.append('<div class="rpg-menu-sep"></div>');
+                pop.append($('<div class="rpg-item-head"></div>').text(item.head));
+                continue;
+            }
             const row = $(`<div class="rpg-menu-item${item.big ? ' rpg-item-big' : ''}"></div>`);
             row.html(`${item.icon} ${$('<span>').text(item.label).html()}` + (item.sub ? `<div class="rpg-item-sub"></div>` : ''));
             if (item.sub) row.find('.rpg-item-sub').text(item.sub);

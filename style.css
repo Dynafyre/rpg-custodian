@@ -119,6 +119,17 @@
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* Non-clickable section heading inside a popup (e.g. Active statuses) */
+.rpg-item-head {
+    padding: 6px 12px 2px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #a9b3c6;
+    user-select: none;
+}
+
 /* Larger tap targets for the travel destinations */
 .rpg-item-big {
     padding: 14px 14px;
