@@ -1868,6 +1868,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                     <option value="2">2 — hidden (found only through the story)</option>
                 </select></label>
                 <button type="button" id="mp-start" class="rpg-toggle">⭐ Starting location: <b>No</b></button>
+                <button type="button" id="mp-notes" class="rpg-toggle">📝 Area notes: <b>${(loc.areaNotes || []).length}</b></button>
                 <div class="mp-buttons">
                     <button id="mp-save" class="rpg-map-btn">💾 Save</button>
                     <button id="mp-cancel" class="rpg-map-btn">Cancel</button>
@@ -1892,6 +1893,12 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         showBg();
         $('#mp-bg-btn').on('click', (e) => { e.stopPropagation(); openBgPicker(pickedBg, (f) => { pickedBg = f; showBg(); }); });
         $('#mp-secret').val(String(Number(loc.secret) || 0));
+        // Not a toggle despite the class (borrowed for looks): opens the notes
+        // manager over the editor. The count refreshes when the panel reopens.
+        $('#mp-notes').off('click').on('click', (e) => {
+            e.stopPropagation();
+            openAreaNotesManager(editorNotesAdapter(mapEd.world, id));
+        });
         setToggle($('#mp-start'), mapEd.world.startingLocation === id);
         $('#mp-cancel').on('click', () => $('#rpg-map-panel').remove());
         $('#mp-save').on('click', () => {
@@ -1929,6 +1936,10 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             if ((currentGameState.party || []).length || partyJoinable().length) {
                 const n = (currentGameState.party || []).length;
                 items.push({ icon: '🧑‍🤝‍🧑', label: `Party${n ? ` (${n})` : ''}`, action: () => openPartyPopup() });
+            }
+            {
+                const nNotes = areaNotesAt(currentGameState.currentLocation).length;
+                items.push({ icon: '📝', label: `Area Notes${nNotes ? ` (${nNotes})` : ''}`, action: () => openAreaNotesManager(sessionNotesAdapter()) });
             }
             // Offered after a rest, and only while you are still where you rested.
             if (currentGameState.levelUpAt && currentGameState.levelUpAt === currentGameState.currentLocation) {
@@ -2198,6 +2209,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         currentGameState.startWeekday = Number.isInteger(save.startWeekday) ? save.startWeekday : backfillStartWeekday(save.day);
         currentGameState.party = save.party || [];
         currentGameState.offspring = save.offspring || [];
+        currentGameState.areaNotes = save.areaNotes || {};
         currentGameState.timeStep = save.timeStep ?? 0;
         currentGameState.currentLocation = worldData.locations[save.location] ? save.location : worldData.startingLocation;
 
@@ -2283,6 +2295,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             groupId: currentGameState.groupId || null,
             party: currentGameState.party || [],
             offspring: currentGameState.offspring || [],
+            areaNotes: currentGameState.areaNotes || {},
             timestamp: new Date().toISOString(),
         };
         // Per-world save slots: each world keeps its own save; currentSave
@@ -3205,7 +3218,10 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                     exitsList = `\n\n**Available exits:** ${exitNames.join(', ')}`;
                 }
                 
-                sendGameMasterMessage(`👀 **${currentLocationData.name}**\n\n${currentLocationData.description}${presenceLine(currentGameState.currentLocation)}${exitsList}`);
+                // Public notes only — this is a chat message every present NPC
+                // can read back; secret notes live in the Area Notes manager.
+                const noteTail = publicAreaNotesLine(currentGameState.currentLocation);
+                sendGameMasterMessage(`👀 **${currentLocationData.name}**\n\n${currentLocationData.description}${noteTail ? `\n\n📝${noteTail}` : ''}${presenceLine(currentGameState.currentLocation)}${exitsList}`);
             } else {
                 // TODO: Implement looking at specific targets (NPCs, objects, etc.)
                 // For now, just acknowledge the attempt
@@ -3505,7 +3521,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     async function requestFlavorText(scenario, location = null) {
         try {
             const locationContext = location ? ` at ${location.name}` : '';
-            const flavorPrompt = `Describe the scene: ${scenario}${locationContext}. Provide atmospheric flavor text for this moment.`;
+            const noteTail = location ? gmAreaNotesLine() : '';
+            const flavorPrompt = `Describe the scene: ${scenario}${locationContext}.${noteTail} Provide atmospheric flavor text for this moment.`;
             
             console.log(`RPG Custodian: Requesting flavor text for: ${scenario}`);
             
@@ -3606,6 +3623,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             currentGameState.startWeekday = new Date().getDay();
             currentGameState.party = [];
             currentGameState.offspring = [];
+            currentGameState.areaNotes = {};   // session notes; authored ones ride the world data
             currentGameState.timeStep = 0;
 
             // A NEW game ALWAYS starts at the world's starting location.
@@ -4516,6 +4534,48 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         return currentGameState.worldData?.locations?.[currentGameState.currentLocation]?.description || '';
     }
 
+    // === Area notes — "something about this place has changed" ==============
+    // Extra info appended to an area's description. Two sources, one read path:
+    // AUTHORED notes live in the world definition (Edit Location panel) and
+    // arrive with the world; SESSION notes are made in play (RPG menu) and live
+    // in the save (currentGameState.areaNotes[locId]), since Continue reloads
+    // the pristine world file. A note is either public — appended to the
+    // description everyone reads — or SECRET: privy to an explicit list chosen
+    // from the cast + the Game Master, everyone defaulting OFF. Secret notes
+    // never enter the shared status block or any chat message; a privy NPC
+    // gets hers as a one-shot depth-0 note at reply time, the GM gets his in
+    // the headless narration prompts. The Custodian sees everything — the
+    // engine's ground truth is not a secret from the judge.
+    function areaNotesAt(locId) {
+        const authored = currentGameState.worldData?.locations?.[locId]?.areaNotes || [];
+        const session = (currentGameState.areaNotes || {})[locId] || [];
+        return [...authored, ...session];
+    }
+    function publicAreaNotesLine(locId) {
+        const pub = areaNotesAt(locId).filter(n => !n.secret && String(n.text || '').trim());
+        return pub.length ? ` Of note here, as things NOW stand: ${pub.map(n => n.text.trim()).join(' ')}` : '';
+    }
+    /** Secret notes a given viewer (NPC name or 'Game Master') is privy to. */
+    function secretAreaNotesFor(viewer, locId = currentGameState.currentLocation) {
+        return areaNotesAt(locId)
+            .filter(n => n.secret && (n.privy || []).includes(viewer) && String(n.text || '').trim())
+            .map(n => n.text.trim());
+    }
+    /** Description tail for GM-side headless prompts: public + GM-privy. */
+    function gmAreaNotesLine(locId = currentGameState.currentLocation) {
+        const secrets = secretAreaNotesFor('Game Master', locId);
+        return publicAreaNotesLine(locId) +
+            (secrets.length ? ` (Known to you the narrator, NOT common knowledge — never state it as openly known: ${secrets.join(' ')})` : '');
+    }
+    /** Everything, secrecy-tagged — for the Custodian, which always knows. */
+    function areaNotesForAnalyzer(locId = currentGameState.currentLocation) {
+        const all = areaNotesAt(locId).filter(n => String(n.text || '').trim());
+        if (!all.length) return '';
+        return all.map(n => n.secret
+            ? `[SECRET — known only to: ${(n.privy || []).join(', ') || 'nobody'}] ${n.text.trim()}`
+            : n.text.trim()).join(' · ');
+    }
+
     // A readable summary of an NPC's routine + home, grouped by location. Used
     // both for her own self-knowledge (status block) and the reunion note.
     function scheduleSummary(npc) {
@@ -4577,6 +4637,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     }
     // The ephemeral note injected right before an NPC's first reply after a gap.
     const REUNION_PROMPT_KEY = 'RPG_CUSTODIAN_REUNION';
+    // One-shot per-NPC injection of secret area notes she is privy to.
+    const AREANOTE_PROMPT_KEY = 'RPG_CUSTODIAN_AREANOTE';
 
     // === Charm-check interpretation (romance-redesign §B) ===
     // A charm roll decides whether she ACCEPTS THE PLAYER'S FRAMING — not
@@ -5195,7 +5257,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const lines = [
             // The scene anchor — FIRST, so every reply/narration is grounded in
             // WHERE and WHEN this is happening. NPCs must speak/act as being here.
-            `[SCENE — this is happening at: ${currentSceneLabel()} (Day ${currentGameState.dayCount} — today is ${weekdayName()}).${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''} Everyone present is HERE, in this place; ground all dialogue, action, and description in this exact setting — do not drift to another location.]`,
+            `[SCENE — this is happening at: ${currentSceneLabel()} (Day ${currentGameState.dayCount} — today is ${weekdayName()}).${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}${publicAreaNotesLine(currentGameState.currentLocation)} Everyone present is HERE, in this place; ground all dialogue, action, and description in this exact setting — do not drift to another location.]`,
             ``,
             `[Adventurer Status — plainly visible to everyone present]`,
             `${name} — Ruggedness ${effectiveStat('ruggedness')}, Charm ${effectiveStat('charm')}, Craftiness ${effectiveStat('craftiness')}, Virility ${effectiveStat('virility')} (Level ${s.level}).`,
@@ -6721,7 +6783,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const pop = $('<div id="rpg-action-popup" class="rpg-popup"></div>');
         pop.append($('<div class="rpg-popup-title"></div>').text(title));
         for (const item of items) {
-            const row = $('<div class="rpg-menu-item"></div>');
+            const row = $(`<div class="rpg-menu-item${item.big ? ' rpg-item-big' : ''}"></div>`);
             row.html(`${item.icon} ${$('<span>').text(item.label).html()}` + (item.sub ? `<div class="rpg-item-sub"></div>` : ''));
             if (item.sub) row.find('.rpg-item-sub').text(item.sub);
             row.on('click', async (e) => {
@@ -6749,11 +6811,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // No per-NPC mechanical buttons (shop/wrestle/quest) — those are handled
     // through natural language via the Intent Analyzer.
     function openTravelPopup() {
+        // After each hop the popup reopens at the NEW location (Dyna's flow:
+        // chain moves without reopening the menu); dismiss by tapping away.
         const items = visibleConnections(currentGameState.currentLocation).map(c => ({
-            icon: '🚪', label: currentGameState.worldData.locations[c]?.name || c,
-            action: () => moveCommand({}, c),
+            icon: '🚪', label: currentGameState.worldData.locations[c]?.name || c, big: true,
+            action: async () => { await moveCommand({}, c); if (currentGameState.isActive) openTravelPopup(); },
         }));
-        openActionPopup('Travel to…', items);
+        openActionPopup(`Travel to… (from ${locName(currentGameState.currentLocation)})`, items);
     }
     function openLookPopup() {
         const present = getNpcsAt(currentGameState.currentLocation);
@@ -6793,6 +6857,125 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             items.push({ icon: '🏠', label: `Part with ${name} — back to her routine`, sub: dest && dest !== currentGameState.currentLocation ? `off to ${locName(dest)}` : 'resumes her schedule here', action: () => removeFromParty(name, { quiet: true, resumeSchedule: true }) });
         }
         openActionPopup('Party…', items);
+    }
+
+    // --- Area Notes manager (shared by the in-game menu and the map editor) ---
+    // adapter: where the notes live and who the privy candidates are.
+    function sessionNotesAdapter() {
+        const locId = currentGameState.currentLocation;
+        currentGameState.areaNotes = currentGameState.areaNotes || {};
+        return {
+            locName: locName(locId),
+            // Authored notes came with the world — shown, but edited in the editor.
+            readonly: () => (currentGameState.worldData?.locations?.[locId]?.areaNotes || []),
+            list: () => (currentGameState.areaNotes[locId] || []),
+            save: (notes) => {
+                if (notes.length) currentGameState.areaNotes[locId] = notes;
+                else delete currentGameState.areaNotes[locId];
+                saveCurrentState();
+                projectPlayerStatus();   // public notes ride the shared scene line
+            },
+            candidates: () => ['Game Master', ...(currentGameState.npcRoster || []).map(n => n.name)],
+        };
+    }
+    function editorNotesAdapter(world, id) {
+        const loc = world.locations[id];
+        return {
+            locName: loc.name || id,
+            readonly: null,
+            list: () => (loc.areaNotes || []),
+            save: (notes) => {
+                if (notes.length) loc.areaNotes = notes; else delete loc.areaNotes;
+                context.saveSettingsDebounced();
+            },
+            candidates: () => ['Game Master', ...(world.cast || [])],
+        };
+    }
+    function openAreaNotesManager(adapter) {
+        const clip = (t) => { const s = String(t || '').trim(); return s.length > 64 ? `${s.slice(0, 64)}…` : s || '(empty)'; };
+        const privyLabel = (n) => `secret — privy to: ${(n.privy || []).join(', ') || 'nobody at all'}`;
+        const items = [];
+        for (const n of (adapter.readonly ? adapter.readonly() : [])) {
+            items.push({ icon: n.secret ? '🕵️' : '🌍', label: clip(n.text), sub: `${n.secret ? `${privyLabel(n)} · ` : ''}authored with the world — edit in the World Editor`, action: () => openAreaNotesManager(adapter) });
+        }
+        for (const n of adapter.list()) {
+            items.push({ icon: n.secret ? '🕵️' : '📝', label: clip(n.text), sub: `${n.secret ? privyLabel(n) : 'public — appended to the area description'} · tap to edit`, action: () => openAreaNoteForm(adapter, n) });
+        }
+        items.push({ icon: '➕', label: 'Add a note', sub: 'record something about this place that has changed', action: () => openAreaNoteForm(adapter, null) });
+        openActionPopup(`📝 Area notes — ${adapter.locName}`, items);
+    }
+    function openAreaNoteForm(adapter, note) {
+        $('#rpg-areanote-form').remove();
+        $('#rpg-action-popup').remove();
+        const isNew = !note;
+        const n = note ? { ...note } : { id: `an-${Date.now().toString(36)}`, text: '', secret: false, privy: [] };
+        const f = $(`
+            <div id="rpg-areanote-form" class="rpg-popup">
+                <div class="rpg-popup-title">📝 ${isNew ? 'New area note' : 'Edit area note'} — ${$('<i>').text(adapter.locName).html()}</div>
+                <label class="an-label">What about this place has changed?
+                    <textarea id="an-text" rows="4" placeholder="e.g. The old bridge has collapsed into the river."></textarea></label>
+                <button type="button" id="an-secret" class="rpg-toggle">🕵️ Secret (only those you pick know of it): <b>No</b></button>
+                <div id="an-privy">
+                    <div class="an-privy-title">Privy to it — everyone unticked stays unaware:</div>
+                    <div id="an-privy-list"></div>
+                </div>
+                <div class="an-buttons">
+                    <button id="an-save" class="rpg-map-btn">💾 Save</button>
+                    ${isNew ? '' : '<button id="an-delete" class="rpg-map-btn">🗑️ Delete</button>'}
+                    <button id="an-cancel" class="rpg-map-btn">Cancel</button>
+                </div>
+            </div>`);
+        $('body').append(f);
+        $('#an-text').val(n.text || '');
+        const box = $('#an-privy-list');
+        for (const name of adapter.candidates()) {
+            const row = $('<label class="an-privy-row"></label>');
+            // A NEW secret starts with EVERYONE off (Dyna's rule) — a secret
+            // nobody knows is the safe default; you opt people in.
+            const cb = $('<input type="checkbox">').prop('checked', (n.privy || []).includes(name)).attr('data-name', name);
+            row.append(cb, document.createTextNode(` ${name === 'Game Master' ? '🎲 Game Master (the narrator)' : name}`));
+            box.append(row);
+        }
+        setToggle($('#an-secret'), !!n.secret);
+        // Placement: centered above the RPG button, re-clamped on EVERY size
+        // change — revealing the privy list grows the form downward, and a
+        // one-time placement left the Save button below the fold.
+        const place = () => {
+            const btn = document.getElementById('rpg-menu-button');
+            const anchorTop = btn ? btn.getBoundingClientRect().top : window.innerHeight - 120;
+            const el = f[0];
+            const left = Math.max(8, Math.min((window.innerWidth - el.offsetWidth) / 2, window.innerWidth - el.offsetWidth - 8));
+            const top = Math.max(8, Math.min(anchorTop - el.offsetHeight - 8, window.innerHeight - el.offsetHeight - 8));
+            f.css({ left: `${left}px`, top: `${top}px` });
+        };
+        const showPrivy = () => { $('#an-privy').toggle(getToggle($('#an-secret'))); place(); };
+        showPrivy();
+        // Bound AFTER the global .rpg-toggle flipper, so it reads the NEW state.
+        $(document).off('click.anSecret').on('click.anSecret', '#an-secret', showPrivy);
+        const close = (reopen) => {
+            $(document).off('click.anSecret');
+            $('#rpg-areanote-form').remove();
+            if (reopen) openAreaNotesManager(adapter);
+        };
+        $('#an-cancel').on('click', (e) => { e.stopPropagation(); close(true); });
+        $('#an-delete').on('click', (e) => {
+            e.stopPropagation();
+            adapter.save(adapter.list().filter(x => x.id !== n.id));
+            close(true);
+        });
+        $('#an-save').on('click', (e) => {
+            e.stopPropagation();
+            const text = String($('#an-text').val() || '').trim();
+            if (!text) { $('#an-text').focus(); return; }
+            n.text = text;
+            n.secret = getToggle($('#an-secret'));
+            n.privy = n.secret ? $('#an-privy-list input:checked').map((i, el) => $(el).attr('data-name')).get() : [];
+            const list = adapter.list().slice();
+            const idx = list.findIndex(x => x.id === n.id);
+            if (idx >= 0) list[idx] = n; else list.push(n);
+            adapter.save(list);
+            close(true);
+        });
     }
 
     // ========================================================================
@@ -7041,7 +7224,7 @@ ${recentSceneForAnalyzer()}
 PLAYER ACTION: "${playerText}"
 PLAYER STATS: ${statsContextForAnalyzer()}
 CURRENT TIME: ${TIME_PERIODS[currentGameState.currentTime].name} (Day ${currentGameState.dayCount}) [order: Morning→Day→Evening→Night]
-LOCATION: ${currentGameState.worldData.locations[currentGameState.currentLocation]?.name}
+LOCATION: ${currentGameState.worldData.locations[currentGameState.currentLocation]?.name}${areaNotesForAnalyzer() ? `\nAREA NOTES (ground truth about this place as it NOW stands — factor into your judgment; a [SECRET] one is known ONLY to those listed, never to anyone else): ${areaNotesForAnalyzer()}` : ''}
 KNOWN PLACES (any is a valid move destination — the engine routes there automatically): ${knownPlacesForAnalyzer()} (adjacent right now: ${exitsContextForAnalyzer()})
 PRESENT NPCS: ${presentNpcContextForAnalyzer()}${(currentGameState.party || []).length ? `\nIN YOUR PARTY (travelling with you): ${currentGameState.party.join(', ')}` : ''}
 ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerObjectives().map(e => `"${e.name}" — ${e.endCondition || 'ongoing'}`).join('; ') || 'none'}`;
@@ -7519,7 +7702,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         const freshNote = fresh.length
             ? `\nIMPORTANT: ${fresh.join(' and ')} has JUST taken hold on the player — narrate it SETTLING IN and gripping him. Do NOT narrate it fading, receding, being shrugged off, or resolved.`
             : '';
-        const prompt = `Setting (keep the scene HERE): ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}
+        const prompt = `Setting (keep the scene HERE): ${currentSceneLabel()}.${currentLocationDesc() ? ` ${currentLocationDesc()}` : ''}${gmAreaNotesLine()}
 RECENT STORY (continuity — the scene as it stands; narrate ONLY the new action's result, consistent with where this finds everyone):
 ${recentStoryWindow(8000)}
 Player attempted: "${playerText}" (${intent?.narration_hint || ''})
@@ -7577,6 +7760,12 @@ Narrate the result briefly, grounded in this location and the story's current be
             relForNote.statusReactionNotes = null;
             relForNote.statusReactionNote = null;
         }
+        // Secret area notes SHE is privy to — hers alone, injected only for
+        // her own generation (the shared status block carries the public ones).
+        const areaSecrets = secretAreaNotesFor(npcName);
+        if (areaSecrets.length) {
+            context.setExtensionPrompt(AREANOTE_PROMPT_KEY, `[${npcName} KNOWS this about this place — NOT common knowledge; others present may not know it, and she reveals it only as she herself would: ${areaSecrets.join(' · ')}]`, 1, 0);
+        }
         const preReplyLen = (getCtx().chat || []).length;
         const doneReply = perfStage(`reply:${npcName}`);
         try {
@@ -7589,6 +7778,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             if (charmNote) context.setExtensionPrompt(CHARM_PROMPT_KEY, '', 1, 0);
             if (whereNote) context.setExtensionPrompt(WHEREABOUTS_PROMPT_KEY, '', 1, 0);
             if (statusNote) context.setExtensionPrompt(STATUSREACT_PROMPT_KEY, '', 1, 0);
+            if (areaSecrets.length) context.setExtensionPrompt(AREANOTE_PROMPT_KEY, '', 1, 0);
             noteSeen(npcName);                                                         // she has now seen him this moment
             savePlayer();
         }
@@ -8060,6 +8250,19 @@ Narrate the result briefly, grounded in this location and the story's current be
         statuses: (target) => ((!target || target === 'player') ? getPlayerRpgData()?.customEffects : getRelationship(target).customEffects) || [],
         statusNote: (n) => renderStatusReactionNotes(getRelationship(n)),
         eventTeleport: (d) => doEventTeleport(d),
+        areaNotes: (loc) => areaNotesAt(loc || currentGameState.currentLocation),
+        areaNoteAdd: (spec, loc) => {
+            const l = loc || currentGameState.currentLocation;
+            currentGameState.areaNotes = currentGameState.areaNotes || {};
+            const list = currentGameState.areaNotes[l] = currentGameState.areaNotes[l] || [];
+            list.push({ id: `an-${Date.now().toString(36)}-${list.length}`, text: spec?.text || '', secret: !!spec?.secret, privy: spec?.privy || [] });
+            saveCurrentState(); projectPlayerStatus();
+            return list;
+        },
+        areaNoteClear: (loc) => { const l = loc || currentGameState.currentLocation; if (currentGameState.areaNotes) delete currentGameState.areaNotes[l]; saveCurrentState(); projectPlayerStatus(); },
+        areaSecretsFor: (viewer, loc) => secretAreaNotesFor(viewer, loc || currentGameState.currentLocation),
+        gmAreaLine: () => gmAreaNotesLine(),
+        analyzerAreaNotes: () => areaNotesForAnalyzer(),
         adoptCast: (worldId, charName) => {   // headless adoption (no form UI): castData + rpg block, world-ready
             const world = authoredWorlds()[worldId]; const char = getCtx().characters.find(c => c.name === charName);
             if (!world || !char) return null;
@@ -8093,6 +8296,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         hurt: (target, amt) => (target && target !== 'player') ? spendNpcStamina(target, amt || 1) : spendStamina(amt || 1),
         examineSelf: () => examineSelf(),
         examineNpc: (n) => examineNpc(n),
+        look: () => lookCommand({}, ''),
         setAffection: (n, v) => { const r = getRelationship(n); r.affection = Math.max(0, Math.min(10, v)); savePlayer(); return r.affection; },
         setArousal: (n, v) => { const a = setNpcArousalRaw(n, v); savePlayer(); return a; },
         npcEff: (n) => ({ aff: getNpcAffection(n), aro: getNpcArousal(n), staMax: npcMaxStamina(n), sta: getRelationship(n).npcStamina }),

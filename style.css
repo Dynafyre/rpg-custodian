@@ -119,6 +119,36 @@
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* Larger tap targets for the travel destinations */
+.rpg-item-big {
+    padding: 14px 14px;
+    font-size: 15px;
+}
+
+/* Area-note editor form */
+#rpg-areanote-form { min-width: 280px; }
+#rpg-areanote-form .an-label {
+    display: flex; flex-direction: column; gap: 3px;
+    font-size: 13px; opacity: 0.95; padding: 6px 8px;
+}
+#rpg-areanote-form textarea {
+    width: 100%; box-sizing: border-box; resize: vertical;
+}
+#rpg-areanote-form .rpg-toggle { margin: 4px 8px; }
+#an-privy { padding: 2px 8px 6px; }
+.an-privy-title { font-size: 12px; color: #a9b3c6; margin-bottom: 4px; }
+#an-privy-list {
+    max-height: 180px; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 2px;
+}
+.an-privy-row {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 13px; cursor: pointer; padding: 3px 2px;
+}
+#rpg-areanote-form .an-buttons {
+    display: flex; gap: 6px; justify-content: flex-end; padding: 6px 8px 8px;
+}
+
 /* Shared popup (RPG menu, shop, inventory, quests) */
 .rpg-popup {
     position: fixed;
