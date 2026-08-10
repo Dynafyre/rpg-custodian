@@ -1934,7 +1934,9 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             items.push({ icon: '👀', label: 'Look', action: () => openLookPopup() });
             {
                 const nFx = playerStatusesOnly().length + (isCrystalCursed('player') ? 1 : 0);
-                items.push({ icon: '🎒', label: `Items & Statuses${getGold() || nFx ? ` (${[getGold() ? `${getGold()}g` : '', nFx ? `${nFx} fx` : ''].filter(Boolean).join(' · ')})` : ''}`, action: () => openInventory() });
+                const nQ = playerObjectives().length;
+                const counts = [getGold() ? `${getGold()}g` : '', nQ ? `${nQ} quest${nQ > 1 ? 's' : ''}` : '', nFx ? `${nFx} fx` : ''].filter(Boolean).join(' · ');
+                items.push({ icon: '🎒', label: `Items & Statuses${counts ? ` (${counts})` : ''}`, action: () => openInventory() });
             }
             if ((currentGameState.party || []).length || partyJoinable().length) {
                 const n = (currentGameState.party || []).length;
@@ -5467,8 +5469,22 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         // Gold sits at the top of the pouch as its own line.
         items.unshift({ icon: '🪙', label: `${getGold()} gold`, sub: 'coin purse', action: () => {} });
         if (items.length === 1) items.push({ icon: '—', label: '(no other items)', action: () => {} });
-        // Active statuses live here too (Dyna 2026-08-09: one place to check
-        // yourself) — read-only rows; quests/objectives stay on the sheet.
+        // Quests & objectives and active statuses live here too (Dyna
+        // 2026-08-09: one place to check yourself — and the quests are the
+        // part she values most, so they come before the body's condition).
+        const objectives = playerObjectives();
+        if (objectives.length) {
+            items.push({ head: 'Quests & objectives' });
+            for (const e of objectives) {
+                const rw = rewardLabel(e.reward);
+                items.push({
+                    icon: effectIcon(e),
+                    label: `${e.name}${statusModString(e.mods)}`,
+                    sub: `${e.endCondition || 'ongoing'}${rw ? ` · reward: ${rw}` : ''}`,
+                    action: () => {},
+                });
+            }
+        }
         items.push({ head: 'Active statuses' });
         const statuses = playerStatusesOnly();
         for (const e of statuses) {

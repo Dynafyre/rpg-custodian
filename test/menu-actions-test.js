@@ -106,13 +106,20 @@ try {
 
   // ── Items & Statuses popup ──
   await D(() => window.rpgCustodianDebug.buff('player', 'charm', 1, 'Test Elixir'));
+  await D(() => window.rpgCustodianDebug.addObjective({ name: 'Find the lost cat', end_condition: 'the cat is returned to Marta', reward: { gold: 5 } }));
   await openMenu();
   check('menu row renamed to Items & Statuses', (await menuRows()).some(r => r.includes('Items & Statuses')));
+  check('menu row counts the quest', (await menuRows()).some(r => r.includes('1 quest')));
   await clickMenuRow('Items & Statuses'); await wait(400);
   check('popup titled Items & Statuses', (await D(() => document.querySelector('#rpg-action-popup .rpg-popup-title')?.textContent || '')).includes('Items & Statuses'));
+  check('Quests & objectives heading shown', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-item-head')].some(h => h.textContent.includes('Quests & objectives'))));
+  check('quest row shows condition and reward', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].some(r => r.textContent.includes('Find the lost cat') && r.textContent.includes('returned to Marta') && r.textContent.includes('5 gold'))));
+  check('quests come before statuses', await D(() => { const heads = [...document.querySelectorAll('#rpg-action-popup .rpg-item-head')].map(h => h.textContent); return heads.indexOf('Quests & objectives') < heads.indexOf('Active statuses'); }));
   check('Active statuses heading shown', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-item-head')].some(h => h.textContent.includes('Active statuses'))));
   check('status row shows the buff with its mods', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].some(r => r.textContent.includes('Test Elixir') && r.textContent.includes('+1 charm'))));
+  check('quest row precedes the status row', await D(() => { const rows = [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].map(r => r.textContent); return rows.findIndex(t => t.includes('lost cat')) < rows.findIndex(t => t.includes('Test Elixir')); }));
   await D(() => window.rpgCustodianDebug.removeStatus('player', 'Test Elixir'));
+  await D(() => window.rpgCustodianDebug.removeStatus('player', 'Find the lost cat'));
   await openMenu();
   await clickMenuRow('Items & Statuses'); await wait(400);
   check('unafflicted placeholder when no statuses', await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].some(r => r.textContent.includes('unafflicted'))));
