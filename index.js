@@ -5330,18 +5330,14 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 const pb = pregnancyBand(npc.name, 'third');
                 if (pb) d += ` HER PREGNANCY — she is pregnant with ${pb.countWord} of his, ${pb.stage}, and it is progressing as follows: ${pb.band}`;
             }
-            // Cycle extremes only (peak / anti-peak), and only when not already
-            // carrying. Deliberately terse and unflavored: a plain fact she
-            // knows, small enough that she won't fixate on it unprompted —
-            // each character flavors it her own way IF it comes up.
-            if (!(rel.pregnancies > 0)) {
-                const step = cycleStep(npc.name);
-                const guarded = getNpcAffection(npc.name) <= 4;
-                if (step === 4) d += guarded
-                    ? ` Today happens to be the peak of her fertility cycle — something she'd keep to herself around him.`
-                    : ` Today happens to be the peak of her fertility cycle.`;
-                else if (step === 0) d += ` Today is her unfertile "safe day."`;
-            }
+            // Her cycle, as her BODY tells it (not when already carrying).
+            // Graded flavor replaced the old terse two-line version (Dyna
+            // 2026-08-09: even at 9/10 affection "she seemed to have no idea"
+            // — one dry sentence lost the attention war in a big status
+            // block, and 6 of 8 days said nothing at all). Affection gates
+            // WILLINGNESS to share, never knowledge: she always knows her
+            // own body.
+            if (!(rel.pregnancies > 0)) d += cycleAwarenessLine(npc.name);
             // What her timetable has her doing at this very hour, so she can
             // answer for herself ("Oh, young master! I was just folding laundry!").
             const doing = npcSlotFor(npc).note;
@@ -5883,6 +5879,29 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     function cycleStep(npcName, day = currentGameState.dayCount) {
         const npc = (currentGameState.npcRoster || []).find(n => n.name === npcName) || { name: npcName };
         return (cycleSeedOf(npc) + Math.max(1, day || 1) - 1) % MOON_CYCLE.length;
+    }
+    /**
+     * What she can FEEL of her own cycle — body-first flavor for her
+     * disposition line, so "could you catch?" gets an honest, in-character
+     * answer. Graded: outright knowledge + unmistakable signs at the two
+     * extremes (peak / dark-moon ebb), softer signs on the shoulder days,
+     * silence through the unremarkable mid-cycle quarters. Low affection
+     * gates whether she VOLUNTEERS it, never whether she knows it.
+     */
+    function cycleAwarenessLine(npcName) {
+        const step = cycleStep(npcName);
+        const share = getNpcAffection(npcName) <= 4
+            ? ` She would not volunteer any of this to him unprompted — but it is her own body and she KNOWS it; asked directly, she may admit it plainly or deflect, as suits her character, never claim ignorance.`
+            : '';
+        switch (step) {
+            case 4: return ` HER CYCLE — full-moon PEAK: she is at the height of her fertility TODAY and knows it outright. Her body announces it: a deep warmth radiating off her skin, a rosy flush low across her belly, a heady sweetness to her scent that hangs close about her — she feels ripe, and anyone near enough can feel the heat coming off her.${share}`;
+            case 3: return ` HER CYCLE — nearing her fertile peak (tomorrow): her body is warming toward it — skin running hot, the first hint of a flush low on her belly, her scent just beginning to sweeten. She can feel her most fertile day coming on.${share}`;
+            case 5: return ` HER CYCLE — just past her fertile peak (yesterday): the heat is still on her — skin warm, the low flush only starting to fade, her scent still sweet. She knows she is barely past her most fertile day and could well yet catch.${share}`;
+            case 0: return ` HER CYCLE — dark-moon EBB: today is her unfertile "safe day" and she knows it outright — menstrual cramps make it unmistakable, a dull dragging ache low in her belly that has her craving warmth and rest. She cannot conceive today, and she knows it.${share}`;
+            case 7: return ` HER CYCLE — sliding into her ebb (her safe day is tomorrow): the first cramping twinges have started, a heaviness settling low in her belly. She can feel her unfertile days coming on.${share}`;
+            case 1: return ` HER CYCLE — tail of her ebb: the last cramping twinges are fading, a faint low ache and a tiredness lingering. She knows she is still at the infertile end of her cycle.${share}`;
+            default: return '';   // quarters (steps 2 & 6): unremarkable days — her cycle says nothing worth a line
+        }
     }
     function cyclePhase(npcName) { return MOON_CYCLE[cycleStep(npcName)]; }
     function fertilityPercent(npcName) {
@@ -8245,6 +8264,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         state: () => currentGameState,
         weekday: (day) => weekdayName(day),
         cycle: (n, day) => ({ step: cycleStep(n, day), ...MOON_CYCLE[cycleStep(n, day)], fert: fertilityPercent(n) }),
+        cycleLine: (n) => cycleAwarenessLine(n),
         gold: () => getGold(),
         effectiveStat: (s) => effectiveStat(s),
         analyze: (t) => analyzeIntent(t),                       // DC calibration probes
