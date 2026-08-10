@@ -42,22 +42,22 @@ try {
   await D(() => { const r = window.rpgCustodianDebug.rel('Marta'); r.statusReactionNotes = null; r.statusReactionNote = null; });   // drop the test status's own reaction note
   await D(() => window.rpgCustodianDebug.heal('player', 'full'));
 
-  // ── 2) cervix_press: forced MISS (her stamina 10 → DC 16; his effective 0 → max 15) ──
+  // ── 2) cervix_press: forced MISS (her stamina 10 → DC 18; his effective 0 → max 15) ──
   const eff = await D(() => { const c = window.rpgCustodianDebug.rollCheck('ruggedness', 8); return c.eff; });
   await D((amt) => window.rpgCustodianDebug.buff('player', 'ruggedness', amt, 'Test Sap'), 0 - eff);
   await D(() => { window.rpgCustodianDebug.rel('Marta').npcStamina = 10; });
   before = await chatLen();
   await D(() => window.rpgCustodianDebug.cervixPress('Marta')); await wait(300);
   let t = await tail(before);
-  check('miss: her cervix holds', t.includes('holds fast'), t.slice(0, 120));
-  check('miss: DC shows her stamina stiffening it', t.includes('DC 16') || t.includes('her 10 Stamina'));
+  check('miss: her cervix holds', /holds fast|clamps shut/.test(t), t.slice(0, 120));
+  check('miss: DC shows her stamina stiffening it', t.includes('DC 18') && t.includes('her 10 Stamina'));
   check('miss: no status landed', !(await D(() => window.rpgCustodianDebug.statuses('Marta'))).some(s => s.name === 'Sanctuary Breached'));
   let note = await D(() => window.rpgCustodianDebug.statusNote('Marta'));
-  check('miss: her reply note plays the unyielding sphincter', /unyielding/.test(note) && !/fail/i.test(note), note.slice(0, 100));
+  check('miss: her reply note plays the sealed cervix, never failure', /unyielding|clamped down/.test(note) && !/fail/i.test(note), note.slice(0, 100));
   await D(() => { const r = window.rpgCustodianDebug.rel('Marta'); r.statusReactionNotes = null; r.statusReactionNote = null; });
   await D(() => window.rpgCustodianDebug.removeStatus('player', 'Test Sap'));
 
-  // ── forced SUCCESS (her stamina 1 → DC 7; his effective 12 → min 11) ──
+  // ── forced SUCCESS (her stamina 1 → DC 9; his effective 12 → min 11; crit or plain both possible) ──
   await D((amt) => window.rpgCustodianDebug.buff('player', 'ruggedness', amt, 'Test Might'), 12 - eff);
   await D(() => { window.rpgCustodianDebug.rel('Marta').npcStamina = 1; });
   const fertBefore = await D(() => window.rpgCustodianDebug.fertilityOf('Marta'));

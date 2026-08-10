@@ -6293,7 +6293,11 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // is gated out of this result entirely (orchestration skips narration when
     // the verb fired) — her reply IS the outcome. Mechanically inert while she
     // already bears the status: her womb cannot be opened twice.
-    const CERVIX_PRESS_DC_BASE = 6;
+    // Base 8 (raised from 6, Dyna 2026-08-10 — the odds table said 6 was far
+    // too easy): a fresh hero (rug 3) vs a woman with full fight in her
+    // (4-5 Stamina) runs 17-28%, opening to 58-83% once she is worn down —
+    // wearing her down IS the mechanic.
+    const CERVIX_PRESS_DC_BASE = 8;
     function resolveCervixPress(npcName) {
         const name = resolveNpcName(npcName) || npcName;
         if (!name) return;
@@ -6306,9 +6310,20 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const line = skillCheckLine(c, `Her last gate — ${name}'s body resists (DC ${CERVIX_PRESS_DC_BASE} + her ${herStamina} Stamina)`);
         if (c.success) {
             addCustomStatus(name, { preset: 'sanctuary_breached' }, true);
-            queueStatusReaction(name, `His cockhead has JUST forced its way through her cervix — the tight ring gave way and he is pressed into the mouth of her womb itself. The breach wrings a climax out of her ON THE SPOT: in her reply she comes, hard and involuntary, around the intrusion — her body's own answer to being opened where nothing has reached before.`);
+            if (c.tier === 'critical') {
+                queueStatusReaction(name, `His cockhead has JUST punched clean through her cervix in one motion — no grudging yield: her innermost ring gave way all at once and her womb takes the head of him entire. The shock detonates a climax through her THIS INSTANT: in her reply she comes harder than she has words for, her deepest muscle spasming around the intrusion as if to keep it.`);
+                sendGhostMessage(`${line}\n🌟 Her cervix gives way ALL AT ONCE — it does not yield so much as open for him. **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock detonates a climax through her.`);
+            } else {
+                queueStatusReaction(name, `His cockhead has JUST forced its way through her cervix — the tight ring gave way and he is pressed into the mouth of her womb itself. The breach wrings a climax out of her ON THE SPOT: in her reply she comes, hard and involuntary, around the intrusion — her body's own answer to being opened where nothing has reached before.`);
+                sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her.`);
+            }
             spendNpcStamina(name, 1);   // that climax costs her what any climax costs
-            sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her.`);
+        } else if (c.tier === 'mixed') {
+            queueStatusReaction(name, `He is bearing down on the very mouth of her womb and she can FEEL it almost give — her cervix flexing, dimpling inward under him, a terrifying, thrilling almost. It holds, this time, the tight ring quivering against the pressure. In her reply she responds to that razor's-edge sensation, whatever it stirs in her.`);
+            sendGhostMessage(`${line}\n🚪 Her cervix holds — barely: it flexes and dimples inward around him, a hair from giving.`);
+        } else if (c.tier === 'fumble') {
+            queueStatusReaction(name, `He drove for the mouth of her womb and her body slammed its door: her cervix clamped down HARD, a guarded, jarring clench — sensitive, too deep, too much all at once. In her reply she reacts to that sharp deep jolt however her nature takes it.`);
+            sendGhostMessage(`${line}\n🚪 Her cervix clamps shut and holds — her body answers the forcing with a hard, guarding clench.`);
         } else {
             queueStatusReaction(name, `He is grinding hard against the very mouth of her womb — and it HOLDS: her tight, unyielding cervical sphincter stays sealed, a blunt, bruising pressure on her innermost gate. In her reply she responds to that exact sensation — the deep grinding press against a door that has not opened, the ache and fullness of it, whatever it stirs in her.`);
             sendGhostMessage(`${line}\n🚪 Her cervix holds fast — tight and unyielding${herStamina > 2 ? ' (her body still has too much fight in it)' : ''}.`);
