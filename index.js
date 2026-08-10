@@ -156,6 +156,17 @@ jQuery(async () => {
         // Witness filtering — an NPC is only ever prompted with what she saw.
         initWitnessFiltering();
 
+        // On page load / chat switch, ST scrolls the chat to the bottom before
+        // all late content has landed (avatars, images, a long RPG history) —
+        // the height then keeps growing and the viewport is stranded far from
+        // the end, so every reload needed a hand-scroll. Pin the chat to the
+        // bottom until its height stops changing; the user touching the chat
+        // cancels the pin instantly.
+        pinChatToBottom();
+        if (context.eventTypes.CHAT_CHANGED) {
+            context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => pinChatToBottom());
+        }
+
         // Drive the Intent Analyzer off every player message
         context.eventSource.on(context.eventTypes.MESSAGE_SENT, onUserMessage);
         // …and catch character replies vanilla ST produced on its own (continue
@@ -355,6 +366,31 @@ jQuery(async () => {
                 emoji: '🗺️'
             }];
         }
+    }
+
+    /**
+     * Keep the chat pinned to its bottom while late-loading content is still
+     * growing it (page load, chat switch). Any user interaction with the chat
+     * — wheel, touch, grabbing the scrollbar — cancels the pin immediately, so
+     * it can never fight a deliberate scroll-up.
+     */
+    function pinChatToBottom(durationMs = 5000) {
+        const chat = document.getElementById('chat');
+        if (!chat) return;
+        let cancelled = false;
+        const cancel = () => { cancelled = true; };
+        for (const ev of ['wheel', 'touchstart', 'pointerdown']) {
+            chat.addEventListener(ev, cancel, { once: true, passive: true });
+        }
+        const t0 = Date.now();
+        let lastH = -1;
+        const tick = () => {
+            if (cancelled) return;
+            const h = chat.scrollHeight;
+            if (h !== lastH) { lastH = h; chat.scrollTop = h; }
+            if (Date.now() - t0 < durationMs) setTimeout(tick, 150);
+        };
+        tick();
     }
 
     /**
@@ -8335,6 +8371,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         examineSelf: () => examineSelf(),
         examineNpc: (n) => examineNpc(n),
         look: () => lookCommand({}, ''),
+        pinChat: (ms) => pinChatToBottom(ms),
         setAffection: (n, v) => { const r = getRelationship(n); r.affection = Math.max(0, Math.min(10, v)); savePlayer(); return r.affection; },
         setArousal: (n, v) => { const a = setNpcArousalRaw(n, v); savePlayer(); return a; },
         npcEff: (n) => ({ aff: getNpcAffection(n), aro: getNpcArousal(n), staMax: npcMaxStamina(n), sta: getRelationship(n).npcStamina }),
