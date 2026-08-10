@@ -126,6 +126,15 @@
 }
 .pe-preset-title { font-size: 12px; color: #a9b3c6; }
 
+/* Reference text under the chips: what each premade actually does */
+.pe-preset-ref {
+    padding: 0 8px 6px;
+    font-size: 11px;
+    color: #a9b3c6;
+    line-height: 1.45;
+}
+.pe-preset-ref-row b { color: #cfe0ff; font-weight: 600; }
+
 /* Non-clickable section heading inside a popup (e.g. Active statuses) */
 .rpg-item-head {
     padding: 6px 12px 2px;

@@ -55,6 +55,9 @@ try {
   const chips = await D(() => [...document.querySelectorAll('#pe-presets .rpg-map-btn')].map(b => b.textContent.trim()));
   check('player chips: Pent Up + Crystal Curse', chips.includes('Pent Up') && chips.some(c => c.includes('Crystal Curse')), JSON.stringify(chips));
   check('player chips exclude her-side presets', !chips.includes('Cum Plugged') && !chips.includes('Stimulated Ovaries'));
+  const ref = await D(() => [...document.querySelectorAll('#rpg-player-overlay .pe-preset-ref-row')].map(r => r.textContent));
+  check('reference list describes the player-side premades', ref.some(t => t.includes('Pent Up') && t.includes('unspent too long')) && ref.some(t => t.includes('Crystal Curse') && t.includes('soulgem')), JSON.stringify(ref.map(t => t.slice(0, 40))));
+  check('reference list is side-filtered too', !ref.some(t => t.includes('Cum Plugged')));
   await D(() => { [...document.querySelectorAll('#pe-presets .rpg-map-btn')].find(b => b.textContent.trim() === 'Pent Up')?.click(); }); await wait(300);
   check('chip applies Pent Up', (await D(() => window.rpgCustodianDebug.statuses('player'))).some(s => s.name === 'Pent Up'));
   await D(() => { [...document.querySelectorAll('#pe-presets .rpg-map-btn')].find(b => b.textContent.includes('Crystal Curse'))?.click(); }); await wait(300);

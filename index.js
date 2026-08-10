@@ -815,7 +815,22 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             projectPlayerStatus();
         });
         row.append(cc);
-        return row;
+        // What each premade does — reference text built from the same records
+        // the chips apply, so it can never drift from the truth.
+        const ref = $('<div class="pe-preset-ref"></div>');
+        for (const [, p] of Object.entries(PRESET_STATUSES)) {
+            if (p.side && p.side !== (forNpc ? 'npc' : 'player')) continue;
+            const ends = p.endCondition ? `ends: ${p.endCondition}` : p.duration ? `lasts ${p.duration} time period${p.duration > 1 ? 's' : ''}` : 'permanent';
+            const line = $('<div class="pe-preset-ref-row"></div>');
+            line.append($('<b></b>').text(p.name), document.createTextNode(`${statusModString(p.mods)} — ${p.desc} (${ends})`));
+            ref.append(line);
+        }
+        {
+            const line = $('<div class="pe-preset-ref-row"></div>');
+            line.append($('<b></b>').text('💠 Crystal Curse'), document.createTextNode(' — every child the bearer conceives or sires is born an inert soulgem (until lifted by magic; the chip toggles it)'));
+            ref.append(line);
+        }
+        return row.add(ref);
     }
 
     /** Live NPC effects panel — sandbox forge/remove on a cast member.
