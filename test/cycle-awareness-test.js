@@ -35,7 +35,7 @@ try {
   l = await lineAtStep(npc, 3);
   check('day before: fertile window opening', l.includes('fertile window has opened') && l.includes('sweeten'));
   l = await lineAtStep(npc, 5);
-  check('day after: window closing, could yet catch', l.includes('ovulated yesterday') && l.includes('catch'));
+  check('day after: window closing, could still get pregnant', l.includes('ovulated yesterday') && l.includes('get pregnant'));
   l = await lineAtStep(npc, 0);
   check('period day: outright, with cramps', l.includes('period has come') && l.includes('cramps') && l.includes('cannot conceive'));
   l = await lineAtStep(npc, 7);
@@ -51,9 +51,11 @@ try {
   let leaks = [];
   for (let st = 0; st < 8; st++) {
     const line = await lineAtStep(npc, st);
-    if (/\b(moon|peak|ebb)\b|🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘|%/i.test(line)) leaks.push(`step ${st}: ${line.slice(0, 60)}`);
+    // Game terms, register meta-instructions ("speaks as a woman"), and
+    // vocabulary nobody uses ("catch" for conceiving) — all leak into dialogue.
+    if (/\b(moon|peak|ebb|catch)\b|speaks as a woman|🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘|%/i.test(line)) leaks.push(`step ${st}: ${line.slice(0, 60)}`);
   }
-  check('no moons/peak/ebb/emoji/percent on any NPC-facing line', leaks.length === 0, leaks.join(' | '));
+  check('no game terms, register meta, or "catch" on any NPC-facing line', leaks.length === 0, leaks.join(' | '));
 
   // Guarded (affection ≤4): she still KNOWS — the gate is on volunteering.
   await D((n) => window.rpgCustodianDebug.setAffection(n, 2), npc);

@@ -5882,18 +5882,21 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
     /**
      * What she can FEEL of her own cycle — body-first flavor for her
-     * disposition line, so "could you catch?" gets an honest, in-character
-     * answer. Graded: outright knowledge + unmistakable signs at the two
-     * extremes, softer signs on the shoulder days, silence through the
-     * unremarkable mid-cycle days. Low affection gates whether she
-     * VOLUNTEERS it, never whether she knows it.
+     * disposition line, so asking about her fertility gets an honest,
+     * in-character answer. Graded: outright knowledge + unmistakable signs
+     * at the two extremes, softer signs on the shoulder days, silence
+     * through the unremarkable mid-cycle days. Low affection gates whether
+     * she VOLUNTEERS it, never whether she knows it.
      *
      * GROUNDED LANGUAGE ONLY (Dyna 2026-08-10): a woman talks about her
-     * period, her fertile window, ovulating — an NPC quoted our game
-     * abstraction verbatim ("It's PEAK today. Like, full-moon,"), so the
-     * moons, "peak"/"ebb", emoji, and percentages must NEVER appear on any
-     * NPC-facing surface. They stay in the player's Look readout and the
-     * editor. Words leak: whatever this function emits, she will say.
+     * period, her fertile window, ovulating, getting pregnant — an NPC
+     * quoted our game abstraction verbatim ("It's PEAK today. Like,
+     * full-moon,"), so the moons, "peak"/"ebb", emoji, and percentages must
+     * NEVER appear on any NPC-facing surface (they stay in the player's
+     * Look readout and the editor). And no META-instructions about HOW to
+     * speak ("she speaks as a woman does" got referenced like everything
+     * else in context) — just WRITE the information in her vocabulary.
+     * Words leak: whatever this function emits, she will say.
      */
     function cycleAwarenessLine(npcName) {
         const step = cycleStep(npcName);
@@ -5901,9 +5904,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             ? ` She would not volunteer any of this to him unprompted — but it is her own body and she KNOWS it; asked directly, she may admit it plainly or deflect, as suits her character, never claim ignorance.`
             : '';
         switch (step) {
-            case 4: return ` HER CYCLE — she is OVULATING today, the most fertile day of her whole cycle, and she knows her own body well enough to be sure of it: a deep warmth radiating off her skin, a rosy flush low across her belly, a heady sweetness to her scent that hangs close about her — she feels ripe, and anyone near enough can feel the heat coming off her. If she speaks of it, she speaks as a woman does — her fertile day, her window, "I could catch today."${share}`;
+            case 4: return ` HER CYCLE — she is OVULATING today, the most fertile day of her whole cycle, and she knows her own body well enough to be sure of it: a deep warmth radiating off her skin, a rosy flush low across her belly, a heady sweetness to her scent that hangs close about her — anyone near enough can feel the heat coming off her. She knows that if she lay with a man today, she would very likely get pregnant.${share}`;
             case 3: return ` HER CYCLE — her fertile window has opened; she reckons she will ovulate tomorrow. Her body is warming toward it — skin running hot, the first hint of a flush low on her belly, her scent just beginning to sweeten.${share}`;
-            case 5: return ` HER CYCLE — she ovulated yesterday and her fertile window is only now closing: the heat is still on her — skin warm, the low flush slow to fade, her scent still sweet. She knows she could well yet catch.${share}`;
+            case 5: return ` HER CYCLE — she ovulated yesterday and her fertile window is only now closing: the heat is still on her — skin warm, the low flush slow to fade, her scent still sweet. She knows she could still get pregnant.${share}`;
             case 0: return ` HER CYCLE — her period has come today: cramps make it unmistakable, a dull dragging ache low in her belly that has her craving warmth and rest. A true safe day — she cannot conceive right now, and she knows it.${share}`;
             case 7: return ` HER CYCLE — her period is due tomorrow: the first cramping twinges have started, a heaviness settling low in her belly. She can feel it coming on.${share}`;
             case 1: return ` HER CYCLE — her period is just winding down: the last cramping twinges fading, a faint low ache and a tiredness lingering. She knows she is still in the infertile stretch of her cycle.${share}`;

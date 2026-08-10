@@ -211,6 +211,15 @@ There is a real, working end-to-end test rig. Use it; do not hand-verify.
   situation arriving via her reply and via the player asserting it, not just via
   his action.** A scene-watching rule needs two guards or it spams: never re-emit
   what is already on her record, and judge the state as it stands NOW.
+- **Anything in context gets referenced — including instructions ABOUT the
+  words.** An NPC context line said her cycle was at "full-moon PEAK"; she
+  said "It's PEAK today. Like, full-moon," out loud. The fix was rewritten
+  with a register instruction — "she speaks as a woman does" — and that
+  phrase is exactly as quotable as the moons were. The rule (Dyna,
+  2026-08-10): never describe the vocabulary a character should use; WRITE
+  the information in that vocabulary and nothing else. Game abstractions
+  (moons, tiers, percentages) stay on player-facing ghost surfaces, which
+  are hidden from AI context.
 - **Single-sample NL checks cannot attribute a regression.** The test backend is a
   cheap non-deterministic model; a phrasing that "passed 4/4" may be a coin flip.
   `test/preset-nl-rate.js` measures a rate over N runs — take a baseline (stash the
