@@ -7859,6 +7859,30 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
         }).join(', ');
     }
 
+    /**
+     * Who will answer the player's line — ONE resolver, used both by the
+     * reply loop and by the GM narration gate (they disagreed once, and the
+     * GM narrated fluff over a woman who was about to answer a charm ask).
+     * Priority: a directly-named NPC (the analyzer's single target_npc guess
+     * is unreliable with 2+ present) → the analyzer's target resolved through
+     * the same alias rules → whoever was already holding the conversation
+     * (mid-conversation you stop using her name; she must still be here and
+     * awake to take it).
+     */
+    function resolveReplyTargets(playerText, intent, dismissed = [], replied = []) {
+        const addressed = detectAddressedNpcs(playerText);
+        const analyzerTarget = resolveNpcName(intent?.target_npc);
+        const stillHere = (n) => n && getNpcsAt(currentGameState.currentLocation).some(x => x.name === n)
+            && !getRelationship(n).npcUnconscious;
+        const holdingTheFloor = stillHere(currentGameState.lastReplier) ? currentGameState.lastReplier : null;
+        const targets = (addressed.length ? addressed
+            : analyzerTarget ? [analyzerTarget]
+            : holdingTheFloor ? [holdingTheFloor] : [])
+            .filter(n => !dismissed.includes(n))    // a dismissed companion already said her goodbye
+            .filter(n => !replied.includes(n));     // …as has anyone who answered before we left
+        return { addressed, targets };
+    }
+
     async function narrateResult(playerText, intent, check) {
         const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences, narrate the RESULT of the player's action from the mechanical outcome given. Keep it grounded in WHERE the scene is happening (the stated location) — do not drift the action to another place. Narrate only the world and the player's action/outcome. You NEVER give a named NPC dialogue, expressions, gestures, reactions, or movements — not one spoken word, not a frozen smirk, not a turn away. Each NPC responds for HERSELF after you; your narration must END before any NPC reacts, covering only the player's side and the ambient scene. If you need to reason first, do it inside <think></think> tags; the narration itself is pure prose. Be concise.`;
         let outcome;
@@ -8137,7 +8161,13 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // scene: the check line + interpretation note + her own reply
                 // carry the outcome. GM narration here was speaking her
                 // reactions for her (voice-stealing) — skip it entirely.
-                const charmExchange = intent?.check?.stat === 'charm' && detectAddressedNpcs(playerText).length > 0;
+                // Judged by WHO WILL ACTUALLY REPLY, not by whether he typed
+                // her name: mid-conversation asks drop the name, and the old
+                // detectAddressedNpcs-only gate let the GM paint the steam
+                // curling off a teacup while she was already drawing breath
+                // to answer (live, 2026-08-10).
+                const charmExchange = intent?.check?.stat === 'charm'
+                    && resolveReplyTargets(playerText, intent, dismissedThisTurn, repliedThisTurn).targets.length > 0;
                 // The GM narrates RESOLVED GAME ACTIONS — nothing else. Asked to
                 // narrate a turn that resolved nothing, it has no outcome to
                 // report and paints the room instead ("the scarred prep island
@@ -8163,25 +8193,9 @@ Narrate the result briefly, grounded in this location and the story's current be
             }
 
             // React. Who replies is decided DETERMINISTICALLY from the player's
-            // words (the analyzer's target_npc guess is unreliable with 2+ present):
-            // a directly-named NPC, or the whole group when addressed collectively.
-            const addressed = detectAddressedNpcs(playerText);
-            // The analyzer reports whoever it thinks was addressed; resolve that
-            // through the same alias rules so a short name still finds her.
-            const analyzerTarget = resolveNpcName(intent?.target_npc);
-            // Last resort: whoever he was already talking to. Mid-conversation
-            // you stop using her name, and an ambiguous call ("Auntie", when
-            // two women answer to it) is far more likely meant for the woman
-            // already speaking than for nobody at all. She must still be here
-            // and awake to take it.
-            const stillHere = (n) => n && getNpcsAt(currentGameState.currentLocation).some(x => x.name === n)
-                && !getRelationship(n).npcUnconscious;
-            const holdingTheFloor = stillHere(currentGameState.lastReplier) ? currentGameState.lastReplier : null;
-            const targets = (addressed.length ? addressed
-                : analyzerTarget ? [analyzerTarget]
-                : holdingTheFloor ? [holdingTheFloor] : [])
-                .filter(n => !dismissedThisTurn.includes(n))    // a dismissed companion already said her goodbye
-                .filter(n => !repliedThisTurn.includes(n));     // …as has anyone who answered before we left
+            // words — same resolver the narration gate consulted, so the GM
+            // can never narrate over someone this resolver says will speak.
+            const { targets } = resolveReplyTargets(playerText, intent, dismissedThisTurn, repliedThisTurn);
             if (targets.length) {
                 // Someone addressed while present still gets to answer even if
                 // the turn has since separated them: silence should never be the
@@ -8433,6 +8447,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         heal: (target, amt) => healStamina(target || 'player', amt),
         eat: () => applySustenance(),
         npcFx: (n) => openNpcEffectsPanel(n),
+        replyTargets: (text, intent) => resolveReplyTargets(text, intent),
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),
