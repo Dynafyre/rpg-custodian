@@ -30,34 +30,42 @@ try {
   await D((n) => window.rpgCustodianDebug.setAffection(n, 9), npc);
 
   let l = await lineAtStep(npc, 4);
-  check('peak: outright, with heat/flush/scent', l.includes('height of her fertility TODAY') && l.includes('warmth') && l.includes('flush low across her belly') && l.includes('scent'), l.slice(0, 90));
-  check('peak: no share-gate at affection 9', !l.includes('would not volunteer'));
+  check('ovulation day: outright, with heat/flush/scent', l.includes('OVULATING today') && l.includes('warmth') && l.includes('flush low across her belly') && l.includes('scent'), l.slice(0, 90));
+  check('ovulation day: no share-gate at affection 9', !l.includes('would not volunteer'));
   l = await lineAtStep(npc, 3);
-  check('day before peak: warming signs', l.includes('nearing her fertile peak') && l.includes('sweeten'));
+  check('day before: fertile window opening', l.includes('fertile window has opened') && l.includes('sweeten'));
   l = await lineAtStep(npc, 5);
-  check('day after peak: heat lingers, could yet catch', l.includes('just past her fertile peak') && l.includes('catch'));
+  check('day after: window closing, could yet catch', l.includes('ovulated yesterday') && l.includes('catch'));
   l = await lineAtStep(npc, 0);
-  check('ebb: outright, with cramps', l.includes('safe day') && l.includes('cramps') && l.includes('cannot conceive'));
+  check('period day: outright, with cramps', l.includes('period has come') && l.includes('cramps') && l.includes('cannot conceive'));
   l = await lineAtStep(npc, 7);
-  check('day before ebb: twinges starting', l.includes('sliding into her ebb') && l.includes('twinges'));
+  check('day before period: twinges starting', l.includes('period is due tomorrow') && l.includes('twinges'));
   l = await lineAtStep(npc, 1);
-  check('day after ebb: twinges fading', l.includes('tail of her ebb') && l.includes('fading'));
+  check('day after period: winding down', l.includes('period is just winding down') && l.includes('fading'));
   l = await lineAtStep(npc, 2);
-  check('mid-cycle quarter says nothing', l === '');
+  check('mid-cycle day says nothing', l === '');
   l = await lineAtStep(npc, 6);
-  check('other quarter says nothing', l === '');
+  check('other mid-cycle day says nothing', l === '');
+
+  // No game abstraction anywhere she can quote it: sweep every step.
+  let leaks = [];
+  for (let st = 0; st < 8; st++) {
+    const line = await lineAtStep(npc, st);
+    if (/\b(moon|peak|ebb)\b|🌑|🌒|🌓|🌔|🌕|🌖|🌗|🌘|%/i.test(line)) leaks.push(`step ${st}: ${line.slice(0, 60)}`);
+  }
+  check('no moons/peak/ebb/emoji/percent on any NPC-facing line', leaks.length === 0, leaks.join(' | '));
 
   // Guarded (affection ≤4): she still KNOWS — the gate is on volunteering.
   await D((n) => window.rpgCustodianDebug.setAffection(n, 2), npc);
   l = await lineAtStep(npc, 4);
-  check('guarded peak: knowledge kept, sharing gated', l.includes('height of her fertility') && l.includes('would not volunteer') && l.includes('never claim ignorance'));
+  check('guarded ovulation: knowledge kept, sharing gated', l.includes('OVULATING today') && l.includes('would not volunteer') && l.includes('never claim ignorance'));
 
   // The line lands in the live status block she actually reads.
   await D((n) => window.rpgCustodianDebug.setAffection(n, 9), npc);
   await lineAtStep(npc, 4);
   await D(() => window.rpgCustodianDebug.teleport('inn')); await wait(600);
   const status = await D(() => window.rpgCustodianDebug.statusText());
-  check('peak line reaches the status block', status.includes('HER CYCLE — full-moon PEAK'));
+  check('ovulation line reaches the status block', status.includes('HER CYCLE — she is OVULATING'));
 
   // Pregnancy silences the cycle talk in the block.
   await D((n) => window.rpgCustodianDebug.setPreg(n, 1, 30), npc);
