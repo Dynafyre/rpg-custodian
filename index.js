@@ -6249,13 +6249,20 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if ((rel.pregnancy_progress || 0) >= FERTILIZATION_LOCK_PCT) return { hits: 0, pct, shots: n, locked: true };
         let hits = 0;
         for (let r = 0; r < n; r++) if (Math.random() * 100 < pct) hits++;
+        let xp = 0;
         if (hits > 0) {
             rel.pregnancies = (rel.pregnancies || 0) + hits;
             if (!rel.pregnancy_progress || rel.pregnancy_progress <= 0) rel.pregnancy_progress = 5; // conception = Zygote
             if (!rel.conceptionKind) rel.conceptionKind = resolveConceptionKind(npcName);  // egg / crystal / live
+            // A confirmed impregnation is an achievement: flat 100 XP each
+            // (Dyna 2026-08-10). Sits HERE so a creampie and a plug tick can
+            // never drift apart on what conceiving pays.
+            xp = 100 * hits;
+            const rd = getPlayerRpgData();
+            if (rd) rd.stats.experience = (rd.stats.experience || 0) + xp;
             savePlayer();
         }
-        return { hits, pct, shots: n };
+        return { hits, pct, shots: n, xp };
     }
 
     /** Cum Plugged: every time step his sealed-in seed gets another go at her
@@ -6269,10 +6276,42 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             if (roll.locked) continue;                       // womb already committed
             if (quiet) continue;                             // advanceTimeBy summarizes
             if (roll.hits > 0) {
-                sendGhostMessage(`🔒 **${name}** is still plugged full of him — ${roll.shots} shot${roll.shots > 1 ? 's' : ''} at ${roll.pct}% → 🌱 **${roll.hits} took**. She now carries **${rel.pregnancies}**.`);
+                sendGhostMessage(`🔒 **${name}** is still plugged full of him — ${roll.shots} shot${roll.shots > 1 ? 's' : ''} at ${roll.pct}% → 🌱 **${roll.hits} took** (✨ +${roll.xp} XP). She now carries **${rel.pregnancies}**.`);
             } else {
                 sendGhostMessage(`🔒 **${name}** is still plugged full of him — ${roll.shots} shot${roll.shots > 1 ? 's' : ''} at ${roll.pct}%, none took this time.`);
             }
+        }
+    }
+
+    // The cervix_press verb: he drives for her innermost gate during vaginal
+    // sex. Ruggedness contest, DC stiffened by HER remaining Stamina — a fresh
+    // woman's body holds its last door; a well-worn one gives. Success: the
+    // Sanctuary Breached preset lands (+10 fertility, 2 periods) and the
+    // breach itself wrings a climax out of her (her orgasm spends her 1
+    // Stamina, same economy as any climax of hers). On a miss her reply plays
+    // the sensation of a tight, unyielding cervix — never "he failed". The GM
+    // is gated out of this result entirely (orchestration skips narration when
+    // the verb fired) — her reply IS the outcome. Mechanically inert while she
+    // already bears the status: her womb cannot be opened twice.
+    const CERVIX_PRESS_DC_BASE = 6;
+    function resolveCervixPress(npcName) {
+        const name = resolveNpcName(npcName) || npcName;
+        if (!name) return;
+        if (npcActiveEffects(name).some(e => e.name === 'Sanctuary Breached')) return;   // already open — nothing left to force
+        const rel = getRelationship(name);
+        const herStamina = Math.max(0, rel.npcStamina ?? npcMaxStamina(name));
+        const dc = CERVIX_PRESS_DC_BASE + herStamina;
+        const c = skillCheck('ruggedness', dc);
+        consumeCheckEffects('ruggedness');   // a one-use ruggedness pre-buff is spent on this trial like any other
+        const line = skillCheckLine(c, `Her last gate — ${name}'s body resists (DC ${CERVIX_PRESS_DC_BASE} + her ${herStamina} Stamina)`);
+        if (c.success) {
+            addCustomStatus(name, { preset: 'sanctuary_breached' }, true);
+            queueStatusReaction(name, `His cockhead has JUST forced its way through her cervix — the tight ring gave way and he is pressed into the mouth of her womb itself. The breach wrings a climax out of her ON THE SPOT: in her reply she comes, hard and involuntary, around the intrusion — her body's own answer to being opened where nothing has reached before.`);
+            spendNpcStamina(name, 1);   // that climax costs her what any climax costs
+            sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her.`);
+        } else {
+            queueStatusReaction(name, `He is grinding hard against the very mouth of her womb — and it HOLDS: her tight, unyielding cervical sphincter stays sealed, a blunt, bruising pressure on her innermost gate. In her reply she responds to that exact sensation — the deep grinding press against a door that has not opened, the ache and fullness of it, whatever it stirs in her.`);
+            sendGhostMessage(`${line}\n🚪 Her cervix holds fast — tight and unyielding${herStamina > 2 ? ' (her body still has too much fight in it)' : ''}.`);
         }
     }
 
@@ -6308,7 +6347,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (conceived && npcName) {
             const rel = getRelationship(npcName);
             const multi = conceived === 1 ? '' : conceived === 2 ? ' (twins!)' : conceived === 3 ? ' (triplets!)' : ` (${conceived} at once!)`;
-            lines.push(`🤰 ${conceived} new fertilization${conceived > 1 ? 's' : ''} this encounter${multi} — ${npcName} now carries **${rel.pregnancies}** total.`);
+            lines.push(`🤰 ${conceived} new fertilization${conceived > 1 ? 's' : ''} this encounter${multi} (✨ +${conceived * 100} XP) — ${npcName} now carries **${rel.pregnancies}** total.`);
         }
         sendGhostMessage(lines.join('\n'));
         return { conceived };
@@ -6662,6 +6701,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             desc: 'He has gone unspent too long — the pressure has him potent and hair-triggered, his seed thick with waiting.',
             mods: [{ stat: 'virility', amount: 1 }],
             endCondition: 'he finds release',
+        },
+        sanctuary_breached: {
+            name: 'Sanctuary Breached', kind: 'status', polarity: 'positive', side: 'npc',
+            desc: 'Her cervix has been forced open and the way to her womb stands claimed — her deepest chamber lies open and defenseless to his seed.',
+            mods: [{ stat: 'fertility', amount: 10 }],
+            duration: 2,
         },
     };
     function resolvePresetStatus(spec) {
@@ -7365,6 +7410,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"adjust_affection","npc":"...","amount":N}  ONLY for an external/mechanical cause acting on her feelings: a charm potion, a love or hate spell, a curse, a magical aura. NEVER for conversation, kindness, flirting, seduction, gifts, or check outcomes — the engine reads her own reactions and moves affection itself.
   {"type":"adjust_arousal","npc":"...","amount":N}  ONLY for an external/physical-mechanical cause: an aphrodisiac, a lust spell, an alchemical heat. NEVER for flirtation, teasing, or foreplay in the scene — the engine reads her reactions and moves arousal itself.
   {"type":"orgasm","actor":"player","npc":"HerName","internal":true/false,"count":N}  the PLAYER'S climax, and ONLY his — it actually happened IN THIS MESSAGE. ALWAYS include "npc" (the partner he is with). count = his climaxes in this action (default 1). Each costs him 1 Stamina. NEVER emit this for a woman, no matter what the player's message claims about her body — a woman's climax is read from HER OWN reply by the engine. Her body is hers to report, not his to declare.
+  {"type":"cervix_press","npc":"HerName"}  during VAGINAL sex, when the PLAYER'S OWN action drives for the deepest point of her — pressing, grinding, or battering against her cervix, forcing himself as deep as her body allows, seeking her womb or uterus, trying to push past or through her innermost gate — emit this ONCE for the attempt. The engine rolls a Ruggedness contest against her body's remaining resistance and decides what her body does: do NOT also emit a check for the press, do NOT decide or narrate whether her cervix yields, and do NOT emit it while she already bears "Sanctuary Breached" (her womb already stands open; the engine ignores repeats regardless). Ordinary deep thrusting with no womb-seeking intent is NOT this.
     HER CLIMAX — read her BODY, not the vocabulary. Prose rarely uses the word: what it shows is an involuntary crisis running through her and then leaving her — muscles clenching and fluttering where he is, a back arching off whatever it was against, thighs locking or legs giving out, toes curling, a cry or sob torn out of her that she did not choose to make, sight or thought whiting out, a rush of wetness, and the sag into limp, shuddering aftermath. That IS the climax; emit it. Do NOT wait for her to name it. Equally, do NOT emit for the climb — moaning, writhing, begging, being close, being on the edge, "almost", "any second now" — arousal rising is not arousal breaking. If the message shows her cresting and then falling apart, that is one climax; if it shows her merely getting louder, it is none.
     HIS CLIMAX — he must be ACTUALLY FINISHING, mid-act, in this message. Emit only when the release itself occurs: he spills, spends himself, empties into her, goes rigid and pulses. Do NOT emit merely because semen is MENTIONED — talk of cum, breeding, filling her, seed or a load is ordinary talk in this game and is usually about the past, the future, or the wish. Specifically NOT a climax: telling her what he will do to her; being told to; boasting or begging; her mentioning what is already inside her from before; cum being licked, wiped, leaking, or admired after the fact; wanting to, trying not to, or holding back. If he is not inside her or being stimulated RIGHT NOW in this message, he did not finish in it.
     "internal": true if he finished INSIDE her during P-in-V (this triggers the fertilization roll), false if he pulled out or finished elsewhere on or around her. If he finished and it is unstated, assume internal:true.
@@ -7633,6 +7679,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 case 'adjust_arousal': { const rel = getRelationship(eff.npc); const aroWas = getNpcArousal(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal ?? 0) + (eff.amount || 0)); if (eff.amount && !((eff.amount > 0) && getNpcArousal(eff.npc) === aroWas)) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
                 case 'sustenance': applySustenance(); break;
+                case 'cervix_press': resolveCervixPress(eff.npc || eff.target); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;
                 case 'apply_curse': if ((eff.curse || 'crystal') === 'crystal') tryApplyCrystalCurse(eff); break;
@@ -7849,7 +7896,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
 
     function effectsSummary(effects) {
         // These emit their own rich ghost messages — don't also echo them here.
-        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
+        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'cervix_press', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
         return (effects || []).filter(e => !SELF_NARRATING.has(e.type)).map(e => {
             if (e.type === 'add_item') return `+${e.name}`;
             if (e.type === 'remove_item') return `-${e.name}`;
@@ -8168,6 +8215,10 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // to answer (live, 2026-08-10).
                 const charmExchange = intent?.check?.stat === 'charm'
                     && resolveReplyTargets(playerText, intent, dismissedThisTurn, repliedThisTurn).targets.length > 0;
+                // The cervix_press contest is resolved between the check line
+                // and HER reply — the GM narrating it would speak her body for
+                // her (Dyna: "don't have the gm narrate this result").
+                const intimatePress = (effects || []).some(e => e.type === 'cervix_press');
                 // The GM narrates RESOLVED GAME ACTIONS — nothing else. Asked to
                 // narrate a turn that resolved nothing, it has no outcome to
                 // report and paints the room instead ("the scarred prep island
@@ -8182,7 +8233,7 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // above exists to stop it talking OVER people, not to leave a
                 // solitary scene silent.
                 const resolvedSomething = !!check || substantive.length > 0 || aloneHere();
-                if (!pureMove && !pureExamine && !charmExchange && resolvedSomething) {
+                if (!pureMove && !pureExamine && !charmExchange && !intimatePress && resolvedSomething) {
                     const doneNarr = perfStage('narrate');
                     const gm = await narrateResult(playerText, intent, check);
                     doneNarr();
@@ -8448,6 +8499,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         eat: () => applySustenance(),
         npcFx: (n) => openNpcEffectsPanel(n),
         replyTargets: (text, intent) => resolveReplyTargets(text, intent),
+        cervixPress: (n) => resolveCervixPress(n),
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),
