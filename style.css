@@ -119,6 +119,13 @@
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* One-tap premade status chips in the effect requesters */
+.pe-preset-row {
+    display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+    padding: 6px 8px;
+}
+.pe-preset-title { font-size: 12px; color: #a9b3c6; }
+
 /* Non-clickable section heading inside a popup (e.g. Active statuses) */
 .rpg-item-head {
     padding: 6px 12px 2px;

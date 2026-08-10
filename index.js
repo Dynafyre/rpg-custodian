@@ -648,6 +648,7 @@ jQuery(async () => {
                         <input id="pe-item-name" type="text" placeholder="new item name — the Custodian appraises its effect">
                         <button type="button" id="pe-item-add" class="rpg-map-btn" title="Add item">➕</button>
                     </div>
+                    <div id="pe-presets"></div>
                     <label>🪄 Request a bespoke effect from the Custodian
                         <textarea id="pe-status-req" rows="3" placeholder="e.g. a lingering wolf-bite fever, weakening me until cured · a road-blessing, +1 charm for a day · a one-use battle draught for my next fight · a fey pact: +2 craftiness while I owe the errand"></textarea>
                     </label>
@@ -737,6 +738,10 @@ jQuery(async () => {
             $('#rpg-player-overlay').remove();
             wmToast('Character updated.', 'success');
         });
+        $('#pe-presets').append(presetChipRow('player', (nm) => {
+            wmToast(`${nm}.`, 'success');
+            renderEffects();
+        }));
         $('#pe-forge').on('click', async function () {
             const text = String($('#pe-status-req').val() || '').trim();
             if (!text) return;
@@ -756,18 +761,61 @@ jQuery(async () => {
     }
 
     /** The Custodian designs an effect record from the player's words.
-     *  target: 'player' or an NPC name. */
+     *  target: 'player' or an NPC name. A request that names one of the
+     *  PREMADE statuses resolves to the preset instead of a reinvention. */
     async function forgeBespokeStatus(text, target = 'player') {
         const forNpc = target && target !== 'player';
+        const presetList = Object.entries(PRESET_STATUSES)
+            .map(([k, p]) => `"${k}" (${p.name} — ${p.desc})`).join('; ');
         const sys = `You are the RPG CUSTODIAN. Design a bespoke applied effect from a plain-language request. Output ONLY JSON:
 {"name":"short evocative name","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"one line of what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|stamina${forNpc ? '|fertility' : ''}","amount":N}],"duration":N,"end_condition":"plain-English story event that ends it, or omit","expires_on_check":"a stat name for a ONE-USE pre-buff spent on the next trial of that stat, or omit"}
+PREMADE STATUSES: if the request asks for one of these by name or unmistakable description, output ONLY {"preset":"<key>"} instead of designing anything: ${presetList}; "crystal_curse" (Crystal Curse — every child the bearer conceives or sires is born an inert soulgem until the curse is lifted).
 Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for potent magic).${forNpc ? ' FERTILITY is a percentage (0-100), so fertility mods are +10..+30.' : ''} duration is in time periods (4 per day) — always give lingering NEGATIVE effects a duration backstop even when they have an end_condition. Honor the SPIRIT of the request: a one-use "before my next fight" boost gets expires_on_check; a curse gets an end_condition worth roleplaying toward. Invent flavor freely; never refuse.`;
         const prompt = forNpc
             ? `The effect is applied to the NPC ${target}. Request: "${text}"`
             : `Player's request: "${text}"\nPlayer right now: ${statsContextForAnalyzer()}`;
         const p = await generateJson({ prompt, systemPrompt: sys, budget: 300 });
-        if (!p || !p.name) return null;
+        if (!p) return null;
+        if (p.preset) {
+            const key = String(p.preset).toLowerCase().replace(/[\s-]+/g, '_');
+            if (key === 'crystal_curse') {
+                applyCrystalCurse(target);
+                return { name: 'Crystal Curse', kind: 'curse', mods: [] };
+            }
+            if (PRESET_STATUSES[key]) return addCustomStatus(target, { preset: key }, true);
+            return null;
+        }
+        if (!p.name) return null;
         return addCustomStatus(target, p, true);   // quiet: the editors are meta, not story
+    }
+
+    /** One-tap premade statuses for the effect requesters — no LLM round-trip.
+     *  Chips are filtered by which side a preset makes sense on; the Crystal
+     *  Curse chip toggles (apply ⇄ lift) since it lives outside customEffects. */
+    function presetChipRow(target, onApplied) {
+        const forNpc = target && target !== 'player';
+        const row = $('<div class="pe-preset-row"></div>');
+        row.append('<span class="pe-preset-title">Premade:</span>');
+        for (const [key, p] of Object.entries(PRESET_STATUSES)) {
+            if (p.side && p.side !== (forNpc ? 'npc' : 'player')) continue;
+            const b = $('<button type="button" class="rpg-map-btn"></button>').text(p.name);
+            b.on('click', (e) => {
+                e.stopPropagation();
+                addCustomStatus(target, { preset: key }, true);
+                projectPlayerStatus();
+                onApplied(p.name);
+            });
+            row.append(b);
+        }
+        const cc = $('<button type="button" class="rpg-map-btn"></button>').text('💠 Crystal Curse');
+        cc.on('click', (e) => {
+            e.stopPropagation();
+            if (isCrystalCursed(target)) { liftCrystalCurse(target); onApplied('Crystal Curse lifted'); }
+            else { applyCrystalCurse(target); onApplied('Crystal Curse'); }
+            projectPlayerStatus();
+        });
+        row.append(cc);
+        return row;
     }
 
     /** Live NPC effects panel — sandbox forge/remove on a cast member.
@@ -784,6 +832,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 <div class="rpg-form-panel">
                     <div class="rpg-popup-title">✨ ${$('<i>').text(name).html()} — live effects</div>
                     <div id="ne-effects"></div>
+                    <div id="ne-presets"></div>
                     <label>🪄 Request a bespoke effect from the Custodian
                         <textarea id="ne-req" rows="3" placeholder="e.g. a fertility blessing from the spring rites · a jealous hex sapping her charm until forgiven · feverish and weak until nursed back to health"></textarea>
                     </label>
@@ -815,6 +864,10 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
             }
         };
         renderFx();
+        $('#ne-presets').append(presetChipRow(name, (nm) => {
+            wmToast(`${nm} — ${name}.`, 'success');
+            renderFx();
+        }));
         $('#ne-close').on('click', () => $('#rpg-cast-overlay').remove());
         $('#ne-forge').on('click', async function () {
             const text = String($('#ne-req').val() || '').trim();
@@ -5750,6 +5803,21 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // Restoration magic / a healing draught: restore CURRENT Stamina to a target
     // (player or NPC) without raising the max and without passing time. amount is
     // an integer, or 'full'/null to fully restore. Revives from unconsciousness.
+    // A meal or a drink is not magic: eating/drinking refills exactly 1
+    // Stamina when below max, and does nothing (silently) at full. It does
+    // not lift Exhaustion — that stays rest's job.
+    function applySustenance() {
+        const rd = getPlayerRpgData(); if (!rd) return;
+        const before = getStamina();
+        const max = maxStamina();
+        if (before >= max) return;
+        rd.stats.stamina = Math.min(max, before + 1);
+        rd.stats.unconscious = rd.stats.stamina <= 0;
+        savePlayer();
+        sendGhostMessage(`🍖 Refreshment — food and drink put a little life back in you. Stamina ${rd.stats.stamina}/${max}.`);
+        projectPlayerStatus();
+    }
+
     function healStamina(target, amount) {
         const tgt = String(target || 'player');
         const full = amount == null || amount === 'full' || amount === 'max';
@@ -6557,19 +6625,28 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // the mods, the magnitude, the duration or how the thing ends. That keeps
     // the if/else in code where it belongs and costs the prompt one line
     // instead of a rule block per effect.
+    // `side` marks who a preset makes sense on ('npc' | 'player'; absent =
+    // both) — it only filters the one-tap chips in the effect requesters,
+    // never what the Custodian may target in play.
     const PRESET_STATUSES = {
         cum_plugged: {
-            name: 'Cum Plugged', kind: 'status', polarity: 'neutral',
+            name: 'Cum Plugged', kind: 'status', polarity: 'neutral', side: 'npc',
             desc: 'Sealed shut with his seed still inside her, so none of it can escape — it keeps working at her womb for as long as the plug holds.',
             endCondition: 'the plug is pulled out of her, or his seed is let out of her',
             mods: [],
             refertilizes: true,     // engine: another go at her womb every time step
         },
         stimulated_ovaries: {
-            name: 'Stimulated Ovaries', kind: 'buff', polarity: 'positive',
+            name: 'Stimulated Ovaries', kind: 'buff', polarity: 'positive', side: 'npc',
             desc: 'Her ovaries have been roused by the working of her lower belly — for a little while she is far readier to take.',
             mods: [{ stat: 'fertility', amount: 10 }],
             duration: 1,
+        },
+        pent_up: {
+            name: 'Pent Up', kind: 'buff', polarity: 'positive', side: 'player',
+            desc: 'He has gone unspent too long — the pressure has him potent and hair-triggered, his seed thick with waiting.',
+            mods: [{ stat: 'virility', amount: 1 }],
+            endCondition: 'he finds release',
         },
     };
     function resolvePresetStatus(spec) {
@@ -7280,6 +7357,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"heal","target":"player"|"HerName","amount":N or "full"}  RESTORATION magic / a healing draught / a mending spell / bandaging restores CURRENT Stamina to someone (player or a present NPC) — WITHOUT passing time and without raising their max. amount = how many Stamina points mended (a minor cure ~2, a strong heal ~4), or "full" for a complete restoration. It also revives an unconscious target. Use this for healing spells, restoration potions, first aid, laying-on-of-hands, etc. (Distinct from "rest", which restores EVERYONE and passes time, and from an add_status with a stamina mod, which temporarily raises the MAX pool.)
   {"type":"restore_mana","target":"player","amount":N or "full"}  arcane energy replenishes the player's MANA (his magic pool, max = Craftiness). Emit for ANY source that would refill magic: drinking from a font/POOL of liquid mana, quaffing a mana potion, meditating at a ley-line or shrine, absorbing ambient/loose magic, channelling a node. amount = points restored, or "full" for a brimming/abundant source (a whole pool). (For crushing a single soul crystal use use_item instead → +1 Mana.) Do NOT invent the number narratively — the engine applies it.
   {"type":"rest"}  the player rests/naps/sleeps/camps — restores EVERYONE'S Stamina to full and passes exactly ONE time period. Emit this whenever the player sleeps, naps, camps, or takes a proper rest.
+  {"type":"sustenance"}  the player EATS or DRINKS something ordinary — a meal, bread, stew, fruit, rations, a swig of ale, tea, whatever nourishment the scene offers, however small the bite. Emit ONCE per eating/drinking beat, even when the message also converses or does other things. The engine restores a small fixed amount of Stamina (never above max) — do NOT invent the number. Lane: ordinary food and drink ONLY — magical potions/elixirs keep their own effects, medicine and healing magic are "heal", and a proper sleep is "rest"; never emit two of these for one act. Not for feeding someone else.
   {"type":"apply_curse","curse":"crystal","target":"player"|"HerName","caster":"player"|"HerName"?,"power":N?,"duration":N?,"contest":true}  the CRYSTAL CURSE (soulgem hex) is cast on someone. target = victim ("player" the man, or a female NPC). The engine runs a RESIST CONTEST — the caster's power vs the victim's Ruggedness — so specify who/what is casting: for the PLAYER casting, omit caster/power (his Craftiness is used); for an NPC/enemy caster set "caster":"HerName"; for a TRAP or CURSED ITEM set "power":N as its magic strength (proxy for a caster, ~2 weak, 4 average, 7 potent). PERMANENT by default (omit duration); give duration (time periods) only for a temporary casting. Set "contest":false ONLY for an unavoidable, story-forced curse (no roll). While cursed, any child that person sires/bears is born an inert soulgem. Emit when such a curse is cast in the narrative.
   {"type":"lift_curse","curse":"crystal","target":"player"|"HerName"}  the Crystal Curse is BROKEN by magic — a cleansing rite, holy light, a counter-hex, a wish, a cure. Emit when the curse is lifted/dispelled/broken in the narrative. (apply_curse also accepts "break_condition":"<plain-English condition that will break it>", e.g. "broken by a loving kiss" — the engine watches the story and lifts it automatically when that happens.)
   {"type":"add_status","target":"player"|"HerName","name":"...","kind":"buff|debuff|blessing|curse|pact|vow|disease|poison|status","polarity":"positive"|"negative","desc":"what it does","mods":[{"stat":"ruggedness|charm|craftiness|virility|fertility|stamina|affection|arousal","amount":N} or {"stat":"...","cap":N}],"duration":N,"expires_on_check":"ruggedness|charm|craftiness|virility","end_condition":"plain-English condition that ends it"}  INVENT a bespoke applied effect. A buff, debuff, blessing, curse, hex, pact, vow, oath, disease, poison, inspiration, drunkenness, a potion's effect — these are ALL the same thing: something APPLIED to a character that later ENDS. Works on the player OR any NPC (target her name). Set "kind" to the fitting label (it picks the icon/framing). HOW IT ENDS — give any of: "duration" (time periods), "end_condition" (a story event), or "expires_on_check" (a stat name) for a SINGLE-USE PRE-BUFF that is spent the very next time the character attempts a trial of that stat — a combat-prep draught ("+3 ruggedness, gone after your next fight"), a courage tonic before one daring roll, a focus charm for the next lore check. Watch for these one-shot "before I try this, I…" boosts and give them expires_on_check on the matching stat. Combine ends freely (whichever fires first). See STAT MODS & SCALE below for amounts. (A pact/vow that also has a GOAL to fulfil for a reward → use add_objective instead.) NARRATIVE-ONLY EFFECTS — "mods" may be an EMPTY list []: whenever the story shows something DONE TO a character that meaningfully constrains, compels, transforms, or obliges her — physically, magically, or socially — apply a status even when no number changes: put the constraint BLUNTLY in "desc" (exactly what she now cannot do, or must do) and give it an end. Being done-to is the trigger; it needs no spell name, potion, or system word — restraints, bindings, vows extracted, magical compulsions, states imposed on a body or mind all qualify. Invent freely; do not wait for the player to name an effect.
@@ -7539,6 +7617,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                     break;
                 case 'adjust_arousal': { const rel = getRelationship(eff.npc); const aroWas = getNpcArousal(eff.npc); setNpcArousalRaw(eff.npc, (rel.arousal ?? 0) + (eff.amount || 0)); if (eff.amount && !((eff.amount > 0) && getNpcArousal(eff.npc) === aroWas)) sendGhostMessage(`${eff.npc}: 🔥 arousal ${eff.amount > 0 ? '+' : ''}${eff.amount} → ${getNpcArousal(eff.npc)}/10 (${arousalTier(getNpcArousal(eff.npc)).label})`); savePlayer(); break; }
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
+                case 'sustenance': applySustenance(); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;
                 case 'apply_curse': if ((eff.curse || 'crystal') === 'crystal') tryApplyCrystalCurse(eff); break;
@@ -7755,7 +7834,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
 
     function effectsSummary(effects) {
         // These emit their own rich ghost messages — don't also echo them here.
-        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
+        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
         return (effects || []).filter(e => !SELF_NARRATING.has(e.type)).map(e => {
             if (e.type === 'add_item') return `+${e.name}`;
             if (e.type === 'remove_item') return `-${e.name}`;
@@ -8337,6 +8416,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         orgasm: (npc, internal, count) => resolvePlayerOrgasm(npc, internal !== false, count || 1),
         buff: (target, stat, amt, source) => addCustomStatus(target || 'player', { name: source || 'debug elixir', kind: amt >= 0 ? 'buff' : 'debuff', polarity: amt >= 0 ? 'positive' : 'negative', mods: [{ stat, amount: amt }], duration: 4 }),
         heal: (target, amt) => healStamina(target || 'player', amt),
+        eat: () => applySustenance(),
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),
