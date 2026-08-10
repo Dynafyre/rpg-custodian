@@ -67,6 +67,19 @@ try {
   await D(() => window.rpgCustodianDebug.removeStatus('player', 'Pent Up'));
   await D(() => { $('#rpg-player-overlay').remove(); });
 
+  // ── Presets: chips + reference in the NPC live-effects panel ──
+  await D(() => window.rpgCustodianDebug.npcFx('Marta')); await wait(600);
+  check('NPC effects panel opens', await D(() => !!document.getElementById('rpg-cast-overlay')));
+  const nChips = await D(() => [...document.querySelectorAll('#ne-presets .rpg-map-btn')].map(b => b.textContent.trim()));
+  check('NPC chips: her-side presets + curse', nChips.includes('Cum Plugged') && nChips.includes('Stimulated Ovaries') && nChips.some(c => c.includes('Crystal Curse')), JSON.stringify(nChips));
+  check('NPC chips exclude player-side presets', !nChips.includes('Pent Up'));
+  const nRef = await D(() => [...document.querySelectorAll('#rpg-cast-overlay .pe-preset-ref-row')].map(r => r.textContent));
+  check('NPC reference list describes her premades', nRef.some(t => t.includes('Cum Plugged')) && nRef.some(t => t.includes('Stimulated Ovaries')) && !nRef.some(t => t.includes('Pent Up')), JSON.stringify(nRef.map(t => t.slice(0, 30))));
+  await D(() => { [...document.querySelectorAll('#ne-presets .rpg-map-btn')].find(b => b.textContent.trim() === 'Cum Plugged')?.click(); }); await wait(300);
+  check('NPC chip applies Cum Plugged to her', (await D(() => window.rpgCustodianDebug.statuses('Marta'))).some(s => s.name === 'Cum Plugged'));
+  await D(() => window.rpgCustodianDebug.removeStatus('Marta', 'Cum Plugged'));
+  await D(() => { $('#rpg-cast-overlay').remove(); });
+
   // ── Custodian judgment: eating emits sustenance, small talk does not ──
   const RUNS = 3;
   for (const [label, want, text] of [

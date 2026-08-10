@@ -8432,6 +8432,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         buff: (target, stat, amt, source) => addCustomStatus(target || 'player', { name: source || 'debug elixir', kind: amt >= 0 ? 'buff' : 'debuff', polarity: amt >= 0 ? 'positive' : 'negative', mods: [{ stat, amount: amt }], duration: 4 }),
         heal: (target, amt) => healStamina(target || 'player', amt),
         eat: () => applySustenance(),
+        npcFx: (n) => openNpcEffectsPanel(n),
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),
