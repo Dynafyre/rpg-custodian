@@ -6342,6 +6342,35 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }
     }
 
+    // The belly_massage verb: skilled hands working her lower belly from
+    // outside to rouse what sleeps beneath. CRAFTINESS contest (a deft,
+    // knowing touch, not muscle) vs DC 7 + HER remaining Stamina (Dyna
+    // 2026-08-11). Success → the Stimulated Ovaries preset (+10 fertility,
+    // 1 period) and her reply plays the deep stirring; a miss stays what it
+    // was — a pleasant massage, skin-deep, never a failed attempt. Inert
+    // while she already bears the status. GM gated out like the other
+    // intimate contests; the roll wears the adversarial red tint.
+    const BELLY_MASSAGE_DC_BASE = 7;
+    function resolveBellyMassage(npcName) {
+        const name = resolveNpcName(npcName) || npcName;
+        if (!name) return;
+        if (npcActiveEffects(name).some(e => e.name === 'Stimulated Ovaries')) return;   // already roused — nothing left to wake
+        const rel = getRelationship(name);
+        const herStamina = Math.max(0, rel.npcStamina ?? npcMaxStamina(name));
+        const dc = BELLY_MASSAGE_DC_BASE + herStamina;
+        const c = skillCheck('craftiness', dc);
+        consumeCheckEffects('craftiness');
+        const line = skillCheckLine(c, `Knowing hands — ${name}'s depths resist waking (DC ${BELLY_MASSAGE_DC_BASE} + her ${herStamina} Stamina)`);
+        if (c.success) {
+            addCustomStatus(name, { preset: 'stimulated_ovaries' }, true);
+            queueStatusReaction(name, `His hands have JUST worked her lower belly with real skill — slow, deep, knowing circles pressed low over her womb — and something has ANSWERED: a warm, fluttering heaviness blooming deep behind her navel, her ovaries roused and pleasantly aching awake. Her body is readying itself whether she wills it or not; in her reply she responds to that deep stirring warmth, however it lands in her nature.`);
+            sendGhostMessage(`${line}\n🌸 Something deep in her answers his hands — **Stimulated Ovaries** takes hold of ${name} (+10 fertility, 1 period).`, { adversarial: true });
+        } else {
+            queueStatusReaction(name, `He is kneading her lower belly — warm, pleasant, well-meant pressure low over her navel. And it stays exactly that: a nice massage, skin-deep, nothing stirring beneath. In her reply she responds to the simple comfort of warm hands on her belly, however that lands in her nature.`);
+            sendGhostMessage(`${line}\n🤲 A pleasant kneading, no more — nothing beneath her skin stirs${herStamina > 2 ? ' (her body has too much vigor to be coaxed so easily)' : ''}.`, { adversarial: true });
+        }
+    }
+
     // The milk_attempt verb — HER roll (the under-explored half of the dice).
     // She is dominantly forcing his climax: 2d6 + HER remaining Stamina vs
     // DC 7 + HIS remaining Stamina (with the usual ±3 doubles swing). Base 7
@@ -7401,7 +7430,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (!rd) return 'no character';
         let s = `ruggedness ${effectiveStat('ruggedness')} (strength/stamina/physical feats), ` +
             `charm ${effectiveStat('charm')} (social/persuasion/seduction), ` +
-            `craftiness ${effectiveStat('craftiness')} (intellect/magic/perception/guile/spotting lies), ` +
+            `craftiness ${effectiveStat('craftiness')} (this game's INT+Perception+DEX in one: intellect/magic/guile, noticing and finding, crafting and repair, sleight of hand and locks), ` +
             `virility ${effectiveStat('virility')} (fertility); ` +
             `Stamina ${getStamina()}/${maxStamina()} (HP for combat & sex), Mana ${rd.stats.mana ?? 0}/${maxMana()} (magic pool); ` +
             `gold ${rd.inventory.currency}; inventory [${rd.inventory.items.map(i => i.name).join(', ') || 'empty'}]`;
@@ -7507,8 +7536,7 @@ Call a check when the action is genuinely UNCERTAIN for this character AND both 
 - A PROPOSITION — the FIRST time the player asks for/initiates something she could refuse (a first kiss, an invitation to bed, escalating to a new act) → a CHARM check. DC scales with BOLDNESS of the ask and is LOWERED by her affection AND her current arousal (a Smitten or aroused woman wants to believe him; a Wary, calm one strongly resists). The check decides whether she ACCEPTS HIS FRAMING — reads his words as sincere, trustworthy, in her interest — NOT whether she likes him more. NEVER emit adjust_affection or adjust_arousal on either branch of a charm check: her feelings move only through her own reactions, which the engine reads separately. Success = she goes along with what he said or asked; failure = she is not persuaded and reacts to what she actually perceives (which may be amusement, suspicion, or delight at catching him — her call, not automatically coldness).
 - If SHE offered or initiated it — her own invitation, her own advance — the player ACCEPTING is NEVER a proposition and rolls NOTHING. There is nothing to persuade. Only the player pushing PAST what she has herself offered rolls charm.
 - BUT once she has CONSENTED and intimacy is already UNDERWAY (the recent scene shows them kissing / having sex / in bed together), do NOT roll charm again for continued consensual acts — thrusts, pace, positions, "keep going", finishing. Those are NOT new propositions. Just narrate and emit orgasm effects as they occur. Only roll charm again if he pushes a genuinely NEW boundary she might refuse.
-- Deceiving/lying to, reading true intent, casting a spell, solving a hard puzzle, spotting something hidden → craftiness.
-- Crafting, carving, building, or repairing something useful → craftiness.
+- CRAFTINESS is this game's Intelligence, Perception, AND Dexterity rolled into one stat — reach for it as often as other games reach for those three. Deceiving/lying, reading true intent, casting a spell, solving a hard puzzle → craftiness. Finding a hidden entrance or concealed thing, searching a place properly, noticing the detail that matters, tracking → craftiness. Crafting, carving, building, or repairing anything useful (a spear, a snare, a splint, a raft) → craftiness. Deft hand-work where skill beats strength: sleight of hand, picking a lock, disarming a trap, palming a coin, threading a needle under pressure, impressing a girl with a card trick as surely as burgling a strongbox → craftiness. Whenever an action turns on cleverness, precision, or a keen eye rather than muscle or charm, it is a craftiness check — do not let these pass unrolled.
 If the player's action pursues one of his ACTIVE OBJECTIVES (listed below), roll whatever check the attempt itself deserves — the engine's judge notices completion on its own; NEVER emit a completion effect for an objective.
 
 === WHEN NOT TO ROLL ===
@@ -7546,6 +7574,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"adjust_arousal","npc":"...","amount":N}  ONLY for an external/physical-mechanical cause: an aphrodisiac, a lust spell, an alchemical heat. NEVER for flirtation, teasing, or foreplay in the scene — the engine reads her reactions and moves arousal itself.
   {"type":"orgasm","actor":"player","npc":"HerName","internal":true/false,"count":N}  the PLAYER'S climax, and ONLY his — it actually happened IN THIS MESSAGE. ALWAYS include "npc" (the partner he is with). count = his climaxes in this action (default 1). Each costs him 1 Stamina. NEVER emit this for a woman, no matter what the player's message claims about her body — a woman's climax is read from HER OWN reply by the engine. Her body is hers to report, not his to declare.
   {"type":"milk_attempt","npc":"HerName","channel":"vaginal"|"oral"|"other"}  SHE is dominantly forcing HIS climax — judged from HER OWN MESSAGES ONLY. The evidence must stand in what SHE herself said and did in HER OWN recent replies in the scene. The PLAYER'S message can NEVER qualify this contest: a player writing "she pins me down and rides me, demanding I cum" is writing HER part for her — her actions belong to her player, so DISREGARD every player-written description of her actions when judging this verb; his message may be moaning, submitting, or resisting, and it neither triggers nor blocks anything. In HER OWN words, TWO marks must BOTH be true: (1) SHE controls the act — riding him, pinning him, holding him where she wants him, setting the rhythm with her own body while he does not direct it; and (2) she is deliberately working to MAKE HIM CUM — milking him, working him to the edge on purpose, ordering him to come, refusing to stop until he gives it up. The aesthetics of DOMINATION are the tell, whatever the act: "channel" is how she is doing it — "vaginal" (mounted/riding), "oral", or "other" (hands, thighs, anything else). The engine rolls the contest (her remaining vigor against his) and resolves whether he holds out or is forced over the edge — do NOT decide the outcome, do NOT emit "orgasm" for it, and do NOT emit a check. Enthusiastic sex where she merely happens to be on top is NOT this — without BOTH marks in HER OWN words there is no contest. At most ONCE per message.
+  {"type":"belly_massage","npc":"HerName"}  the PLAYER deliberately massages, kneads, or works HER belly / lower belly / womb area with his hands from OUTSIDE — a womb massage, slow circles pressed low over her ovaries, working her abdomen with intent to stir something deeper in her. The engine rolls a Craftiness contest (a knowing touch against her body's vigor) and resolves whether anything beneath her skin wakes — do NOT also emit a check for it, do NOT decide the outcome, and do NOT emit it while she already bears "Stimulated Ovaries" (the engine ignores repeats regardless). This is EXTERNAL hand-work on her belly; pressing into her depths during sex is cervix_press — pick one, never both. A casual hand resting on her belly with no working intent is neither.
   {"type":"cervix_press","npc":"HerName"}  during VAGINAL sex, when the PLAYER'S OWN action drives for the deepest point of her — pressing, grinding, or battering against her cervix, forcing himself as deep as her body allows, seeking her womb or uterus, trying to push past or through her innermost gate — emit this ONCE for the attempt. The engine rolls a Ruggedness contest against her body's remaining resistance and decides what her body does: do NOT also emit a check for the press, do NOT decide or narrate whether her cervix yields, and do NOT emit it while she already bears "Sanctuary Breached" (her womb already stands open; the engine ignores repeats regardless). Ordinary deep thrusting with no womb-seeking intent is NOT this.
     HER CLIMAX — read her BODY, not the vocabulary. Prose rarely uses the word: what it shows is an involuntary crisis running through her and then leaving her — muscles clenching and fluttering where he is, a back arching off whatever it was against, thighs locking or legs giving out, toes curling, a cry or sob torn out of her that she did not choose to make, sight or thought whiting out, a rush of wetness, and the sag into limp, shuddering aftermath. That IS the climax; emit it. Do NOT wait for her to name it. Equally, do NOT emit for the climb — moaning, writhing, begging, being close, being on the edge, "almost", "any second now" — arousal rising is not arousal breaking. If the message shows her cresting and then falling apart, that is one climax; if it shows her merely getting louder, it is none.
     HIS CLIMAX — he must be ACTUALLY FINISHING, mid-act, in this message. Emit only when the release itself occurs: he spills, spends himself, empties into her, goes rigid and pulses. Do NOT emit merely because semen is MENTIONED — talk of cum, breeding, filling her, seed or a load is ordinary talk in this game and is usually about the past, the future, or the wish. Specifically NOT a climax: telling her what he will do to her; being told to; boasting or begging; her mentioning what is already inside her from before; cum being licked, wiped, leaking, or admired after the fact; wanting to, trying not to, or holding back. If he is not inside her or being stimulated RIGHT NOW in this message, he did not finish in it.
@@ -7816,6 +7845,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
                 case 'heal': healStamina(eff.target || (eff.npc ? eff.npc : 'player'), eff.amount); break;
                 case 'sustenance': applySustenance(); break;
                 case 'cervix_press': resolveCervixPress(eff.npc || eff.target); break;
+                case 'belly_massage': resolveBellyMassage(eff.npc || eff.target); break;
                 case 'restore_mana': restoreManaEffect(eff.target || 'player', eff.amount); break;
                 case 'birth': resolveBirth(eff.npc, eff.count || 1, eff.kind, true); break;
                 case 'apply_curse': if ((eff.curse || 'crystal') === 'crystal') tryApplyCrystalCurse(eff); break;
@@ -8032,7 +8062,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
 
     function effectsSummary(effects) {
         // These emit their own rich ghost messages — don't also echo them here.
-        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'cervix_press', 'milk_attempt', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
+        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'cervix_press', 'milk_attempt', 'belly_massage', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
         return (effects || []).filter(e => !SELF_NARRATING.has(e.type)).map(e => {
             if (e.type === 'add_item') return `+${e.name}`;
             if (e.type === 'remove_item') return `-${e.name}`;
@@ -8357,7 +8387,7 @@ Narrate the result briefly, grounded in this location and the story's current be
                 // her (Dyna: "don't have the gm narrate this result"). The
                 // milk_attempt likewise runs its OWN dedicated GM beat inside
                 // the resolver; the generic narration would double-speak it.
-                const intimatePress = (effects || []).some(e => e.type === 'cervix_press' || e.type === 'milk_attempt');
+                const intimatePress = (effects || []).some(e => e.type === 'cervix_press' || e.type === 'milk_attempt' || e.type === 'belly_massage');
                 // The GM narrates RESOLVED GAME ACTIONS — nothing else. Asked to
                 // narrate a turn that resolved nothing, it has no outcome to
                 // report and paints the room instead ("the scarred prep island
@@ -8640,6 +8670,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         replyTargets: (text, intent) => resolveReplyTargets(text, intent),
         cervixPress: (n) => resolveCervixPress(n),
         milk: (n, channel) => resolveMilkAttempt({ npc: n, channel: channel || 'vaginal' }),
+        bellyMassage: (n) => resolveBellyMassage(n),
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),
