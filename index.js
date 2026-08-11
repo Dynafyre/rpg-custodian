@@ -7289,9 +7289,21 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     const VERB_DICTIONARY = [
         { head: 'Travel & World', entries: [
             { id: 'move', who: 'both', name: 'Move', desc: 'travel anywhere known — routed step by step ("Let\'s go to the tavern!" / "Ok!")' },
+            { who: 'both', name: 'Journey (multi-hop)', desc: 'name a far destination — the engine walks the whole route leg by leg through the map' },
+            { who: 'you', name: 'Enter a Secret Place', desc: 'hidden doors and unlisted places are real destinations once the story finds them' },
             { id: 'event_teleport', who: 'auto', name: 'Translocation', desc: 'a power — magic, entity, technology — puts you somewhere; reaches places no road does' },
             { id: 'examine', who: 'you', name: 'Examine', desc: 'look closely at someone, or take stock of yourself' },
             { id: 'whereabouts', who: 'you', name: 'Ask Whereabouts', desc: 'ask where someone is — answered from what the asked one honestly knows' },
+        ]},
+        { head: 'Checks & Contests', entries: [
+            { who: 'you', name: 'Charm Check', desc: 'propositions and persuasion — the roll decides whether she accepts your framing, never how she feels' },
+            { who: 'you', name: 'Craftiness Check', desc: 'intellect, perception & dexterity in one — locks, hidden things, crafting, sleight of hand, spellwork' },
+            { who: 'you', name: 'Ruggedness Check', desc: 'strength, endurance, combat — pin a wild wolf, force a door, climb the sheer cliff' },
+            { who: 'you', name: 'Wrestle a Person', desc: 'a physical contest against someone uses her own listed difficulty — keeping up is easier than overpowering' },
+            { who: 'auto', name: 'Trivial Actions', desc: 'what you cannot fail is never rolled — the engine auto-succeeds it without theater' },
+            { who: 'auto', name: 'Boxcars & Snake Eyes', desc: 'double sixes swing +3 and double ones −3 — the dice themselves carry the drama' },
+            { who: 'auto', name: 'One-Use Pre-Buffs', desc: 'a battle draught or blessing is spent on your NEXT trial of that stat, win or lose' },
+            { who: 'auto', name: 'Check XP', desc: 'a won check pays XP by how unlikely it was; completed quests pay a flat 200' },
         ]},
         { head: 'Time, Rest & Sustenance', entries: [
             { id: 'advance_time', who: 'both', name: 'Time Passes', desc: 'an afternoon whiled away, a night talked through — the clock follows the story' },

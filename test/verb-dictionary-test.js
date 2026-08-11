@@ -31,7 +31,10 @@ try {
   check('menu has a Verb Dictionary row', await D(() => { const r = [...document.querySelectorAll('#rpg-menu-popup .rpg-menu-item')].find(r => r.textContent.includes('Verb Dictionary')); if (!r) return false; r.click(); return true; })); await wait(400);
   const heads = await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-item-head')].map(h => h.textContent));
   check('legend leads the list', heads[0]?.includes('Legend'), heads[0]);
-  check('all categories present', ['Travel & World', 'Intimacy & Breeding', 'Hearts & Minds', 'Statuses, Curses & Oaths', 'Magic — Action Mode only'].every(h => heads.some(x => x.includes(h))), JSON.stringify(heads));
+  check('all categories present', ['Travel & World', 'Checks & Contests', 'Intimacy & Breeding', 'Hearts & Minds', 'Statuses, Curses & Oaths', 'Magic — Action Mode only'].every(h => heads.some(x => x.includes(h))), JSON.stringify(heads));
+  const allRows = await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].map(r => r.textContent.trim()));
+  check('charm/craft/ruggedness checks listed', ['Charm Check', 'Craftiness Check', 'Ruggedness Check', 'Wrestle a Person'].every(n => allRows.some(r => r.includes(n))));
+  check('travel nuances listed', ['Journey (multi-hop)', 'Enter a Secret Place'].every(n => allRows.some(r => r.includes(n))));
   const rows = await D(() => [...document.querySelectorAll('#rpg-action-popup .rpg-menu-item')].map(r => r.textContent.trim()));
   const expected = await D(() => window.rpgCustodianDebug.verbDict().reduce((n, c) => n + c.entries.length, 0));
   check(`every dictionary entry is rendered (${expected})`, rows.length === expected, `rendered ${rows.length}`);
