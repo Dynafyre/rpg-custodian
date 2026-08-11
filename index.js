@@ -2063,6 +2063,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
                 items.push({ icon: '⏪', label: 'Go back a time step', sub: `back to ${back}`, action: () => rewindTimeStep() });
             }
             items.push({ sep: true });
+            items.push({ icon: '📖', label: 'Verb Dictionary', sub: 'everything that can happen — reference, not buttons', action: () => openVerbDictionary() });
             items.push({ icon: '🌍', label: 'Worlds (play, create, manage)', action: () => openWorldManager() });
             items.push({ icon: '🧬', label: 'Edit Character', action: () => openPlayerEditor() });
             items.push({ icon: '🚪', label: 'Exit RPG Mode', action: () => rpgExitCommand({}, '') });
@@ -7277,6 +7278,81 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
 
     // ========================================================================
+    // VERB DICTIONARY — in-game documentation, never a control surface.
+    // Every natural-language game action, sorted, with who can invoke it:
+    // 'you' (the player's words), 'her' (an NPC's own words), 'both', or
+    // 'auto' (the engine judges it without anyone asking). Entries with an
+    // `id` MUST match a real effect case in the engine — the drift test
+    // (test/verb-dictionary-test.js) cross-checks this file's switch cases
+    // against this registry in both directions, so the list can never rot.
+    // ========================================================================
+    const VERB_DICTIONARY = [
+        { head: 'Travel & World', entries: [
+            { id: 'move', who: 'both', name: 'Move', desc: 'travel anywhere known — routed step by step ("Let\'s go to the tavern!" / "Ok!")' },
+            { id: 'event_teleport', who: 'auto', name: 'Translocation', desc: 'a power — magic, entity, technology — puts you somewhere; reaches places no road does' },
+            { id: 'examine', who: 'you', name: 'Examine', desc: 'look closely at someone, or take stock of yourself' },
+            { id: 'whereabouts', who: 'you', name: 'Ask Whereabouts', desc: 'ask where someone is — answered from what the asked one honestly knows' },
+        ]},
+        { head: 'Time, Rest & Sustenance', entries: [
+            { id: 'advance_time', who: 'both', name: 'Time Passes', desc: 'an afternoon whiled away, a night talked through — the clock follows the story' },
+            { id: 'rest', who: 'both', name: 'Rest', desc: 'sleep, nap, or camp — everyone\'s Stamina and your Mana refill; one period passes' },
+            { id: 'sustenance', who: 'you', name: 'Eat & Drink', desc: 'any ordinary meal or drink restores 1 Stamina (never above max)' },
+        ]},
+        { head: 'Company', entries: [
+            { id: 'add_party', who: 'both', name: 'Join Party', desc: 'she travels at your side, her routine suspended — invited, or offering herself' },
+            { id: 'remove_party', who: 'both', name: 'Part Ways', desc: 'she stays where you parted until time moves on, then resumes her life' },
+        ]},
+        { head: 'Goods & Gold', entries: [
+            { id: 'adjust_gold', who: 'both', name: 'Gold Changes Hands', desc: 'earned, spent, gifted, stolen' },
+            { id: 'add_item', who: 'both', name: 'Gain Item', desc: 'found, given, crafted, looted — the Custodian appraises what it does' },
+            { id: 'remove_item', who: 'both', name: 'Lose Item', desc: 'given away, consumed in crafting, destroyed, taken' },
+            { id: 'buy_item', who: 'you', name: 'Buy', desc: 'purchase from a merchant\'s stock' },
+            { id: 'use_item', who: 'you', name: 'Use Item', desc: 'drink the potion, read the scroll — consumables spend themselves' },
+            { id: 'equip_item', who: 'you', name: 'Equip', desc: 'wear or wield a thing so its effect applies' },
+            { id: 'unequip_item', who: 'you', name: 'Unequip', desc: 'set it aside again' },
+        ]},
+        { head: 'Body & Battle', entries: [
+            { id: 'damage', who: 'both', name: 'Harm', desc: 'anyone can be hurt — a blow, a fall, a beast; Stamina is the wound track' },
+            { id: 'heal', who: 'both', name: 'Heal', desc: 'medicine, first aid, restoration magic — mends Stamina, revives the unconscious' },
+            { id: 'restore_mana', who: 'both', name: 'Restore Mana', desc: 'an arcane source refills the well — a spring, a draught, a crushed soulgem' },
+        ]},
+        { head: 'Intimacy & Breeding', entries: [
+            { id: 'orgasm', who: 'you', name: 'His Climax', desc: 'costs 1 Stamina; inside her it rolls fertilization — hers is read from HER reply, never declared' },
+            { id: 'cervix_press', who: 'you', name: 'Cervix Press', desc: 'drive for her innermost gate — Ruggedness vs her remaining vigor; her womb can open' },
+            { id: 'belly_massage', who: 'you', name: 'Ovary Stimulation', desc: 'knowing hands on her lower belly — Craftiness vs her vigor; can rouse her ovaries' },
+            { id: 'milk_attempt', who: 'her', name: 'Milked Dry', desc: 'SHE dominantly forces his climax — her own words only; her vigor against his' },
+            { id: 'birth', who: 'auto', name: 'Birth', desc: 'term pregnancies deliver — live young, eggs, or soulgems; each birth pays a Power Token' },
+        ]},
+        { head: 'Hearts & Minds', entries: [
+            { id: 'adjust_affection', who: 'auto', name: 'Affection (external)', desc: 'potions, spells, curses only — her real feelings move through her own replies' },
+            { id: 'adjust_arousal', who: 'auto', name: 'Arousal (external)', desc: 'likewise — her blood stirred by something outside the ordinary' },
+            { who: 'auto', name: 'The Reaction Judge', desc: 'every reply of hers is read against her disposition — affection and arousal move from HER words' },
+            { who: 'auto', name: 'Her Climax', desc: 'read from her own reply — an involuntary crisis in her body, never his to declare' },
+        ]},
+        { head: 'Statuses, Curses & Oaths', entries: [
+            { id: 'add_status', who: 'both', name: 'Lasting Effect', desc: 'anything that lingers — buff, disease, vow, restraint, blessing — one system, many faces' },
+            { id: 'remove_status', who: 'both', name: 'Effect Lifted', desc: 'released, cured, fulfilled — the story ends what the story started' },
+            { id: 'apply_curse', who: 'both', name: 'Crystal Curse', desc: 'a contested working — the cursed bear soulgems instead of children until lifted' },
+            { id: 'lift_curse', who: 'both', name: 'Lift the Curse', desc: 'magic strong enough can break it' },
+            { id: 'add_objective', who: 'you', name: 'Take On a Task', desc: 'quests, errands, pacts, vows of YOURS — auto-completes when the story satisfies it; 200 XP' },
+            { id: 'adjust_stat', who: 'auto', name: 'Permanent Change', desc: 'rare: training mastery or dark magic moves a core stat for good' },
+            { who: 'auto', name: 'The Condition Judge', desc: 'watches every end-condition and objective — effects end and quests complete on their own' },
+        ]},
+        { head: 'Magic — Action Mode only', entries: [
+            { who: 'you', name: 'Cast a Spell', desc: 'RPG menu → Action Mode → Cast a Spell — spells never fire from prose alone' },
+        ]},
+    ];
+    function openVerbDictionary() {
+        const WHO = { you: '🧍', her: '👩', both: '🤝', auto: '⚙️' };
+        const items = [{ head: 'Legend — 🧍 your words · 👩 her words · 🤝 either · ⚙️ automatic' }];
+        for (const cat of VERB_DICTIONARY) {
+            items.push({ head: cat.head });
+            for (const v of cat.entries) items.push({ icon: WHO[v.who] || '·', label: v.name, sub: v.desc, action: () => {} });
+        }
+        openActionPopup('📖 Verb Dictionary — what can happen here', items);
+    }
+
+    // ========================================================================
     // ACTION MODE — menu-declared intent (RPG menu → 🎯 Action Mode).
     // The menu declares WHAT; a small judge reads HOW and WHO from the scene.
     // Arming is ONE-SHOT: the next message performs exactly the armed action —
@@ -8873,6 +8949,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         armed: () => currentGameState.armedAction,
         disarm: () => disarmAction(),
         spells: () => knownSpells(),
+        verbDict: () => VERB_DICTIONARY,
         setMana: (n) => { const rd = getPlayerRpgData(); if (rd) { rd.stats.mana = Math.max(0, Math.min(maxMana(), n)); savePlayer(); } return getPlayerRpgData()?.stats.mana; },
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),

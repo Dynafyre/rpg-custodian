@@ -131,10 +131,14 @@ Read `emergent-systems.md` §1–§2 for the model. Mechanically:
    `examineSelf`, `examineNpc`, character sheet.
 5. **Add a debug hook** to `window.rpgCustodianDebug` (bottom of the file) so it's
    testable headlessly without coaxing the LLM.
-6. **Persist it** if it's new top-level state: add to the save object in
+6. **Document it**: add an entry to `VERB_DICTIONARY` (the in-game 📖 Verb
+   Dictionary) — `test/verb-dictionary-test.js` cross-checks the registry
+   against the engine's case labels in both directions and FAILS if you skip
+   this, so the player-facing docs can never rot.
+7. **Persist it** if it's new top-level state: add to the save object in
    `saveCurrentState` and the restore in the load path, and to the `rpg_data`
    init + backfill in `getPlayerRpgData`.
-7. **Test headlessly** (§4), including at least one full natural-language run.
+8. **Test headlessly** (§4), including at least one full natural-language run.
 
 **Before building a bespoke subsystem, ask if it's already `add_status` wearing a
 hat.** Quests, pacts, diseases, blessings, one-use pre-buffs all are. The bar for
