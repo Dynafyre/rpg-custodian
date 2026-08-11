@@ -164,7 +164,7 @@ jQuery(async () => {
         // cancels the pin instantly.
         pinChatToBottom();
         if (context.eventTypes.CHAT_CHANGED) {
-            context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => pinChatToBottom());
+            context.eventSource.on(context.eventTypes.CHAT_CHANGED, () => { pinChatToBottom(); setTimeout(tintAdversarialMessages, 800); });
         }
 
         // Drive the Intent Analyzer off every player message
@@ -3590,7 +3590,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
         message.present = [...present, 'Game Master.png'];
     }
 
-    function sendGhostMessage(text) {
+    function sendGhostMessage(text, opts = {}) {
         const message = {
             name: 'RPG Custodian',
             is_system: true,
@@ -3601,10 +3601,22 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
                 isSmallSys: true
             }
         };
+        if (opts.adversarial) message.extra.rpg_adversarial = true;   // contested-roll readouts get a red tint
         stampPresence(message);
         const ctx = getCtx();
         ctx.chat.push(message);
         ctx.addOneMessage(message);
+        if (opts.adversarial) tintAdversarialMessages();
+    }
+    // Adversarial contest readouts (cervix_press, milk_attempt, …) carry a
+    // faint red tint. The CSS class dies with every chat rerender, so it is
+    // re-stamped from the message's extra flag on add and on CHAT_CHANGED.
+    function tintAdversarialMessages() {
+        const chat = getCtx().chat || [];
+        document.querySelectorAll('#chat .mes').forEach(el => {
+            const i = Number(el.getAttribute('mesid'));
+            if (chat[i]?.extra?.rpg_adversarial) el.classList.add('rpg-adversarial');
+        });
     }
 
     /**
@@ -6312,22 +6324,111 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             addCustomStatus(name, { preset: 'sanctuary_breached' }, true);
             if (c.tier === 'critical') {
                 queueStatusReaction(name, `His cockhead has JUST punched clean through her cervix in one motion — no grudging yield: her innermost ring gave way all at once and her womb takes the head of him entire. The shock detonates a climax through her THIS INSTANT: in her reply she comes harder than she has words for, her deepest muscle spasming around the intrusion as if to keep it.`);
-                sendGhostMessage(`${line}\n🌟 Her cervix gives way ALL AT ONCE — it does not yield so much as open for him. **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock detonates a climax through her.`);
+                sendGhostMessage(`${line}\n🌟 Her cervix gives way ALL AT ONCE — it does not yield so much as open for him. **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock detonates a climax through her.`, { adversarial: true });
             } else {
                 queueStatusReaction(name, `His cockhead has JUST forced its way through her cervix — the tight ring gave way and he is pressed into the mouth of her womb itself. The breach wrings a climax out of her ON THE SPOT: in her reply she comes, hard and involuntary, around the intrusion — her body's own answer to being opened where nothing has reached before.`);
-                sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her.`);
+                sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her.`, { adversarial: true });
             }
             spendNpcStamina(name, 1);   // that climax costs her what any climax costs
         } else if (c.tier === 'mixed') {
             queueStatusReaction(name, `He is bearing down on the very mouth of her womb and she can FEEL it almost give — her cervix flexing, dimpling inward under him, a terrifying, thrilling almost. It holds, this time, the tight ring quivering against the pressure. In her reply she responds to that razor's-edge sensation, whatever it stirs in her.`);
-            sendGhostMessage(`${line}\n🚪 Her cervix holds — barely: it flexes and dimples inward around him, a hair from giving.`);
+            sendGhostMessage(`${line}\n🚪 Her cervix holds — barely: it flexes and dimples inward around him, a hair from giving.`, { adversarial: true });
         } else if (c.tier === 'fumble') {
             queueStatusReaction(name, `He drove for the mouth of her womb and her body slammed its door: her cervix clamped down HARD, a guarded, jarring clench — sensitive, too deep, too much all at once. In her reply she reacts to that sharp deep jolt however her nature takes it.`);
-            sendGhostMessage(`${line}\n🚪 Her cervix clamps shut and holds — her body answers the forcing with a hard, guarding clench.`);
+            sendGhostMessage(`${line}\n🚪 Her cervix clamps shut and holds — her body answers the forcing with a hard, guarding clench.`, { adversarial: true });
         } else {
             queueStatusReaction(name, `He is grinding hard against the very mouth of her womb — and it HOLDS: her tight, unyielding cervical sphincter stays sealed, a blunt, bruising pressure on her innermost gate. In her reply she responds to that exact sensation — the deep grinding press against a door that has not opened, the ache and fullness of it, whatever it stirs in her.`);
-            sendGhostMessage(`${line}\n🚪 Her cervix holds fast — tight and unyielding${herStamina > 2 ? ' (her body still has too much fight in it)' : ''}.`);
+            sendGhostMessage(`${line}\n🚪 Her cervix holds fast — tight and unyielding${herStamina > 2 ? ' (her body still has too much fight in it)' : ''}.`, { adversarial: true });
         }
+    }
+
+    // The milk_attempt verb — HER roll (the under-explored half of the dice).
+    // She is dominantly forcing his climax: 2d6 + HER remaining Stamina vs
+    // DC 7 + HIS remaining Stamina (with the usual ±3 doubles swing). Base 7
+    // puts an even stamina match at 58% for her — the closest 2d6 step to
+    // Dyna's 50/50, breaking toward the woman bold enough to try; each point
+    // of stamina difference moves it ~14%. If she wins: the GM briefly
+    // narrates HIS side only (a surprised moan, the climax forced out of him
+    // — or the dry, cramping spasm if he has nothing to give), she savors it
+    // with wicked satisfaction in her reply, and mechanically (vaginal, with
+    // potency intact) his WHOLE reserve goes at once: fertilization shots =
+    // his remaining Stamina × effective virility + 1, then −1 Stamina, then
+    // Milked Dry (−2 virility, 3 periods, refresh not stack). A miss is him
+    // holding out under her — her note plays hunger thwarted, never defeat.
+    const MILK_BASE_RESIST = 7;
+    async function resolveMilkAttempt(eff) {
+        const name = resolveNpcName(eff?.npc || eff?.target);
+        if (!name) return;
+        const rel = getRelationship(name);
+        if (rel.npcUnconscious) return;                    // an unconscious woman dominates nobody
+        const herStamina = Math.max(0, rel.npcStamina ?? npcMaxStamina(name));
+        const hisStamina = getStamina();
+        const dc = MILK_BASE_RESIST + hisStamina;
+        const d1 = rollDie(), d2 = rollDie();
+        const swing = (d1 === 6 && d2 === 6) ? 3 : (d1 === 1 && d2 === 1) ? -3 : 0;
+        const total = d1 + d2 + herStamina + swing;
+        const success = total >= dc;
+        const swingStr = swing > 0 ? ' **+3 DOUBLE SIXES!**' : swing < 0 ? ' **−3 snake eyes!**' : '';
+        const channel = String(eff?.channel || 'other').toLowerCase();
+        const line = `🎲 **Her hips set the law — ${name} works him to milk him dry** (her ${herStamina} Stamina vs DC ${MILK_BASE_RESIST} + his ${hisStamina})\n` +
+            `Rolled 2d6 [${d1}+${d2}=${d1 + d2}] + ${herStamina}${swingStr} = **${total}** vs DC ${dc}`;
+        if (!success) {
+            sendGhostMessage(`${line} → 🛡️ **he holds** — jaw tight, he keeps himself his own.`, { adversarial: true });
+            queueStatusReaction(name, `She is working him with everything she has, setting the rhythm herself, bent on forcing his release — and he is HOLDING, white-knuckled, keeping it from her. In her reply she responds to a man withstanding her — however that lands in her nature: hunger sharpened, pride pricked, the game deepening. She has not finished with him.`);
+            return;
+        }
+        const dry = Math.max(0, effectiveStat('virility')) <= 0 || hisStamina <= 0;
+        const effVir = Math.max(0, effectiveStat('virility'));
+        // His whole reserve goes at once — counted BEFORE the climax spends him.
+        const shots = hisStamina * effVir + 1;
+        let mech = '';
+        // Dry or loaded, the climax itself costs him like any other.
+        if (hisStamina > 0) spendStamina(1);
+        {
+            const rdNow = getPlayerRpgData();
+            if (rdNow) rdNow.stats.lastOrgasmStep = currentGameState.timeStep || 0;
+        }
+        if (!dry) {
+            if (channel === 'vaginal') {
+                rel.lastCreampieStep = currentGameState.timeStep || 0;
+                const roll = rollFertilization(name, shots);
+                mech = roll.locked
+                    ? `\n💦 He empties EVERYTHING into her — ${shots} shots — but her womb is already committed.`
+                    : `\n💦 He empties EVERYTHING into her at once — ${roll.shots} shots at ${roll.pct}% → ${roll.hits > 0 ? `🌱 **${roll.hits} took** (✨ +${roll.xp} XP) — she now carries **${rel.pregnancies}**` : 'none took'}.`;
+            } else {
+                mech = `\n💦 He empties everything he has — ${shots} shots' worth, wrung out ${channel === 'oral' ? 'straight down her throat' : 'into her hands and keeping'} — none of it anywhere it could take root.`;
+            }
+        } else {
+            mech = `\n${DRY_ORGASM_LINE}`;
+        }
+        // Milked Dry: refresh, never stack — −4 virility would double-punish.
+        const existing = playerCustomEffects().find(e => e.name === 'Milked Dry');
+        if (existing) existing.expiresStep = (currentGameState.timeStep || 0) + 3;
+        else addCustomStatus('player', { preset: 'milked_dry' }, true);
+        savePlayer();
+        sendGhostMessage(`${line} → 💥 **she takes it from him**${mech}\n🥛 **Milked Dry** ${existing ? 'deepens its hold' : 'takes hold'} (−2 virility, 3 periods).`, { adversarial: true });
+        queueStatusReaction(name, dry
+            ? `She has JUST forced a climax out of him — and it came up EMPTY: his body arched and spasmed through a dry, fruitless orgasm, nothing left in him to give, only helpless flexing and a deep cramping wince. In her reply she savors it with open, wicked satisfaction — she has milked him past empty, on her terms, and his dry shudders are her trophy.`
+            : `She has JUST forced his orgasm out of him herself — made him cum, hard and helpless and in shocking volume, entirely on her terms${channel === 'vaginal' ? ', every drop of it pumped up inside her' : channel === 'oral' ? ', every drop of it hers to swallow' : ''}. In her reply she savors it with open, wicked satisfaction — her domination worked, his release belongs to her, and she lets him know it.`);
+        // The GM speaks HIS side only, briefly — the one narration this verb wants.
+        try {
+            const sys = `You are the GAME MASTER narrator of an adult RPG. In 1-2 vivid sentences, narrate ONLY the player's own involuntary reaction — never the woman's words, actions, or expressions (she answers for herself next). If you need to reason, use <think></think>; the narration itself is pure prose.`;
+            const prompt = dry
+                ? `${name} has just forced the player's orgasm entirely against his control — but he has NOTHING left to give: narrate his surprised, helpless moan as the climax tears through him and comes up DRY — a hard, flexing spasm with no ejaculate at all, and a deep cramping ache seizing his balls and abdomen.`
+                : `${name} has just forced the player's orgasm entirely against his control: narrate his surprised, helpless moan and the climax being ripped out of him — incredibly hard, in extreme volume, utterly beyond his will.`;
+            const gm = await generateProse({ prompt, systemPrompt: sys, budget: 220, rescuePrefill: 'A ' });
+            if (gm) sendGameMasterMessage(gm);
+        } catch (e) { console.error('RPG Custodian: milk narration failed', e); }
+    }
+
+    // A DRY orgasm: nothing left to give — either his potency is wrung out
+    // (effective virility 0, e.g. Milked Dry) or his body is spent to nothing
+    // (0 Stamina). Shared flavor for both, and the partner is TOLD, so she
+    // reacts to the empty spasm instead of acting like he came normally.
+    const DRY_ORGASM_LINE = `💦 A **DRY orgasm** — the pressure builds and builds and breaks into a hard, flexing spasm with nothing behind it: no ejaculate comes at all, only a deep cramping ache seizing his balls and lower belly.`;
+    function queueDryOrgasmNote(npcName) {
+        if (!npcName) return;
+        queueStatusReaction(npcName, `He has JUST climaxed DRY with her: his body spasmed through the full motions of an orgasm and NOTHING came — no ejaculate at all, only helpless flexing and a wince of deep, cramping pain low in his belly. She can tell the difference plainly; in her reply she reacts to THAT — a man wrung past empty — not to any normal finish.`);
     }
 
     // One player orgasm: −1 Stamina; if internal & P-in-V, roll fertilization
@@ -6337,10 +6438,23 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         let conceived = 0;
         const lines = [];
         for (let i = 0; i < Math.max(1, count); i++) {
-            if (getPlayerRpgData()?.stats.unconscious) { lines.push('…you are far too spent to manage it again.'); break; }
+            if (getPlayerRpgData()?.stats.unconscious) {
+                // Spent to nothing: his body can still be wrung through the
+                // motions, but it is a dry, cramping spasm — and she knows it.
+                lines.push(DRY_ORGASM_LINE);
+                queueDryOrgasmNote(npcName);
+                break;
+            }
             spendStamina(1);
             const rdNow = getPlayerRpgData();
             if (rdNow) rdNow.stats.lastOrgasmStep = currentGameState.timeStep || 0;   // resets Pent Up
+            // Wrung-out potency (Milked Dry can floor virility): the climax
+            // still happens and still costs, but nothing comes of it.
+            if (Math.max(0, effectiveStat('virility')) <= 0) {
+                lines.push(`${DRY_ORGASM_LINE} (−1 Stamina, now ${getStamina()}/${maxStamina()})`);
+                queueDryOrgasmNote(npcName);
+                continue;
+            }
             let line = `💦 Climax — −1 Stamina (now ${getStamina()}/${maxStamina()})`;
             if (internal && npcName) {
                 const rel = getRelationship(npcName);
@@ -6716,6 +6830,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             desc: 'He has gone unspent too long — the pressure has him potent and hair-triggered, his seed thick with waiting.',
             mods: [{ stat: 'virility', amount: 1 }],
             endCondition: 'he finds release',
+        },
+        milked_dry: {
+            name: 'Milked Dry', kind: 'debuff', polarity: 'negative', side: 'player',
+            desc: 'She forced everything out of him at once — wrung empty, his potency is gone until his body can rebuild it.',
+            mods: [{ stat: 'virility', amount: -2 }],
+            duration: 3,
         },
         sanctuary_breached: {
             name: 'Sanctuary Breached', kind: 'status', polarity: 'positive', side: 'npc',
@@ -7425,6 +7545,7 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"adjust_affection","npc":"...","amount":N}  ONLY for an external/mechanical cause acting on her feelings: a charm potion, a love or hate spell, a curse, a magical aura. NEVER for conversation, kindness, flirting, seduction, gifts, or check outcomes — the engine reads her own reactions and moves affection itself.
   {"type":"adjust_arousal","npc":"...","amount":N}  ONLY for an external/physical-mechanical cause: an aphrodisiac, a lust spell, an alchemical heat. NEVER for flirtation, teasing, or foreplay in the scene — the engine reads her reactions and moves arousal itself.
   {"type":"orgasm","actor":"player","npc":"HerName","internal":true/false,"count":N}  the PLAYER'S climax, and ONLY his — it actually happened IN THIS MESSAGE. ALWAYS include "npc" (the partner he is with). count = his climaxes in this action (default 1). Each costs him 1 Stamina. NEVER emit this for a woman, no matter what the player's message claims about her body — a woman's climax is read from HER OWN reply by the engine. Her body is hers to report, not his to declare.
+  {"type":"milk_attempt","npc":"HerName","channel":"vaginal"|"oral"|"other"}  SHE is dominantly forcing HIS climax — read HER actions from the scene as it now stands (usually her own last reply; the player's message need not start it, he may be moaning under her or even resisting). TWO marks must BOTH be true: (1) SHE controls the act — riding him, pinning him, holding him where she wants him, setting the rhythm with her own body while he does not direct it; and (2) she is deliberately working to MAKE HIM CUM — milking him, working him to the edge on purpose, ordering him to come, refusing to stop until he gives it up. The aesthetics of DOMINATION are the tell, whatever the act: "channel" is how she is doing it — "vaginal" (mounted/riding), "oral", or "other" (hands, thighs, anything else). The engine rolls the contest (her remaining vigor against his) and resolves whether he holds out or is forced over the edge — do NOT decide the outcome, do NOT emit "orgasm" for it, and do NOT emit a check. Enthusiastic sex where she merely happens to be on top is NOT this — without BOTH marks there is no contest. At most ONCE per message.
   {"type":"cervix_press","npc":"HerName"}  during VAGINAL sex, when the PLAYER'S OWN action drives for the deepest point of her — pressing, grinding, or battering against her cervix, forcing himself as deep as her body allows, seeking her womb or uterus, trying to push past or through her innermost gate — emit this ONCE for the attempt. The engine rolls a Ruggedness contest against her body's remaining resistance and decides what her body does: do NOT also emit a check for the press, do NOT decide or narrate whether her cervix yields, and do NOT emit it while she already bears "Sanctuary Breached" (her womb already stands open; the engine ignores repeats regardless). Ordinary deep thrusting with no womb-seeking intent is NOT this.
     HER CLIMAX — read her BODY, not the vocabulary. Prose rarely uses the word: what it shows is an involuntary crisis running through her and then leaving her — muscles clenching and fluttering where he is, a back arching off whatever it was against, thighs locking or legs giving out, toes curling, a cry or sob torn out of her that she did not choose to make, sight or thought whiting out, a rush of wetness, and the sag into limp, shuddering aftermath. That IS the climax; emit it. Do NOT wait for her to name it. Equally, do NOT emit for the climb — moaning, writhing, begging, being close, being on the edge, "almost", "any second now" — arousal rising is not arousal breaking. If the message shows her cresting and then falling apart, that is one climax; if it shows her merely getting louder, it is none.
     HIS CLIMAX — he must be ACTUALLY FINISHING, mid-act, in this message. Emit only when the release itself occurs: he spills, spends himself, empties into her, goes rigid and pulses. Do NOT emit merely because semen is MENTIONED — talk of cum, breeding, filling her, seed or a load is ordinary talk in this game and is usually about the past, the future, or the wish. Specifically NOT a climax: telling her what he will do to her; being told to; boasting or begging; her mentioning what is already inside her from before; cum being licked, wiped, leaking, or admired after the fact; wanting to, trying not to, or holding back. If he is not inside her or being stimulated RIGHT NOW in this message, he did not finish in it.
@@ -7911,7 +8032,7 @@ ACTIVE OBJECTIVES (engine-judged — never emit completion for these): ${playerO
 
     function effectsSummary(effects) {
         // These emit their own rich ghost messages — don't also echo them here.
-        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'cervix_press', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
+        const SELF_NARRATING = new Set(['birth', 'orgasm', 'damage', 'heal', 'restore_mana', 'sustenance', 'cervix_press', 'milk_attempt', 'adjust_affection', 'adjust_arousal', 'apply_curse', 'lift_curse', 'add_status', 'add_objective', 'remove_status', 'adjust_stat', 'equip_item', 'unequip_item', 'whereabouts']);
         return (effects || []).filter(e => !SELF_NARRATING.has(e.type)).map(e => {
             if (e.type === 'add_item') return `+${e.name}`;
             if (e.type === 'remove_item') return `-${e.name}`;
@@ -8206,6 +8327,7 @@ Narrate the result briefly, grounded in this location and the story's current be
                             }
                             moved = await doEventTeleport(e.destination) || moved; break;
                         case 'rest': await doRest(); break;
+                        case 'milk_attempt': await resolveMilkAttempt(e); break;
                         case 'advance_time': await advanceTimeBy(e.periods || 1); break;
                         default: break;   // sync effect — handled by applyEffects below
                     }
@@ -8232,8 +8354,10 @@ Narrate the result briefly, grounded in this location and the story's current be
                     && resolveReplyTargets(playerText, intent, dismissedThisTurn, repliedThisTurn).targets.length > 0;
                 // The cervix_press contest is resolved between the check line
                 // and HER reply — the GM narrating it would speak her body for
-                // her (Dyna: "don't have the gm narrate this result").
-                const intimatePress = (effects || []).some(e => e.type === 'cervix_press');
+                // her (Dyna: "don't have the gm narrate this result"). The
+                // milk_attempt likewise runs its OWN dedicated GM beat inside
+                // the resolver; the generic narration would double-speak it.
+                const intimatePress = (effects || []).some(e => e.type === 'cervix_press' || e.type === 'milk_attempt');
                 // The GM narrates RESOLVED GAME ACTIONS — nothing else. Asked to
                 // narrate a turn that resolved nothing, it has no outcome to
                 // report and paints the room instead ("the scarred prep island
@@ -8515,6 +8639,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         npcFx: (n) => openNpcEffectsPanel(n),
         replyTargets: (text, intent) => resolveReplyTargets(text, intent),
         cervixPress: (n) => resolveCervixPress(n),
+        milk: (n, channel) => resolveMilkAttempt({ npc: n, channel: channel || 'vaginal' }),
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),

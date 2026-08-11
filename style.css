@@ -119,6 +119,12 @@
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* Adversarial contest readouts — a faint red tint marks a contested roll */
+#chat .mes.rpg-adversarial {
+    background: rgba(190, 40, 50, 0.10);
+    border-left: 2px solid rgba(220, 60, 70, 0.45);
+}
+
 /* One-tap premade status chips in the effect requesters */
 .pe-preset-row {
     display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
