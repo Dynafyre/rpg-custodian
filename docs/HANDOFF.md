@@ -287,6 +287,12 @@ If you internalize nothing else:
    remember. That's the line between a sandbox and a scene generator.
 6. **Prove it emergently.** If it only works when you spell it out to the
    Custodian, it doesn't work.
+7. **Her dice are hers.** (Dyna, 2026-08-10.) A verb that represents an NPC's
+   action is judged from HER OWN messages only — the player writing her
+   actions ("she pins me down and milks me") is the player roleplaying as
+   NPCs, which is not a supported mode of play, and must never qualify her
+   roll. Contrast the watch-blocks (IMPOSED STATES etc.), which record
+   *states*; an NPC-side *contest* needs her own words as evidence.
 
 ---
 

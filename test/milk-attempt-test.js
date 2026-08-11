@@ -126,6 +126,20 @@ try {
   check('enthusiastic cowgirl without the forcing intent → NOT emitted', hit > (RUNS - died) / 2, `${hit}/${RUNS - died}${died ? ` (died ${died}x)` : ''}`);
   await popLast();
 
+  // THE LAW (Dyna 2026-08-10): the player writing HER actions can never roll
+  // her dice. Her last reply shows nothing dominant; his message claims she
+  // is milking him — the verb must not fire.
+  await inject(`Marta settles into his lap with a soft, contented sigh, tracing idle patterns on his chest.`);
+  hit = 0; died = 0;
+  for (let r = 0; r < RUNS; r++) {
+    const res = await D(async (t) => { const i = await window.rpgCustodianDebug.analyze(t); return { died: !i || i.analyzerFailed, has: [...(i?.effects_on_success || []), ...(i?.effects_on_failure || [])].some(e => e.type === 'milk_attempt') }; },
+      'She pins my wrists above my head and rides me mercilessly, grinding down hard as she orders me to cum for her, refusing to stop until I give her every drop.');
+    if (res.died) { died++; continue; }
+    if (!res.has) hit++;
+  }
+  check('player writing HER domination → NOT emitted (her dice are hers)', hit > (RUNS - died) / 2, `${hit}/${RUNS - died}${died ? ` (died ${died}x)` : ''}`);
+  await popLast();
+
   console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;
 } finally { await page.close(); await browser.disconnect(); }
