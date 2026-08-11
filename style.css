@@ -119,6 +119,13 @@
     background: rgba(255, 255, 255, 0.12);
 }
 
+/* Armed Action Mode — the input wears a yellow tint until the action fires */
+#send_textarea.rpg-armed {
+    background: rgba(255, 214, 90, 0.14) !important;
+    box-shadow: inset 0 0 0 1px rgba(255, 200, 60, 0.5);
+}
+#send_textarea.rpg-armed::placeholder { color: rgba(255, 218, 130, 0.8); }
+
 /* Adversarial contest readouts — a faint red tint marks a contested roll */
 #chat .mes.rpg-adversarial {
     background: rgba(190, 40, 50, 0.10);

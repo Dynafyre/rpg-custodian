@@ -2036,6 +2036,7 @@ Rules: core stats run ~1-10, so mods are SMALL integers ±1..±3 (±5 only for p
         if (currentGameState.isActive) {
             items.push({ icon: '🚶', label: 'Move', action: () => openTravelPopup() });
             items.push({ icon: '👀', label: 'Look', action: () => openLookPopup() });
+            items.push({ icon: '🎯', label: `Action Mode${currentGameState.armedAction ? ` (armed: ${currentGameState.armedAction.label})` : ''}`, action: () => openActionModeMenu() });
             {
                 const nFx = playerStatusesOnly().length + (isCrystalCursed('player') ? 1 : 0);
                 const nQ = playerObjectives().length;
@@ -3204,6 +3205,7 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
             currentGameState.dayCount = 1;
             currentGameState.startWeekday = null;
             $('#rpg-action-popup').remove();
+            disarmAction();
             projectPlayerStatus();  // clears the injected status block
             
             // Update time display back to RPG button
@@ -5880,7 +5882,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // exactly ONE time period (never skips ahead to morning).
     async function doRest() {
         restoreEveryoneStamina();
-        sendGhostMessage('😴 You rest and recover — everyone\'s Stamina restored to full.');
+        // A proper rest also refills the well: Mana back to full (max = Craftiness).
+        { const rd = getPlayerRpgData(); if (rd) { rd.stats.mana = maxMana(); savePlayer(); } }
+        sendGhostMessage('😴 You rest and recover — everyone\'s Stamina restored to full, and your Mana refills.');
         // A rest is when you take stock: the Level Up button appears in the
         // action bar and stays there until you leave this place.
         currentGameState.levelUpAt = currentGameState.currentLocation;
@@ -6310,16 +6314,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // (4-5 Stamina) runs 17-28%, opening to 58-83% once she is worn down —
     // wearing her down IS the mechanic.
     const CERVIX_PRESS_DC_BASE = 8;
-    function resolveCervixPress(npcName) {
+    function resolveCervixPress(npcName, dcMod = 0) {
         const name = resolveNpcName(npcName) || npcName;
         if (!name) return;
         if (npcActiveEffects(name).some(e => e.name === 'Sanctuary Breached')) return;   // already open — nothing left to force
         const rel = getRelationship(name);
         const herStamina = Math.max(0, rel.npcStamina ?? npcMaxStamina(name));
-        const dc = CERVIX_PRESS_DC_BASE + herStamina;
+        const mod = Math.max(-2, Math.min(2, Math.round(Number(dcMod) || 0)));   // Action-Mode judge nudge, engine-clamped
+        const dc = CERVIX_PRESS_DC_BASE + herStamina + mod;
         const c = skillCheck('ruggedness', dc);
         consumeCheckEffects('ruggedness');   // a one-use ruggedness pre-buff is spent on this trial like any other
-        const line = skillCheckLine(c, `Her last gate — ${name}'s body resists (DC ${CERVIX_PRESS_DC_BASE} + her ${herStamina} Stamina)`);
+        const line = skillCheckLine(c, `Her last gate — ${name}'s body resists (DC ${CERVIX_PRESS_DC_BASE} + her ${herStamina} Stamina${mod ? ` ${mod > 0 ? '+' : ''}${mod} situational` : ''})`);
         if (c.success) {
             addCustomStatus(name, { preset: 'sanctuary_breached' }, true);
             if (c.tier === 'critical') {
@@ -6351,16 +6356,17 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     // while she already bears the status. GM gated out like the other
     // intimate contests; the roll wears the adversarial red tint.
     const BELLY_MASSAGE_DC_BASE = 7;
-    function resolveBellyMassage(npcName) {
+    function resolveBellyMassage(npcName, dcMod = 0) {
         const name = resolveNpcName(npcName) || npcName;
         if (!name) return;
         if (npcActiveEffects(name).some(e => e.name === 'Stimulated Ovaries')) return;   // already roused — nothing left to wake
         const rel = getRelationship(name);
         const herStamina = Math.max(0, rel.npcStamina ?? npcMaxStamina(name));
-        const dc = BELLY_MASSAGE_DC_BASE + herStamina;
+        const mod = Math.max(-2, Math.min(2, Math.round(Number(dcMod) || 0)));   // Action-Mode judge nudge, engine-clamped
+        const dc = BELLY_MASSAGE_DC_BASE + herStamina + mod;
         const c = skillCheck('craftiness', dc);
         consumeCheckEffects('craftiness');
-        const line = skillCheckLine(c, `Knowing hands — ${name}'s depths resist waking (DC ${BELLY_MASSAGE_DC_BASE} + her ${herStamina} Stamina)`);
+        const line = skillCheckLine(c, `Knowing hands — ${name}'s depths resist waking (DC ${BELLY_MASSAGE_DC_BASE} + her ${herStamina} Stamina${mod ? ` ${mod > 0 ? '+' : ''}${mod} situational` : ''})`);
         if (c.success) {
             addCustomStatus(name, { preset: 'stimulated_ovaries' }, true);
             queueStatusReaction(name, `His hands have JUST worked her lower belly with real skill — slow, deep, knowing circles pressed low over her womb — and something has ANSWERED: a warm, fluttering heaviness blooming deep behind her navel, her ovaries roused and pleasantly aching awake. Her body is readying itself whether she wills it or not; in her reply she responds to that deep stirring warmth, however it lands in her nature.`);
@@ -7268,6 +7274,185 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             items.push({ icon: '🏠', label: `Part with ${name} — back to her routine`, sub: dest && dest !== currentGameState.currentLocation ? `off to ${locName(dest)}` : 'resumes her schedule here', action: () => removeFromParty(name, { quiet: true, resumeSchedule: true }) });
         }
         openActionPopup('Party…', items);
+    }
+
+    // ========================================================================
+    // ACTION MODE — menu-declared intent (RPG menu → 🎯 Action Mode).
+    // The menu declares WHAT; a small judge reads HOW and WHO from the scene.
+    // Arming is ONE-SHOT: the next message performs exactly the armed action —
+    // the freeform Custodian pipeline is bypassed for that message entirely
+    // (no analyzer, no other verbs). Freeform play keeps every verb it has;
+    // spellcasting exists ONLY here (the player shouldn't have to remember a
+    // spellbook in prose, and neither should the Custodian's context).
+    // ========================================================================
+    const SPELL_CATALOG = {
+        summon_lover: {
+            name: 'Summon Lover', tier: 'Greater', cost: 4,
+            desc: 'pull a woman you know across any distance to your side — she stays with you until time moves on',
+            needsWoman: true,
+        },
+    };
+    function knownSpells() {
+        const rd = getPlayerRpgData(); if (!rd) return [];
+        // Prototype seed: the first spell is simply known. Acquisition paths
+        // (forge, tomes, teaching, tokens) come with the full spellcraft system.
+        if (!Array.isArray(rd.spells)) { rd.spells = ['summon_lover']; savePlayer(); }
+        return rd.spells;
+    }
+    // Menu-armable intimate contests — same resolvers freeform play uses, so
+    // the two input paths can never drift.
+    const ROMANCE_ACTIONS = {
+        belly_massage: { label: 'Ovary Stimulation', desc: 'work her lower belly with knowing hands — Craftiness against her remaining vigor', run: (t, mod) => resolveBellyMassage(t, mod) },
+        cervix_press: { label: 'Cervix Press', desc: 'drive for her innermost gate during sex — Ruggedness against her remaining vigor', run: (t, mod) => resolveCervixPress(t, mod) },
+    };
+
+    function armAction(a) {
+        currentGameState.armedAction = a;   // transient — deliberately not in the save
+        const ta = document.getElementById('send_textarea');
+        if (ta) {
+            ta.classList.add('rpg-armed');
+            if (ta.dataset.rpgPh == null) ta.dataset.rpgPh = ta.getAttribute('placeholder') || '';
+            ta.setAttribute('placeholder', `🎯 ${a.label} — ${a.desc} · your next message performs it (describe how you do it)`);
+        }
+        wmToast(`Armed: ${a.label}`, 'success');
+    }
+    function disarmAction(announce = false) {
+        currentGameState.armedAction = null;
+        const ta = document.getElementById('send_textarea');
+        if (ta) {
+            ta.classList.remove('rpg-armed');
+            if (ta.dataset.rpgPh != null) { ta.setAttribute('placeholder', ta.dataset.rpgPh); delete ta.dataset.rpgPh; }
+        }
+        if (announce) wmToast('Action disarmed.', 'success');
+    }
+
+    function openActionModeMenu() {
+        const armed = currentGameState.armedAction;
+        const rd = getPlayerRpgData();
+        const items = [
+            { icon: '🪄', label: 'Cast a Spell', sub: `Mana ${rd?.stats.mana ?? 0}/${maxMana()}`, action: () => openSpellMenu() },
+            { icon: '💋', label: 'Romance', sub: 'intimate contests, aimed deliberately', action: () => openRomanceActionMenu() },
+            { icon: '⚔️', label: 'Combat', sub: 'the combat system will live here — not built yet', action: () => openActionModeMenu() },
+        ];
+        if (armed) items.push({ icon: '✖️', label: `Cancel — ${armed.label}`, sub: 'disarm without acting', action: () => disarmAction(true) });
+        openActionPopup(`🎯 Action Mode${armed ? ` — armed: ${armed.label}` : ''}`, items);
+    }
+    function openSpellMenu() {
+        const rd = getPlayerRpgData();
+        const mana = rd?.stats.mana ?? 0;
+        const items = [];
+        for (const id of knownSpells()) {
+            const sp = SPELL_CATALOG[id];
+            if (!sp) continue;
+            if (sp.needsWoman) {
+                const women = Object.keys(rd?.relationships || {}).filter(n => (currentGameState.npcRoster || []).some(x => x.name === n));
+                if (!women.length) items.push({ icon: '🪄', label: sp.name, sub: 'you know no one to call to you yet', action: () => openSpellMenu() });
+                for (const w of women) {
+                    const here = getNpcsAt(currentGameState.currentLocation).some(n => n.name === w);
+                    const block = here ? 'already at your side'
+                        : getRelationship(w).npcUnconscious ? 'she is unconscious — nothing would answer'
+                        : mana < sp.cost ? `not enough Mana (${mana}/${sp.cost})` : null;
+                    items.push({
+                        icon: block ? '⛔' : '🪄',
+                        label: `${sp.name}: ${w}`,
+                        sub: block || `${sp.cost} Mana · ${sp.desc}`,
+                        action: () => { if (block) { openSpellMenu(); return; } armAction({ kind: 'spell', id, woman: w, label: `${sp.name}: ${w}`, desc: sp.desc, cost: sp.cost }); },
+                    });
+                }
+            }
+        }
+        openActionPopup(`🪄 Cast a Spell — Mana ${mana}/${maxMana()}`, items);
+    }
+    function openRomanceActionMenu() {
+        const items = Object.entries(ROMANCE_ACTIONS).map(([id, a]) => ({
+            icon: '💋', label: a.label, sub: a.desc,
+            action: () => armAction({ kind: 'romance', id, label: a.label, desc: a.desc }),
+        }));
+        openActionPopup('💋 Romance', items);
+    }
+
+    /** The Action Mode Judge: never chooses the action, never owns an outcome.
+     *  It reads the player's words + the scene and reports target, a CLAMPED
+     *  situational difficulty nudge, and a narration hint. */
+    async function actionModeJudge(armed, playerText, candidates = []) {
+        try {
+            const sys = `You are the ACTION JUDGE of an adult fantasy RPG. A mechanical action was already chosen from a menu — you NEVER choose, change, or resolve the action, and you have no authority over outcomes. From the player's words and the scene, report ONLY: the target (choose from CANDIDATES only; null if truly none fits), a situational difficulty modifier from -2 (circumstances clearly favor the attempt) to +2 (circumstances clearly hinder it), 0 when unremarkable, a short reason for it, and a one-line narration hint capturing how he goes about it. Output ONLY JSON: {"target_npc":"name or null","dc_mod":N,"reason":"...","narration_hint":"..."}`;
+            const prompt = `DECLARED ACTION: ${armed.label} — ${armed.desc}\nCANDIDATE TARGETS: ${candidates.join(', ') || '(none)'}\nPLAYER'S WORDS: "${playerText}"\nRECENT SCENE:\n${recentSceneForAnalyzer()}`;
+            const p = await generateJson({ prompt, systemPrompt: sys, budget: 220 });
+            if (!p) return null;
+            p.dc_mod = Math.max(-2, Math.min(2, Math.round(Number(p.dc_mod) || 0)));   // engine clamp — the judge only nudges
+            return p;
+        } catch (e) { console.error('RPG Custodian: action judge failed', e); return null; }
+    }
+
+    /** Her arrival, read through her affection band — being CALLED is not a
+     *  neutral event, and whether it lands as devotion or violation is hers. */
+    function summonArrivalNote(name) {
+        const aff = getNpcAffection(name);
+        const base = `She has JUST been SUMMONED — magic seized her mid-moment, wherever she stood and whatever she was doing, and pulled her bodily across the world to appear at his side. The wrench of it still hums in her bones.`;
+        if (aff >= 7) return `${base} And her heart LEAPT to answer it: to be wanted enough to be CALLED — she arrives already turning toward him, whatever she left behind gladly abandoned. In her reply she reacts to arriving, in her own nature.`;
+        if (aff >= 4) return `${base} Startled, wrong-footed — but it is HIM, and that softens it. Flattered or ruffled to be plucked out of her own day, her reply reacts to arriving, in her own nature.`;
+        return `${base} She was NOT asked. Dragged out of her own life without so much as a by-your-leave, whatever she was doing left broken behind her. Her reply reacts to THAT, in her own nature — and he had better have a good reason.`;
+    }
+    async function castSummonLover(armed, playerText, judge) {
+        const rd = getPlayerRpgData(); if (!rd) return;
+        const sp = SPELL_CATALOG[armed.id];
+        const name = armed.woman;
+        if ((rd.stats.mana || 0) < sp.cost) {
+            sendGhostMessage(`🪄 The sigil gutters out — not enough Mana (${rd.stats.mana || 0}/${sp.cost}). Nothing is spent.`);
+            return;
+        }
+        if (getNpcsAt(currentGameState.currentLocation).some(n => n.name === name)) {
+            sendGhostMessage(`🪄 ${name} is already at your side — the magic has nowhere to pull her from.`);
+            return;
+        }
+        if (getRelationship(name).npcUnconscious) {
+            sendGhostMessage(`🪄 The call goes out and finds ${name} senseless — an unconscious mind cannot answer a summons. Nothing is spent.`);
+            return;
+        }
+        rd.stats.mana -= sp.cost;
+        const rel = getRelationship(name);
+        // The summon pin is the escort pin running in reverse: she is HERE for
+        // the rest of this period and resumes her own routine at the next step.
+        rel.partedAt = currentGameState.currentLocation;
+        rel.partedStep = currentGameState.timeStep || 0;
+        noteSeen(name);   // the summon IS the reunion — no stacked reunion note
+        savePlayer();
+        await syncPresence();
+        sendGhostMessage(`🪄 **${sp.name}** — ${sp.cost} Mana spent (${rd.stats.mana}/${maxMana()} left). Space folds, and **${name}** is pulled across the world to your side. She remains until time moves on.`);
+        queueStatusReaction(name, summonArrivalNote(name));
+        try {
+            const sys = `You are the GAME MASTER narrator of a fantasy RPG. In 1-2 vivid sentences narrate ONLY the arrival itself — the working of the summons, space folding open, and ${name} suddenly STANDING HERE, pulled across the world — grounded in this location. Never give ${name} dialogue, expressions, or reactions; she answers for herself next.`;
+            const gm = await generateProse({ prompt: `Location: ${currentSceneLabel()}.${judge?.narration_hint ? ` How he cast it: ${judge.narration_hint}.` : ''} Player's words: "${playerText}"`, systemPrompt: sys, budget: 200, rescuePrefill: 'The ' });
+            if (gm) sendGameMasterMessage(gm);
+        } catch (e) { console.error('RPG Custodian: summon narration failed', e); }
+        await triggerNpcReply(name);
+        projectPlayerStatus();
+    }
+
+    /** One armed action, exactly as declared — targets and texture from the
+     *  judge, mechanics from the same resolvers freeform play uses. */
+    async function runArmedAction(armed, playerText) {
+        if (armed.kind === 'spell') {
+            const judge = await actionModeJudge(armed, playerText, []);
+            await castSummonLover(armed, playerText, judge);
+            return;
+        }
+        if (armed.kind === 'romance') {
+            const act = ROMANCE_ACTIONS[armed.id];
+            if (!act) return;
+            const present = getNpcsAt(currentGameState.currentLocation).filter(n => !getRelationship(n.name).npcUnconscious);
+            if (!present.length) { sendGhostMessage(`🎯 **${armed.label}** — no one is here for that.`); return; }
+            let target = present.length === 1 ? present[0].name : null;
+            let judge = null;
+            if (!target || present.length > 1) judge = await actionModeJudge(armed, playerText, present.map(n => n.name));
+            if (!target) target = resolveNpcName(judge?.target_npc);
+            if (!target && present.some(n => n.name === currentGameState.lastReplier)) target = currentGameState.lastReplier;
+            if (!target) { sendGhostMessage(`🎯 **${armed.label}** — no clear target; name her and try again.`); return; }
+            act.run(target, judge?.dc_mod || 0);
+            await triggerNpcReply(target);
+            return;
+        }
     }
 
     // --- Area Notes manager (shared by the in-game menu and the map editor) ---
@@ -8276,6 +8461,18 @@ Narrate the result briefly, grounded in this location and the story's current be
             .filter(n => getNpcsAt(currentGameState.currentLocation).some(p => p.name === n));
         const repliedThisTurn = [];
         try {
+            // ACTION MODE: a menu-armed action replaces the whole freeform
+            // pipeline for this one message. The menu already declared WHAT;
+            // the judge reads WHO and HOW from the words + scene. One-shot:
+            // disarm first, so a thrown error can never leave a stale arm.
+            const armedNow = currentGameState.armedAction;
+            if (armedNow) {
+                disarmAction();
+                const doneAction = perfStage(`action:${armedNow.id}`);
+                await runArmedAction(armedNow, playerText);
+                doneAction();
+                return;   // the finally barrier still drains her reply's reaction judge
+            }
             const doneAnalyze = perfStage('analyze');
             const intent = await analyzeIntent(playerText);
             doneAnalyze({ mechanical: !!intent?.mechanical, check: intent?.check?.stat || null });
@@ -8671,6 +8868,12 @@ Narrate the result briefly, grounded in this location and the story's current be
         cervixPress: (n) => resolveCervixPress(n),
         milk: (n, channel) => resolveMilkAttempt({ npc: n, channel: channel || 'vaginal' }),
         bellyMassage: (n) => resolveBellyMassage(n),
+        armRomance: (id) => armAction({ kind: 'romance', id, label: ROMANCE_ACTIONS[id].label, desc: ROMANCE_ACTIONS[id].desc }),
+        armSummon: (w) => armAction({ kind: 'spell', id: 'summon_lover', woman: w, label: `Summon Lover: ${w}`, desc: SPELL_CATALOG.summon_lover.desc, cost: SPELL_CATALOG.summon_lover.cost }),
+        armed: () => currentGameState.armedAction,
+        disarm: () => disarmAction(),
+        spells: () => knownSpells(),
+        setMana: (n) => { const rd = getPlayerRpgData(); if (rd) { rd.stats.mana = Math.max(0, Math.min(maxMana(), n)); savePlayer(); } return getPlayerRpgData()?.stats.mana; },
         reunionNote: (n) => buildReunionNote(n),
         sched: (n) => scheduleSummary((currentGameState.npcRoster || []).find(x => x.name === n) || {}),
         rel: (n) => getRelationship(n),

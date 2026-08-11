@@ -56,6 +56,16 @@ memory files (§7) named in brackets.
 - **Area descriptions** [`area-description-style`]: evidence-only (traces, not
   inhabitant vignettes; no cast names except diegetic props), printed only on
   Look.
+- **Action Mode** [`action-mode`] (2026-08-11): menu-declared intent — RPG
+  menu → 🎯 Action Mode → category → action arms a ONE-SHOT
+  `currentGameState.armedAction` (yellow input tint + placeholder reminder);
+  the next message bypasses the freeform analyzer entirely and runs exactly
+  that action, with a small Action Mode Judge supplying target + a ±2-clamped
+  DC nudge + narration hint. Same resolvers as freeform, so paths can't
+  drift. SPELLCASTING LIVES ONLY HERE (`SPELL_CATALOG`, `rd.spells`) — this
+  is the sub-Custodian scaling fix done with UI instead of a router. First
+  spell: Summon Lover (escort-pin in reverse, affection-banded arrival).
+  Combat will mount here too.
 
 ---
 
