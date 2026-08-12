@@ -226,6 +226,30 @@ The pricing axes, including the ones that name themselves:
 - **Fuel** — mana is Craftiness-capped and small; soulgem crystals as ritual fuel; Power Tokens for permanence?
 - **Narrative-only spells** — do pure-flavor spells (Petalfall, Moment of Gold) cost 1 flat, always, to keep magic *felt* in every scene?
 
+## Pass-2 mechanical notes (accumulating as they occur to us)
+
+- **Whisper of the Walls** (Dyna, 2026-08-12): implementable from ENGINE TRUTH —
+  walk the world's NPC schedules for everyone whose slots placed them in this
+  area over the relevant window, and ALSO everyone whose slots placed them in
+  *adjoined* areas (the connections graph), reported as "seen passing." The
+  machinery mostly exists: `npcSlotFor(npc, day, period)` already answers
+  where-was-she-when for any past slot (it's how `absencePursuits` walks an
+  absence), and adjacency is `location.connections`. Layer in session events
+  the schedule doesn't know (summons, escorts, lingering pins) for honesty.
+- **Mind-reading spells** (Dyna, 2026-08-12) — Liar's Bell, Heartsight-family,
+  and much of the Mind school need a new lever: a **mind-reading step** that
+  looks through her model's THOUGHT BLOCKS — past ones already on the record,
+  or her *next* reply's — with a directed instruction: "briefly report any
+  deception," "parse her feelings toward me." Two wirings to explore in the
+  dive: (a) **past** — a directed judge call over her recent replies +
+  stored reasoning traces (reasoning-model backends keep them; on non-thinking
+  backends the judge reads between the lines of her prose instead); (b)
+  **future** — arm the spell, and her next reply gets a post-generation parse
+  before the player sees the verdict. Tricky wiring, and a real prompt-
+  engineering challenge: the Spell Artisan must be taught this as a TOOL with
+  proper instructions for when and how a spell may invoke it — rules, not
+  examples, same law as everywhere.
+
 ## Mechanical levers inventory (pass 2 — fill as we walk the list)
 
 _Every distinct thing a spell can do to the engine. The Spell Artisan may only
