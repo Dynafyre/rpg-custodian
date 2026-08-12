@@ -31,7 +31,7 @@ however you like._
 
 ## Combat & Evocation
 - **Ashen Bolt** — a dart of roaring cinder.
-- **Skysplitter** — lightning called down through your arm.
+- **Skybolt** ⭐ — the caster SHRIEKS, golden light erupting from his raised hand, and a bolt of true lightning answers from the heavens — deafening, blinding, utterly unmistakable. Only works under open sky.
 - **Frostbite** — cold seizes joints; the target slows, shivering.
 - **Stone Fist** — your hand gauntlets itself in living rock.
 - **Thunderclap** — a concussive crack staggers everything near you.
@@ -81,7 +81,8 @@ however you like._
 - **Smolder** — your gaze carries heat; whoever holds eye contact feels it low in the belly.
 - **Rose-Tinted Veil** — the air around you goes soft and warm; hearts nearby lean toward wanting.
 - **Courage in a Cup** — bottled boldness for the one who drinks it.
-- **Cold Water** — douse desire — yours or another's — like a snuffed candle.
+- **Unbridled** — the greater draught: every filter, every inhibition, every polite hesitation dissolves at once. The drinker acts utterly untamed until it runs its course.
+- **Cold Water** ⭐ — douse desire — yours or another's — like a snuffed candle. (The horny companion must be made to LOCK IN for the dungeon.)
 - **Softened Heart** — for a time, her guard toward you sits lower than she'd ever allow sober.
 - **Balm of Grudges** — an apology lands twice as deep; wounds of the heart close faster.
 - **Dread Mien** — you seem, briefly, like something out of an old story about the dark.
@@ -102,7 +103,7 @@ however you like._
 - **Masque** — wear another face until dawn.
 - **Second Skin** — your clothes seem to be any clothes; rags to finery, finery to rags.
 - **Glamour of the Evening** — beauty turned up like a lamp; heads follow you through a room.
-- **Fetch** — an illusory double of you walks, waves, and lies badly under scrutiny.
+- **Fetch** *(folklore's word for one's walking double)* — a pure illusion-clone of you: it walks, gestures, seems to murmur — and bursts like a soap bubble at the first touch.
 - **Veil of Dull Eyes** — you become profoundly unremarkable; eyes slide off you.
 - **Moonlit Stage** — dress a place in an ambience: candlelight, falling petals, distant music.
 - **Phantom Chorus** — sounds that aren't: footsteps above, a voice down the hall, wolves that never were.
@@ -133,9 +134,11 @@ however you like._
 - **Milkflow** — her body remembers how, whether or not it has reason yet.
 - **Womb of Stone** — time stops for what grows within; it waits, safe, until the spell is lifted.
 - **Soulgem Ripening** — the crystal curse coaxed toward its strange conclusion — or unwound thread by thread.
+- **Self-Conception** — palm flat on her lower belly, the caster drives her body through every stage of motherhood in moments: nipples darkening, breasts swelling heavy with milk, stance widening as weight settles into the cradle of her hips and fills her womb — and then the caster is GONE, clothes collapsing in a heap, his perspective folding inward to the warm dark of her womb as the unborn weight she now carries. The GM narrates the experience from within until the spell ends the only way it can: by being born — whereupon he rapidly regrows to his full size, naked and slick with amniotic sheen. Mechanically she carries +1 pregnancy at Birth Overdue (130%). Costs one Power Token above its mana price.
+- **The Borrowed Stag** *(name workshop open — "Futa Hex" as placeholder)* — she gains a cock and, with it, the knowledge of exactly how to use it, her effective virility equal to her current fertility ÷ 10 rounded up. Any child she sires on another woman while spellbound pays the CASTER the XP and eventual Power Tokens — but the pregnancy is forever labeled with its true source.
 
 ## Tantric & Intimate
-- **Tantric Siphon** — her pleasure feeds your well: each of her peaks returns a measure of mana.
+- **Tantric Siphon** ⭐ — her pleasure feeds your well: each of her peaks returns a measure of mana. (Pleasure to mana — resource systems holding hands.)
 - **Unsleeping Flame** — the fire doesn't bank after release; he is ready again before she's caught her breath.
 - **Shared Skin** — for an hour, each feels what the other feels. Nobody stays composed.
 - **The Third Hand** — a phantom touch you steer from across the room. She knows exactly whose it is.
@@ -249,6 +252,55 @@ The pricing axes, including the ones that name themselves:
   engineering challenge: the Spell Artisan must be taught this as a TOOL with
   proper instructions for when and how a spell may invoke it — rules, not
   examples, same law as everywhere.
+
+- **Skybolt** (Dyna, 2026-08-12): needs an ENVIRONMENTAL PRECONDITION lever —
+  "only works under open sky" is a fact about the location. Cleanest: an
+  `outdoor` location tag the world editor sets (tags already exist), with a
+  judge fallback reading the scene when untagged. Its loudness is also the
+  far end of the VISIBILITY axis: maximally obvious, everyone present and
+  possibly adjoining areas react.
+- **Forget-Me** (Dyna, 2026-08-12): leverage the machinery we already stamp —
+  remove HER avatar from the `present` array of the forgotten messages (the
+  Presence extension then hides them from her context specifically; other
+  witnesses keep their memory), or toggle message visibility outright — plus
+  a one-shot injection on her next reply: where she is, how long she's been
+  here, and that she has completely forgotten what she was doing or why.
+- **Disguise magics** (Masque, Second Skin — Dyna, 2026-08-12): must
+  temporarily rewrite the player's NAME and persona description field. Tricky
+  and sharp-edged: the entire save lives at
+  `persona_descriptions[avatar].rpg_data` — mutate the description TEXT only,
+  never the avatar key, and stash the original for restoration. A crash
+  mid-disguise must not orphan the save.
+- **THE ILLUSION PROBLEM** (Dyna, 2026-08-12 — design doctrine): *"Character
+  narration is the thread of reality in chatbot roleplay — divergence in that
+  corrupts the thread. Illusions are almost incompatible with the medium
+  unless we can rein it back in consistently."* The cliff example: she
+  experiences an illusion of falling and splatting. Requirements that fall
+  out: (1) her reply-to-the-illusion must be EXCLUDED from judging — no
+  damage, no reaction verdicts off false events; (2) her NEXT reply must be
+  seeded with "everything is as it was before the cliff" WITHOUT naming it an
+  illusion; (3) her non-dialog narration must never assert the false reality
+  as world-truth. Working shape for the dive: illusions fork into a SAFE
+  class (ambience/decoration — Moonlit Stage, Phantom Chorus — they decorate
+  reality rather than fork it, no containment needed) and a REALITY-FORKING
+  class (Fetch, Mirage Door, the cliff) which need the full containment kit:
+  judge-exclusion flag on affected replies, a restoration note, and a scoped
+  GM frame. Build the safe class first; treat forking illusions as the
+  late-game experiment they are.
+- **Self-Conception** (Dyna, 2026-08-12): levers — a pregnancy record ABOVE
+  overdue (130%, +1 pregnancy on her), a POWER TOKEN surcharge on top of
+  mana (new cost axis), and the big one: a PLAYER-PERSPECTIVE INTERLUDE —
+  the player's agency is suspended and the GM narrates the experience from
+  inside until an end-trigger (the birth) releases him: restored to full
+  size, naked, slick. The interlude lever (GM-narrated player incapacity
+  with a mechanical release condition) will serve other spells and combat
+  states too.
+- **The Borrowed Stag / Futa Hex** (Dyna, 2026-08-12): levers — a DERIVED
+  STAT rule (her effective virility = ⌈her current fertility ÷ 10⌉, live,
+  not copied); NPC-sires-NPC conception (the breeding graph needs an explicit
+  `sire` field — today the player is implicit sire everywhere); and CREDIT
+  vs SOURCE separation: XP + eventual Power Tokens pay the CASTER, but the
+  pregnancy record keeps its true source forever. Name workshop open.
 
 ## Mechanical levers inventory (pass 2 — fill as we walk the list)
 
