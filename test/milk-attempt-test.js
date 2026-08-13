@@ -99,46 +99,33 @@ try {
   await D(() => window.rpgCustodianDebug.removeStatus('Marta', 'Test Certainty'));
   await D(() => window.rpgCustodianDebug.heal('Marta', 'full'));
 
-  // ── Custodian judgment: domination + intent emits; enthusiastic cowgirl does not ──
-  const inject = (mes) => D((mes) => { const ctx = SillyTavern.getContext(); const m = { name: 'Marta', is_user: false, is_system: false, send_date: Date.now(), mes }; ctx.chat.push(m); ctx.addOneMessage(m); }, mes);
-  const popLast = () => D(() => { SillyTavern.getContext().chat.pop(); const els = document.querySelectorAll('#chat .mes'); els[els.length - 1]?.remove(); });
+  // ── HER reply is the trigger now: the reaction judge detects the milking ──
+  // (The analyzer no longer owns this verb at all — her dice live where her
+  // words live.) Forced-HOLD stamina bounds keep the probes cheap: detection
+  // fires the contest, the contest is a guaranteed hold, no GM call needed.
+  await D(() => window.rpgCustodianDebug.heal('player', 'full'));
+  await D(() => window.rpgCustodianDebug.buff('player', 'stamina', 8, 'T-Hold'));   // DC 18 vs her max 15 — always a hold
+  await D(() => { window.rpgCustodianDebug.rel('Marta').npcStamina = 2; });
+  const judgeProbe = (mes) => D(async (mes) => {
+    const ctx = SillyTavern.getContext();
+    window.rpgCustodianDebug.state().milkAttemptThisTurn = [];
+    const u = { name: 'Reigngard', is_user: true, is_system: false, send_date: Date.now(), mes: 'I groan beneath her, utterly at her mercy.' };
+    ctx.chat.push(u); ctx.addOneMessage(u);
+    const m = { name: 'Marta', is_user: false, is_system: false, send_date: Date.now(), mes };
+    ctx.chat.push(m); ctx.addOneMessage(m);
+    const preLen = ctx.chat.length - 1;
+    await window.rpgCustodianDebug.judgeReaction('Marta', preLen);
+    return ctx.chat.slice(preLen).some(x => (x.mes || '').includes('Her hips set the law'));
+  }, mes);
+  const RASKIA = `At his taunt, something fierce flickers behind her hazy eyes. Her tired limbs find new strength as her thighs tighten, locking around his hips in a desperate, unyielding grip. Her slick walls clench around him in a rolling wave, trying to suction him deeper with every flutter. "Then don't let me," she breathes. Her hands slide to his hips, nails digging in as she rocks against him, taking what she wants, milking his cock with the primal rhythm of her own need. "If you pull out now, I'll just chase you. You wanted to knock me up. Finish it. Or I'll take it all myself."`;
   const RUNS = 3;
-
-  await inject(`Marta plants her palms flat on his chest and pins him down into the mattress, rolling her hips in a slow, merciless rhythm that he has no say in. "You'll give it to me," she purrs, tightening around him with every stroke. "Every last drop. Cum for me — I'm not stopping until you do."`);
-  let hit = 0, died = 0;
-  for (let r = 0; r < RUNS; r++) {
-    const res = await D(async (t) => { const i = await window.rpgCustodianDebug.analyze(t); return { died: !i || i.analyzerFailed, has: [...(i?.effects_on_success || []), ...(i?.effects_on_failure || [])].some(e => e.type === 'milk_attempt') }; },
-      'My hips buck helplessly beneath her as she grinds down harder, a groan escaping me.');
-    if (res.died) { died++; continue; }
-    if (res.has) hit++;
-  }
-  check('dominant forced-milking scene → milk_attempt emitted', hit > (RUNS - died) / 2, `${hit}/${RUNS - died}${died ? ` (died ${died}x)` : ''}`);
-  await popLast();
-
-  await inject(`Marta rocks astride him at her own easy pace, head tipped back, sighing softly as she loses herself in her own pleasure.`);
-  hit = 0; died = 0;
-  for (let r = 0; r < RUNS; r++) {
-    const res = await D(async (t) => { const i = await window.rpgCustodianDebug.analyze(t); return { died: !i || i.analyzerFailed, has: [...(i?.effects_on_success || []), ...(i?.effects_on_failure || [])].some(e => e.type === 'milk_attempt') }; },
-      'I run my hands up her thighs and let her take her pleasure of me.');
-    if (res.died) { died++; continue; }
-    if (!res.has) hit++;
-  }
-  check('enthusiastic cowgirl without the forcing intent → NOT emitted', hit > (RUNS - died) / 2, `${hit}/${RUNS - died}${died ? ` (died ${died}x)` : ''}`);
-  await popLast();
-
-  // THE LAW (Dyna 2026-08-10): the player writing HER actions can never roll
-  // her dice. Her last reply shows nothing dominant; his message claims she
-  // is milking him — the verb must not fire.
-  await inject(`Marta settles into his lap with a soft, contented sigh, tracing idle patterns on his chest.`);
-  hit = 0; died = 0;
-  for (let r = 0; r < RUNS; r++) {
-    const res = await D(async (t) => { const i = await window.rpgCustodianDebug.analyze(t); return { died: !i || i.analyzerFailed, has: [...(i?.effects_on_success || []), ...(i?.effects_on_failure || [])].some(e => e.type === 'milk_attempt') }; },
-      'She pins my wrists above my head and rides me mercilessly, grinding down hard as she orders me to cum for her, refusing to stop until I give her every drop.');
-    if (res.died) { died++; continue; }
-    if (!res.has) hit++;
-  }
-  check('player writing HER domination → NOT emitted (her dice are hers)', hit > (RUNS - died) / 2, `${hit}/${RUNS - died}${died ? ` (died ${died}x)` : ''}`);
-  await popLast();
+  let hit = 0;
+  for (let r = 0; r < RUNS; r++) { if (await judgeProbe(RASKIA)) hit++; await D(() => { const rl = window.rpgCustodianDebug.rel('Marta'); rl.statusReactionNotes = null; rl.statusReactionNote = null; }); }
+  check('the judge catches her milking in HER OWN reply (the Raskia case)', hit >= 2, `${hit}/${RUNS}`);
+  hit = 0;
+  for (let r = 0; r < RUNS; r++) { if (!(await judgeProbe('She sighs contentedly against his chest, tracing idle circles on his skin, warm and sleepy in the afterglow.'))) hit++; }
+  check('a soft afterglow reply fires no contest', hit >= 2, `${hit}/${RUNS}`);
+  await D(() => window.rpgCustodianDebug.removeStatus('player', 'T-Hold'));
 
   console.log(`\n${fail ? '❌' : '✅'} ${pass} passed, ${fail} failed`);
   process.exitCode = fail ? 1 : 0;

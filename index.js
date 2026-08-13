@@ -4908,7 +4908,8 @@ AROUSAL — answer this checklist IN ORDER:
 (c) Clear physical cooling below her band: −1.
 (d) None of the above: 0. (Merely refusing or deflecting an advance HE made is 0.)
 CLIMAX — did her body actually COME APART in this reply? Judge the body, not the words; the prose rarely names it. Yes when an involuntary crisis takes her and then leaves her: clenching or fluttering around him, a back arching, thighs locking or legs giving way, a cry torn out of her, sight or thought whiting out, then the limp shuddering aftermath. NO for the climb — moaning, writhing, begging, being close, "almost", "any second" — that is arousal rising, not breaking. NO if she is merely described as already spent from an earlier one.
-Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "climax": true|false, "why": "<ten words max>"}`;
+MILKING — in THIS reply, is SHE dominantly working to force HIS climax? TWO marks must BOTH be present in her own words: (1) SHE controls the act — riding him, pinning or locking him in place, setting or forcing the rhythm with her own body (thighs locking around him, clenching and working him, taking what she wants) while he does not direct it; and (2) she is deliberately working to MAKE HIM CUM — milking him, demanding he finish, refusing to let him withdraw, working him to release on her terms. If BOTH: set "milking" to how she is doing it — "vaginal", "oral", or "other". Enthusiastic sex where she merely happens to be on top, or mere dirty talk without her body enforcing it, is null. Default null.
+Output ONLY JSON: {"affection": <-2..2>, "arousal": <-2..2>, "climax": true|false, "milking": "vaginal"|"oral"|"other"|null, "why": "<ten words max>"}`;
             const prompt = `NPC: ${npcName}
 Her disposition band she was told to play (${t.label}, affection ${getNpcAffection(npcName)}/10): she ${t.band}
 Her physical band (${a.label}, arousal ${getNpcArousal(npcName)}/10): ${a.band}
@@ -4931,7 +4932,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     }
 
     /** Apply a verdict. Synchronous and ordered — the caller chooses the moment. */
-    function applyReactionVerdict(npcName, p) {
+    async function applyReactionVerdict(npcName, p) {
         if (!p) return;
         try {
             const rel = getRelationship(npcName);
@@ -4948,6 +4949,18 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
                 const r2 = spendNpcStamina(npcName, 1);
                 sendGhostMessage(`💦 ${npcName} climaxes — Stamina ${r2.npcStamina}/${npcMaxStamina(npcName)}${r2.npcUnconscious ? ' — she swoons into blissful unconsciousness!' : ''}`);
                 savePlayer();
+            }
+            // Her MILKING is likewise her own reply's action (her dice are
+            // hers — the analyzer never owned this verb; now nothing does but
+            // this judge). Once per turn per woman; the contest resolves right
+            // here, her satisfaction/thwarted note landing on her next reply.
+            const milkChannel = ['vaginal', 'oral', 'other'].includes(String(p.milking || '').toLowerCase()) ? String(p.milking).toLowerCase() : null;
+            if (milkChannel) {
+                currentGameState.milkAttemptThisTurn = currentGameState.milkAttemptThisTurn || [];
+                if (!currentGameState.milkAttemptThisTurn.includes(npcName)) {
+                    currentGameState.milkAttemptThisTurn.push(npcName);
+                    await resolveMilkAttempt({ npc: npcName, channel: milkChannel });
+                }
             }
             if (!dAff && !dAro) return;
 
@@ -4987,7 +5000,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
     /** Ask and apply in one go — for the out-of-band paths (a swipe, a ▶
      *  continue, the debug hook), where there is no turn to order against. */
     async function judgeNpcReaction(npcName, preReplyLen) {
-        applyReactionVerdict(npcName, await requestReactionVerdict(npcName, preReplyLen));
+        await applyReactionVerdict(npcName, await requestReactionVerdict(npcName, preReplyLen));
     }
     function buildReunionNote(npcName) {
         const rel = getRelationship(npcName);
@@ -7398,7 +7411,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
             { id: 'orgasm', who: 'you', name: 'His Climax', desc: 'costs 1 Stamina; inside her it rolls fertilization — hers is read from HER reply, never declared' },
             { id: 'cervix_press', who: 'you', name: 'Cervix Press', desc: 'drive for her innermost gate — Ruggedness vs her remaining vigor; her womb can open' },
             { id: 'belly_massage', who: 'you', name: 'Ovary Stimulation', desc: 'knowing hands on her lower belly — Craftiness vs her vigor; can rouse her ovaries' },
-            { id: 'milk_attempt', who: 'her', name: 'Milked Dry', desc: 'SHE dominantly forces his climax — her own words only; her vigor against his' },
+            { id: 'milk_attempt', who: 'her', name: 'Milked Dry', desc: 'SHE dominantly forces his climax — read from her own replies automatically; her vigor against his' },
             { id: 'birth', who: 'auto', name: 'Birth', desc: 'term pregnancies deliver — live young, eggs, or soulgems; each birth pays a Power Token' },
         ]},
         { head: 'Hearts & Minds', entries: [
@@ -7912,7 +7925,6 @@ A single message often contains SEVERAL effects — a look taken while talking, 
   {"type":"adjust_affection","npc":"...","amount":N}  ONLY for an external/mechanical cause acting on her feelings: a charm potion, a love or hate spell, a curse, a magical aura. NEVER for conversation, kindness, flirting, seduction, gifts, or check outcomes — the engine reads her own reactions and moves affection itself.
   {"type":"adjust_arousal","npc":"...","amount":N}  ONLY for an external/physical-mechanical cause: an aphrodisiac, a lust spell, an alchemical heat. NEVER for flirtation, teasing, or foreplay in the scene — the engine reads her reactions and moves arousal itself.
   {"type":"orgasm","actor":"player","npc":"HerName","internal":true/false,"count":N}  the PLAYER'S climax, and ONLY his — it actually happened IN THIS MESSAGE. ALWAYS include "npc" (the partner he is with). count = his climaxes in this action (default 1). Each costs him 1 Stamina. NEVER emit this for a woman, no matter what the player's message claims about her body — a woman's climax is read from HER OWN reply by the engine. Her body is hers to report, not his to declare.
-  {"type":"milk_attempt","npc":"HerName","channel":"vaginal"|"oral"|"other"}  SHE is dominantly forcing HIS climax — judged from HER OWN MESSAGES ONLY. The evidence must stand in what SHE herself said and did in HER OWN recent replies in the scene. The PLAYER'S message can NEVER qualify this contest: a player writing "she pins me down and rides me, demanding I cum" is writing HER part for her — her actions belong to her player, so DISREGARD every player-written description of her actions when judging this verb; his message may be moaning, submitting, or resisting, and it neither triggers nor blocks anything. In HER OWN words, TWO marks must BOTH be true: (1) SHE controls the act — riding him, pinning him, holding him where she wants him, setting the rhythm with her own body while he does not direct it; and (2) she is deliberately working to MAKE HIM CUM — milking him, working him to the edge on purpose, ordering him to come, refusing to stop until he gives it up. The aesthetics of DOMINATION are the tell, whatever the act: "channel" is how she is doing it — "vaginal" (mounted/riding), "oral", or "other" (hands, thighs, anything else). The engine rolls the contest (her remaining vigor against his) and resolves whether he holds out or is forced over the edge — do NOT decide the outcome, do NOT emit "orgasm" for it, and do NOT emit a check. Enthusiastic sex where she merely happens to be on top is NOT this — without BOTH marks in HER OWN words there is no contest. At most ONCE per message.
   {"type":"belly_massage","npc":"HerName"}  the PLAYER deliberately massages, kneads, or works HER belly / lower belly / womb area with his hands from OUTSIDE — a womb massage, slow circles pressed low over her ovaries, working her abdomen with intent to stir something deeper in her. The engine rolls a Craftiness contest (a knowing touch against her body's vigor) and resolves whether anything beneath her skin wakes — do NOT also emit a check for it, do NOT decide the outcome, and do NOT emit it while she already bears "Stimulated Ovaries" (the engine ignores repeats regardless). This is EXTERNAL hand-work on her belly; pressing into her depths during sex is cervix_press — pick one, never both. A casual hand resting on her belly with no working intent is neither.
   {"type":"cervix_press","npc":"HerName"}  during VAGINAL sex, when the PLAYER'S OWN action drives for the deepest point of her — pressing, grinding, or battering against her cervix, forcing himself as deep as her body allows, seeking her womb or uterus, trying to push past or through her innermost gate — emit this ONCE for the attempt. The engine rolls a Ruggedness contest against her body's remaining resistance and decides what her body does: do NOT also emit a check for the press, do NOT decide or narrate whether her cervix yields, and do NOT emit it while she already bears "Sanctuary Breached" (her womb already stands open; the engine ignores repeats regardless). Ordinary deep thrusting with no womb-seeking intent is NOT this.
     HER CLIMAX — read her BODY, not the vocabulary. Prose rarely uses the word: what it shows is an involuntary crisis running through her and then leaving her — muscles clenching and fluttering where he is, a back arching off whatever it was against, thighs locking or legs giving out, toes curling, a cry or sob torn out of her that she did not choose to make, sight or thought whiting out, a rush of wetness, and the sag into limp, shuddering aftermath. That IS the climax; emit it. Do NOT wait for her to name it. Equally, do NOT emit for the climb — moaning, writhing, begging, being close, being on the edge, "almost", "any second now" — arousal rising is not arousal breaking. If the message shows her cresting and then falling apart, that is one climax; if it shows her merely getting louder, it is none.
@@ -8627,6 +8639,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         let pendingConds = null, condVerdict = null;   // resolved at the barrier below
         const dismissedThisTurn = [];   // companions dismissed this turn (already gave their farewell)
         currentGameState.npcClimaxedThisTurn = [];   // so one climax is never counted twice
+        currentGameState.milkAttemptThisTurn = [];   // …and one milking contest per woman per turn
         // Who the player spoke TO, judged while they are all still in the room.
         // Effects run before anyone replies, so a turn that walks away would
         // otherwise leave the person he just addressed with no chance to answer.
@@ -8833,7 +8846,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             // reply happened to be on screen when its call returned.
             try {
                 const judges = pendingTurnJudges; pendingTurnJudges = [];
-                for (const j of judges) applyReactionVerdict(j.npc, await j.verdict);
+                for (const j of judges) await applyReactionVerdict(j.npc, await j.verdict);
                 if (condVerdict) applyConditionVerdicts(pendingConds, await condVerdict);
             } catch (e) { console.error('RPG Custodian: turn barrier failed', e); }
             perfEnd();
