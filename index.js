@@ -6335,12 +6335,13 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const line = skillCheckLine(c, `Her last gate — ${name}'s body resists (DC ${CERVIX_PRESS_DC_BASE} + her ${herStamina} Stamina${mod ? ` ${mod > 0 ? '+' : ''}${mod} situational` : ''})`);
         if (c.success) {
             addCustomStatus(name, { preset: 'sanctuary_breached' }, true);
+            const xp = awardCheckXp(c);   // a won contest pays like any won check
             if (c.tier === 'critical') {
                 queueStatusReaction(name, `His cockhead has JUST punched clean through her cervix in one motion — no grudging yield: her innermost ring gave way all at once and her womb takes the head of him entire. The shock detonates a climax through her THIS INSTANT: in her reply she comes harder than she has words for, her deepest muscle spasming around the intrusion as if to keep it.`);
-                sendGhostMessage(`${line}\n🌟 Her cervix gives way ALL AT ONCE — it does not yield so much as open for him. **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock detonates a climax through her.`, { adversarial: true });
+                sendGhostMessage(`${line}\n🌟 Her cervix gives way ALL AT ONCE — it does not yield so much as open for him. **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock detonates a climax through her. ✨ +${xp} XP`, { adversarial: true });
             } else {
                 queueStatusReaction(name, `His cockhead has JUST forced its way through her cervix — the tight ring gave way and he is pressed into the mouth of her womb itself. The breach wrings a climax out of her ON THE SPOT: in her reply she comes, hard and involuntary, around the intrusion — her body's own answer to being opened where nothing has reached before.`);
-                sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her.`, { adversarial: true });
+                sendGhostMessage(`${line}\n💥 Her cervix yields — **Sanctuary Breached** takes hold of ${name} (+10 fertility, 2 periods), and the shock of it rips a climax out of her. ✨ +${xp} XP`, { adversarial: true });
             }
             spendNpcStamina(name, 1);   // that climax costs her what any climax costs
         } else if (c.tier === 'mixed') {
@@ -6377,8 +6378,9 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const line = skillCheckLine(c, `Knowing hands — ${name}'s depths resist waking (DC ${BELLY_MASSAGE_DC_BASE} + her ${herStamina} Stamina${mod ? ` ${mod > 0 ? '+' : ''}${mod} situational` : ''})`);
         if (c.success) {
             addCustomStatus(name, { preset: 'stimulated_ovaries' }, true);
+            const xp = awardCheckXp(c);   // a won contest pays like any won check
             queueStatusReaction(name, `His hands have JUST worked her lower belly with real skill — slow, deep, knowing circles pressed low over her womb — and something has ANSWERED: a warm, fluttering heaviness blooming deep behind her navel, her ovaries roused and pleasantly aching awake. Her body is readying itself whether she wills it or not; in her reply she responds to that deep stirring warmth, however it lands in her nature.`);
-            sendGhostMessage(`${line}\n🌸 Something deep in her answers his hands — **Stimulated Ovaries** takes hold of ${name} (+10 fertility, 1 period).`, { adversarial: true });
+            sendGhostMessage(`${line}\n🌸 Something deep in her answers his hands — **Stimulated Ovaries** takes hold of ${name} (+10 fertility, 1 period). ✨ +${xp} XP`, { adversarial: true });
         } else {
             queueStatusReaction(name, `He is kneading her lower belly — warm, pleasant, well-meant pressure low over her navel. And it stays exactly that: a nice massage, skin-deep, nothing stirring beneath. In her reply she responds to the simple comfort of warm hands on her belly, however that lands in her nature.`);
             sendGhostMessage(`${line}\n🤲 A pleasant kneading, no more — nothing beneath her skin stirs${herStamina > 2 ? ' (her body has too much vigor to be coaxed so easily)' : ''}.`, { adversarial: true });
@@ -6416,7 +6418,12 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const line = `🎲 **Her hips set the law — ${name} works him to milk him dry** (her ${herStamina} Stamina vs DC ${MILK_BASE_RESIST} + his ${hisStamina})\n` +
             `Rolled 2d6 [${d1}+${d2}=${d1 + d2}] + ${herStamina}${swingStr} = **${total}** vs DC ${dc}`;
         if (!success) {
-            sendGhostMessage(`${line} → 🛡️ **he holds** — jaw tight, he keeps himself his own.`, { adversarial: true });
+            // Holding out IS his win in this contest — and won contests pay.
+            // Priced by unlikelihood like every check: the likelier she was
+            // to take him, the more the hold is worth.
+            const xp = Math.max(1, successChance(herStamina, dc));
+            { const rd = getPlayerRpgData(); if (rd) { rd.stats.experience = (rd.stats.experience || 0) + xp; savePlayer(); } }
+            sendGhostMessage(`${line} → 🛡️ **he holds** — jaw tight, he keeps himself his own. ✨ +${xp} XP`, { adversarial: true });
             queueStatusReaction(name, `She is working him with everything she has, setting the rhythm herself, bent on forcing his release — and he is HOLDING, white-knuckled, keeping it from her. In her reply she responds to a man withstanding her — however that lands in her nature: hunger sharpened, pride pricked, the game deepening. She has not finished with him.`);
             return;
         }
@@ -6731,7 +6738,19 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (eff.contest === false) { applyCrystalCurse(target, eff.duration, eff.break_condition); return; }   // an inescapable / narrative-forced curse
         const c = debuffContest(attack, target);
         const targetLabel = target === 'player' ? 'you' : target;
-        sendGhostMessage(`💠🎲 **Crystal Curse — resist contest**: ${attackerLabel} (power ${attack}) vs ${targetLabel}'s Ruggedness ${c.resist} → 2d6 [${c.dice}] + ${attack} = **${c.total}** vs DC ${c.dc} → ${c.success ? '💠 **the curse takes hold!**' : '🛡️ **RESISTED** — the hex slides off.'}`);
+        // Won contests pay XP wherever the PLAYER is the winner: landing his
+        // own casting, or shrugging off a hex aimed at him.
+        const playerCast = !(eff.power != null) && !(eff.caster && eff.caster !== 'player');
+        let xpNote = '';
+        if (playerCast && c.success) {
+            const xp = awardCheckXp({ success: true, base: attack, boost: 0, difficulty: c.dc });
+            xpNote = ` ✨ +${xp} XP`;
+        } else if (!playerCast && target === 'player' && !c.success) {
+            const xp = Math.max(1, successChance(attack, c.dc));
+            { const rd = getPlayerRpgData(); if (rd) { rd.stats.experience = (rd.stats.experience || 0) + xp; savePlayer(); } }
+            xpNote = ` ✨ +${xp} XP`;
+        }
+        sendGhostMessage(`💠🎲 **Crystal Curse — resist contest**: ${attackerLabel} (power ${attack}) vs ${targetLabel}'s Ruggedness ${c.resist} → 2d6 [${c.dice}] + ${attack} = **${c.total}** vs DC ${c.dc} → ${c.success ? '💠 **the curse takes hold!**' : '🛡️ **RESISTED** — the hex slides off.'}${xpNote}`, { adversarial: true });
         if (c.success) applyCrystalCurse(target, eff.duration, eff.break_condition);
     }
 
