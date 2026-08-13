@@ -7151,16 +7151,24 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         const regStatuses = (holder, target) => {
             const eligible = target === 'player' || inScene.has(target);
             for (const e of (holder.customEffects || [])) {
-                if (e.active === false || !e.endCondition) continue;
+                if (e.active === false) continue;
+                // Fresh-this-turn: immune to its own end-check AND freshly
+                // narrated exactly ONCE. The clear must come before the
+                // endCondition filter — clearing only endCondition-bearers
+                // left every duration-only status (Milked Dry…) flagged
+                // "JUST taken hold" for its whole life, and the GM dutifully
+                // narrated it settling in at every single beat (live bug).
                 if (e.justCreated) { e.justCreated = false; continue; }
+                if (!e.endCondition) continue;
                 if (!eligible) continue;
                 pending.push({ kind: e.category === 'quest' ? 'quest' : 'status', id: e.id, text: e.endCondition, target, name: e.name, ref: e });
             }
         };
         const regCurse = (holder, target) => {
             const c = holder.crystalCurse;
-            if (!c || !c.active || !c.breakCondition) return;
-            if (c.justCreated) { c.justCreated = false; return; }
+            if (!c || !c.active) return;
+            if (c.justCreated) { c.justCreated = false; return; }   // same order law: a permanent curse must still shed its freshness
+            if (!c.breakCondition) return;
             if (target !== 'player' && !inScene.has(target)) return;
             pending.push({ kind: 'curse', id: `curse-${target}`, text: c.breakCondition, target });
         };
@@ -9074,6 +9082,7 @@ Narrate the result briefly, grounded in this location and the story's current be
         castCurse: (eff) => tryApplyCrystalCurse(eff || {}),
         uncurse: (target) => liftCrystalCurse(target || 'player'),
         isCursed: (target) => isCrystalCursed(target || 'player'),
+        curseState: (target) => (!target || target === 'player') ? getPlayerRpgData()?.crystalCurse : getRelationship(target)?.crystalCurse,
         mana: () => ({ cur: getPlayerRpgData()?.stats.mana, max: maxMana() }),
         addStatus: (target, spec) => addCustomStatus(target || 'player', spec || {}),
         fertilityOf: (n) => fertilityPercent(n),
