@@ -4763,6 +4763,8 @@ STR ${stats.strength} / DEX ${stats.dexterity} / INT ${stats.intelligence} / CHA
     const REUNION_PROMPT_KEY = 'RPG_CUSTODIAN_REUNION';
     // One-shot per-NPC injection of secret area notes she is privy to.
     const AREANOTE_PROMPT_KEY = 'RPG_CUSTODIAN_AREANOTE';
+    // One-shot swan song: her single reply on the way down into unconsciousness.
+    const KO_SWANSONG_PROMPT_KEY = 'RPG_CUSTODIAN_SWANSONG';
 
     // === Charm-check interpretation (romance-redesign §B) ===
     // A charm roll decides whether she ACCEPTS THE PLAYER'S FRAMING — not
@@ -5922,6 +5924,10 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         if (rel.npcUnconscious && !was) {
             rel.koStep = currentGameState.timeStep || 0;
             rel.stashedAt = isInParty(npcName) ? currentGameState.currentLocation : scheduledLocationFor(npcName);
+            // She owes the scene ONE last reply — the collapse itself. Going
+            // under silently was a buzzkill: the breach-climax that spent her
+            // final Stamina got "💤 cannot respond" instead of the payoff.
+            rel.koReplyOwed = true;
         }
         savePlayer();
         return rel;
@@ -5940,6 +5946,7 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         }
         rel.stashedAt = null;
         rel.koStep = null;
+        rel.koReplyOwed = null;   // an unspent swan song dies with the waking
     }
     // Each time a period passes, KO'd NPCs who've slept long enough wake up —
     // wherever they were left, with or without the player present.
@@ -8436,9 +8443,22 @@ Narrate the result briefly, grounded in this location and the story's current be
         if (!present.includes(npcName) && !opts.wasAddressedHere) return false;
         // A KO'd NPC can't respond — skip her generation (the KO-aware GM
         // narration covers the scene); log a quiet note.
-        if (getRelationship(npcName).npcUnconscious) {
-            sendGhostMessage(`💤 ${npcName} is unconscious and cannot respond.`);
-            return false;
+        // A newly-felled NPC gets ONE reply on the way down — the collapse is
+        // hers to play (the climax that wrung her empty, the blow that felled
+        // her). Only AFTER that swan song does unconsciousness mean silence.
+        let swanSong = false;
+        {
+            const relKo = getRelationship(npcName);
+            if (relKo.npcUnconscious) {
+                if (relKo.koReplyOwed) {
+                    swanSong = true;
+                    relKo.koReplyOwed = null;
+                    savePlayer();
+                } else {
+                    sendGhostMessage(`💤 ${npcName} is unconscious and cannot respond.`);
+                    return false;
+                }
+            }
         }
         // Wait for any in-flight generation to finish before /trigger (avoids the
         // "cannot run while reply is generating" toast); quietly skip if it never
@@ -8480,6 +8500,11 @@ Narrate the result briefly, grounded in this location and the story's current be
         if (areaSecrets.length) {
             context.setExtensionPrompt(AREANOTE_PROMPT_KEY, `[${npcName} KNOWS this about this place — NOT common knowledge; others present may not know it, and she reveals it only as she herself would: ${areaSecrets.join(' · ')}]`, 1, 0);
         }
+        if (swanSong) {
+            // Depth-0 and explicit, because the shared status block already
+            // calls her UNCONSCIOUS — for this one reply, that line is wrong.
+            context.setExtensionPrompt(KO_SWANSONG_PROMPT_KEY, `[DISREGARD any status line saying ${npcName} is unconscious — she is passing out DURING this reply, not before it. This is her LAST conscious moment: whatever just felled her — a climax that wrung her utterly empty, a blow, the end of her strength — is pulling her under NOW. Play the collapse honestly and vividly in her own nature: the shudder, the gasp, the words that trail off — and END the reply with her slipping fully into unconsciousness, limp and spent. She does not get back up.]`, 1, 0);
+        }
         const preReplyLen = (getCtx().chat || []).length;
         const doneReply = perfStage(`reply:${npcName}`);
         try {
@@ -8493,6 +8518,7 @@ Narrate the result briefly, grounded in this location and the story's current be
             if (whereNote) context.setExtensionPrompt(WHEREABOUTS_PROMPT_KEY, '', 1, 0);
             if (statusNote) context.setExtensionPrompt(STATUSREACT_PROMPT_KEY, '', 1, 0);
             if (areaSecrets.length) context.setExtensionPrompt(AREANOTE_PROMPT_KEY, '', 1, 0);
+            if (swanSong) context.setExtensionPrompt(KO_SWANSONG_PROMPT_KEY, '', 1, 0);
             noteSeen(npcName);                                                         // she has now seen him this moment
             savePlayer();
         }
