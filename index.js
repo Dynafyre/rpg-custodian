@@ -5932,6 +5932,33 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         savePlayer();
         return rel;
     }
+    // A STORY revival — water splashed on her face, shaking her awake. The
+    // judge/Custodian removes her engine-managed Unconscious status, but that
+    // status is DERIVED from the numbers: without touching them it resurrects
+    // on the next sync (live bug: "✅ revived by splash of water" → the GM
+    // narrates her still limp → 💤 cannot respond). Revival is now real: she
+    // wakes with exactly 1 Stamina, Utterly Spent — awake enough to speak,
+    // keep her feet, and walk HERSELF home when time moves on (the revival
+    // pin holds her here for the rest of this period, like a parting).
+    function reviveNpc(npcName, how) {
+        const rel = getRelationship(npcName);
+        if (!rel.npcUnconscious) return;
+        rel.npcUnconscious = false;
+        rel.npcStamina = Math.max(1, rel.npcStamina || 0);
+        const here = rel.stashedAt || currentGameState.currentLocation;
+        rel.stashedAt = null; rel.koStep = null; rel.koReplyOwed = null;
+        rel.partedAt = here; rel.partedStep = currentGameState.timeStep || 0;
+        addCustomStatus(npcName, {
+            name: 'Utterly Spent', kind: 'status', polarity: 'negative',
+            desc: 'wrung out to nothing and only just brought around — she can speak, keep her feet, and shuffle where she must, and no more',
+            mods: [], duration: 2,
+        }, true);
+        savePlayer();
+        syncEngineStatuses();
+        sendGhostMessage(`💫 **${npcName} comes to**${how ? ` — ${how}` : ''}: 1 Stamina, **Utterly Spent**. Awake enough to speak, stand, and see herself home.`);
+        queueStatusReaction(npcName, `She has JUST been brought around from dead unconsciousness — barely: the world swims, her limbs weigh double, and she is utterly wrung out. In her reply she surfaces groggy and spent, in her own nature.`);
+        projectPlayerStatus();
+    }
     // Wake a knocked-out NPC: restore her, clear the pin, and — if she comes to
     // somewhere the player ISN'T — record that she woke alone (for the reunion).
     function wakeNpc(npcName, rel, quiet = false) {
@@ -7047,6 +7074,19 @@ ${replyText.replace(/\s+/g, ' ').slice(0, 1500)}`;
         savePlayer();
         for (const e of removed) {
             sendGhostMessage(`✅ **${e.name}** ends${reason ? ` — ${reason}` : ''}.`);
+            // ENGINE-DERIVED statuses re-derive from the numbers on the next
+            // sync — removing one by story is only real if the numbers move.
+            if (e.engineManaged === 'unconscious' && target && target !== 'player') {
+                reviveNpc(target, reason);
+                continue;   // the revival speaks for itself
+            }
+            if (e.engineManaged === 'exhausted' && (!target || target === 'player') && getStamina() <= 0) {
+                const rd = getPlayerRpgData();
+                if (rd) { rd.stats.stamina = 1; rd.stats.unconscious = false; savePlayer(); }
+                syncEngineStatuses();
+                sendGhostMessage(`💫 You come back to yourself — barely. Stamina 1/${maxStamina()}.`);
+                continue;
+            }
             if (target && target !== 'player') queueStatusReaction(target, `The effect "${e.name}" on her has JUST ended${reason ? ` — ${reason}` : ''}. She feels it lift.`);
         }
         return true;
