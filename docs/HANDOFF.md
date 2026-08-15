@@ -66,6 +66,9 @@ memory files (§7) named in brackets.
   is the sub-Custodian scaling fix done with UI instead of a router. First
   spell: Summon Lover (escort-pin in reverse, affection-banded arrival).
   Combat will mount here too.
+- **Spellcraft in flight** (2026-08-14): the spell system has its OWN handoff
+  — `docs/game-design/spellcraft-handoff.md` (plan of record, laws, open
+  questions, build order). Read it before any magic work.
 
 ---
 
